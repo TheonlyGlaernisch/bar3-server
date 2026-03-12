@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import accountRoutes from './api/accountRoutes';
 
 const app: Express = express();
-
+mongoose.set('strictQuery', true);
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
