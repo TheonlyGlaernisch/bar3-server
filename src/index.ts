@@ -1,12 +1,17 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
-import accountRoutes from './api/accountRoutes';
+import { join } from 'path';
+import accountRoutes from './api/AccountRoutes';
+import { mountLegacyUiAndApi } from './api';
+
+mongoose.set('strictQuery', true);
 
 const app: Express = express();
-mongoose.set('strictQuery', true);
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static(join(__dirname, '../..', 'public')));
 
 // CORS (if needed for frontend communication)
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -37,23 +42,19 @@ connectDB();
 
 // Routes
 app.use('/api', accountRoutes);
+mountLegacyUiAndApi(app);
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'Server is running' });
 });
 
-// 404 handler
-app.use((req: Request, res: Response) => {
-  res.status(404).json({ error: 'Route not found' });
-});
-
 // Error handling middleware
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error('Error:', err);
-  res.status(err.status || 500).json({ 
+  res.status(err.status || 500).json({
     error: err.message || 'Internal server error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
   });
 });
 
