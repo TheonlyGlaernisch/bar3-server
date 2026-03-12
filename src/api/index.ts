@@ -6,6 +6,8 @@ import messages from '../services/messages';
 import dLog from '../utilities/debugLog';
 import { join } from 'path';
 
+mongoose.set('strictQuery', true);
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
