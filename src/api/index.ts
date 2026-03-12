@@ -1,8 +1,9 @@
 import { Express, Router } from 'express';
+import { existsSync } from 'fs';
+import { join } from 'path';
 import state from '../services/state';
 import messages from '../services/messages';
 import dLog from '../utilities/debugLog';
-import { join } from 'path';
 import analyticsRouter from './routers/analytics';
 
 const legacyApiRouter = Router();
@@ -24,7 +25,7 @@ legacyApiRouter.post('/setApiKey', async (req, res) => {
     dLog(`Existing API key used: ${apiKey}`);
   }
 
-  res.status(200).end();
+  return res.status(200).end();
 });
 
 // 2️⃣ Send a message (per API key)
@@ -35,7 +36,7 @@ legacyApiRouter.post('/sendMessage', async (req, res) => {
   }
 
   const messageHTML = req.body.messageHTML;
-  const nationID = parseInt(req.body.nationID);
+  const nationID = parseInt(req.body.nationID, 10);
   const nationName = req.body.nationName;
   const leaderName = req.body.leaderName;
 
@@ -55,7 +56,7 @@ legacyApiRouter.post('/sendMessage', async (req, res) => {
   state.userKeys[apiKey].sentMessages.push(message);
   dLog(`Message sent successfully for API key ${apiKey}`);
 
-  res.status(204).end();
+  return res.status(204).end();
 });
 
 // 3️⃣ Get application data (per API key)
@@ -65,7 +66,7 @@ legacyApiRouter.get('/appData', async (req, res) => {
     return res.status(400).send('API key not set or unknown');
   }
 
-  res.status(200).json({
+  return res.status(200).json({
     applicationOn: state.isApplicationOn,
     isSetup: state.isSetup,
     sentMessages: state.userKeys[apiKey].sentMessages,
@@ -75,43 +76,45 @@ legacyApiRouter.get('/appData', async (req, res) => {
     },
     serverVersion: state.serverVersion,
   });
-
-  dLog(`Sending application data for API key ${apiKey}`);
 });
 
 // 4️⃣ Existing config endpoints
-legacyApiRouter.get('/config', async (req, res) => {
-  res.status(200).json(state.config);
+legacyApiRouter.get('/config', async (_, res) => {
   dLog('Sending config.');
+  return res.status(200).json(state.config);
 });
 
 legacyApiRouter.post('/setConfig', async (req, res) => {
   const mergedConfig = Object.assign(state.config, req.body.config);
   state.writeConfig(mergedConfig);
   dLog('Updated config: ' + JSON.stringify(req.body.config));
-  res.status(204).end();
+  return res.status(204).end();
 });
 
 legacyApiRouter.post('/setApplicationState', async (req, res) => {
   state.setApplicationOn(req.body.applicationOn);
-  res.status(204).end();
+  return res.status(204).end();
 });
 
 export const mountLegacyUiAndApi = (app: Express) => {
   app.use('/api', legacyApiRouter);
   app.use('/analytics', analyticsRouter);
 
-  app.use((_, res, next) => {
-    // keep fallback registration local to this mount helper
-    next();
-  });
+  const indexPath = join(__dirname, '../../..', 'public/index.html');
 
   app.get('*', async (req, res) => {
-    if (req.path.startsWith('/api') || req.path.startsWith('/analytics') || req.path === '/health') {
+    if (req.path.startsWith('/api') || req.path.startsWith('/analytics')) {
       return res.status(404).json({ error: 'Route not found' });
     }
 
-    return res.sendFile(join(__dirname, '../../..', 'public/index.html'));
+    if (!existsSync(indexPath)) {
+      return res.status(404).json({
+        error: 'UI build not found',
+        hint: 'Deploy the client separately or include public/index.html in this service',
+      });
+    }
+
+    return res.sendFile(indexPath);
   });
 };
 
