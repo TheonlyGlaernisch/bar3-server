@@ -1,27 +1,27 @@
 import mongoose, { Schema, Document } from 'mongoose';
-import IAccount from '../interfaces/Account';
+import IAccount from '../interfaces/account';
 
-interface AccountDocument extends IAccount, Document {}
+type AccountDocument = Document & Omit<IAccount, '_id'>;
 
 const accountSchema = new Schema<AccountDocument>({
   apiKey: {
     type: String,
     required: true,
     unique: true,
-    index: true
+    index: true,
   },
   customMessage: {
     type: String,
-    default: ''
+    default: '',
   },
   createdAt: {
     type: Date,
-    default: Date.now
+    default: Date.now,
   },
   updatedAt: {
     type: Date,
-    default: Date.now
-  }
+    default: Date.now,
+  },
 });
 
 const AccountModel = mongoose.model<AccountDocument>('Account', accountSchema);
