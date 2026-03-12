@@ -1,6 +1,6 @@
-import AccountModel from '../models/Account';
-import IAccount from '../interfaces/Account';
-import crypto from 'crypto';
+import AccountModel from '../models/account';
+import IAccount from '../interfaces/account';
+import * as crypto from 'crypto';
 
 class AccountService {
   private generateApiKey(): string {
