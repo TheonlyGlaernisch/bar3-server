@@ -5,6 +5,10 @@ import {join, resolve} from 'path';
 const packageRaw = readFileSync(join(__dirname, '../../..', './package.json'));
 const packageJson = JSON.parse(packageRaw.toString());
 
+interface UserKeyState {
+  sentMessages: unknown[];
+}
+
 /**
  * Handles the state across Bar 3
  */
@@ -20,6 +24,7 @@ class StateHandler {
   public port = 8055;
   public workingDir = process.cwd();
   public serverVersion = packageJson.version;
+  public userKeys: Record<string, UserKeyState> = {};
 
   /**
    * Loads the config and state (to be called during initial startup)
