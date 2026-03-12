@@ -1,6 +1,7 @@
 import { Express, Router } from 'express';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { Config, Message } from '../interfaces/types';
 import state from '../services/state';
 import messages from '../services/messages';
 import dLog from '../utilities/debugLog';
@@ -8,39 +9,93 @@ import analyticsRouter from './routers/analytics';
 
 const legacyApiRouter = Router();
 
-// --- Initialize per-user API key storage ---
-if (!state.userKeys) {
-  state.userKeys = {}; // { [apiKey: string]: { sentMessages: any[] } }
-}
+const getDefaultSessionKey = () => '__legacy_default__';
 
-// 1️⃣ Set API key for a user
-legacyApiRouter.post('/setApiKey', async (req, res) => {
-  const apiKey = req.body.apiKey;
-  if (!apiKey) return res.status(400).send('No API key provided');
+const ensureSession = (apiKey?: string) => {
+  const sessionKey = apiKey || getDefaultSessionKey();
 
-  if (!state.userKeys[apiKey]) {
-    state.userKeys[apiKey] = { sentMessages: [] }; // new user/session
-    dLog(`New API key registered: ${apiKey}`);
-  } else {
-    dLog(`Existing API key used: ${apiKey}`);
+  if (!state.userKeys[sessionKey]) {
+    const sessionConfig = new Config();
+
+    if (apiKey) {
+      sessionConfig.apiKey = apiKey;
+    }
+
+    state.userKeys[sessionKey] = {
+      sentMessages: [],
+      config: sessionConfig,
+    };
   }
+
+  return state.userKeys[sessionKey];
+};
+
+const resolveApiKey = (req: any): string | undefined => {
+  const keyFromBody = req.body?.apiKey;
+  const keyFromQuery = req.query?.apiKey;
+  const keyFromHeader = req.headers?.['x-api-key'];
+
+  const key = keyFromBody || keyFromQuery || keyFromHeader;
+  return typeof key === 'string' ? key.trim() : undefined;
+};
+
+const getScopedConfig = (apiKey?: string): Config => {
+  const scopedSession = ensureSession(apiKey);
+  return scopedSession.config;
+};
+
+const getScopedSentMessages = (apiKey?: string): Message[] => {
+  const scopedSession = ensureSession(apiKey);
+  return scopedSession.sentMessages as Message[];
+};
+
+legacyApiRouter.post('/setApiKey', async (req, res) => {
+  const apiKey = resolveApiKey(req);
+
+  if (!apiKey) {
+    return res.status(400).send('No API key provided');
+  }
+
+  const scopedSession = ensureSession(apiKey);
+  scopedSession.config.apiKey = apiKey;
+
+  state.config.apiKey = apiKey;
+
+  dLog(`API key registered for legacy session: ${apiKey}`);
 
   return res.status(200).end();
 });
 
-// 2️⃣ Send a message (per API key)
 legacyApiRouter.post('/sendMessage', async (req, res) => {
-  const apiKey = req.body.apiKey;
-  if (!apiKey || !state.userKeys[apiKey]) {
+  const apiKey = resolveApiKey(req);
+  const scopedConfig = getScopedConfig(apiKey);
+
+  if (!scopedConfig.apiKey) {
     return res.status(400).send('API key not set or unknown');
   }
 
   const messageHTML = req.body.messageHTML;
+  if (typeof messageHTML === 'string') {
+    scopedConfig.messageHTML = messageHTML;
+  }
+
+  const messageSubject = req.body.messageSubject;
+  if (typeof messageSubject === 'string') {
+    scopedConfig.messageSubject = messageSubject;
+  }
+
   const nationID = parseInt(req.body.nationID, 10);
   const nationName = req.body.nationName;
   const leaderName = req.body.leaderName;
 
-  dLog(`Sending message for API key ${apiKey}: ${messageHTML}`);
+  if (!Number.isFinite(nationID) || !nationName || !leaderName) {
+    return res.status(400).send('Missing nation data');
+  }
+
+  const previousConfig = state.config;
+  state.config = scopedConfig;
+
+  dLog(`Sending message for legacy session ${apiKey || getDefaultSessionKey()}`);
 
   const message = await messages.sendMessage({
     nation_id: nationID,
@@ -48,28 +103,26 @@ legacyApiRouter.post('/sendMessage', async (req, res) => {
     leader: leaderName,
   });
 
+  state.config = previousConfig;
+
   if (!message.successful) {
-    dLog(`Failed to send message for API key ${apiKey}`);
+    dLog(`Failed to send message for legacy session ${apiKey || getDefaultSessionKey()}`);
     return res.status(400).end();
   }
 
-  state.userKeys[apiKey].sentMessages.push(message);
-  dLog(`Message sent successfully for API key ${apiKey}`);
+  getScopedSentMessages(apiKey).push(message);
+  dLog(`Message sent successfully for legacy session ${apiKey || getDefaultSessionKey()}`);
 
   return res.status(204).end();
 });
 
-// 3️⃣ Get application data (per API key)
 legacyApiRouter.get('/appData', async (req, res) => {
-  const apiKey = req.query.apiKey as string;
-  if (!apiKey || !state.userKeys[apiKey]) {
-    return res.status(400).send('API key not set or unknown');
-  }
+  const apiKey = resolveApiKey(req);
 
   return res.status(200).json({
     applicationOn: state.isApplicationOn,
     isSetup: state.isSetup,
-    sentMessages: state.userKeys[apiKey].sentMessages,
+    sentMessages: getScopedSentMessages(apiKey),
     apiDetails: {
       used: state.requestsUsed,
       max: state.requestsMax,
@@ -78,15 +131,28 @@ legacyApiRouter.get('/appData', async (req, res) => {
   });
 });
 
-// 4️⃣ Existing config endpoints
-legacyApiRouter.get('/config', async (_, res) => {
-  dLog('Sending config.');
-  return res.status(200).json(state.config);
+legacyApiRouter.get('/config', async (req, res) => {
+  const apiKey = resolveApiKey(req);
+  dLog(`Sending config for legacy session ${apiKey || getDefaultSessionKey()}`);
+  return res.status(200).json(getScopedConfig(apiKey));
 });
 
 legacyApiRouter.post('/setConfig', async (req, res) => {
-  const mergedConfig = Object.assign(state.config, req.body.config);
+  const apiKey = resolveApiKey(req);
+
+  const scopedConfig = getScopedConfig(apiKey);
+  const mergedConfig = Object.assign(scopedConfig, req.body.config);
+
+  if (typeof mergedConfig.apiKey === 'string' && mergedConfig.apiKey.trim()) {
+    ensureSession(mergedConfig.apiKey).config = mergedConfig;
+  }
+
+  if (apiKey) {
+    ensureSession(apiKey).config = mergedConfig;
+  }
+
   state.writeConfig(mergedConfig);
+
   dLog('Updated config: ' + JSON.stringify(req.body.config));
   return res.status(204).end();
 });

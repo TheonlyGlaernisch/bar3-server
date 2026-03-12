@@ -7,6 +7,7 @@ const packageJson = JSON.parse(packageRaw.toString());
 
 interface UserKeyState {
   sentMessages: unknown[];
+  config: Config;
 }
 
 /**
