@@ -1,9 +1,18 @@
-import express, { Request, Response } from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import AccountService from '../services/accountService';
+import IAccount from '../interfaces/account';
+
+declare global {
+  namespace Express {
+    interface Request {
+      account?: IAccount;
+    }
+  }
+}
 
 const router = express.Router();
 
-const authenticateApiKey = async (req: Request, res: Response, next: Function) => {
+const authenticateApiKey = async (req: Request, res: Response, next: NextFunction) => {
   const apiKey = req.headers['x-api-key'] as string;
 
   if (!apiKey) {
@@ -12,15 +21,20 @@ const authenticateApiKey = async (req: Request, res: Response, next: Function) =
 
   try {
     const account = await AccountService.getOrCreateAccount(apiKey);
-    (req as any).account = account;
-    next();
+    req.account = account;
+    return next();
   } catch (error) {
-    res.status(500).json({ error: 'Failed to authenticate' });
+    return res.status(500).json({ error: 'Failed to authenticate' });
   }
 };
 
 router.get('/account', authenticateApiKey, (req: Request, res: Response) => {
-  const account = (req as any).account;
+  const account = req.account;
+
+  if (!account) {
+    return res.status(500).json({ error: 'Authenticated account missing from request' });
+  }
+
   res.json({
     apiKey: account.apiKey,
     customMessage: account.customMessage,
@@ -36,26 +50,31 @@ router.post('/account/message', authenticateApiKey, async (req: Request, res: Re
       return res.status(400).json({ error: 'Message is required and must be a string' });
     }
 
-    const account = (req as any).account;
+    const account = req.account;
+
+    if (!account) {
+      return res.status(500).json({ error: 'Authenticated account missing from request' });
+    }
+
     const updated = await AccountService.updateCustomMessage(account.apiKey, message);
-    res.json({
+    return res.json({
       success: true,
       customMessage: updated?.customMessage
     });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to update message' });
+    return res.status(500).json({ error: 'Failed to update message' });
   }
 });
 
 router.post('/api-key/create', async (req: Request, res: Response) => {
   try {
     const newApiKey = await AccountService.createNewApiKey();
-    res.json({
+    return res.json({
       success: true,
       apiKey: newApiKey
     });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to create API key' });
+    return res.status(500).json({ error: 'Failed to create API key' });
   }
 });
 
