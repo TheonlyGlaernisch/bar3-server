@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import chalk from 'chalk';
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://glaernischgaming_db_user:64WKiJPOcvufLvWP@glaernisch.0o1fjdx.mongodb.net/?appName=Glaernisch';
-
+mongoose.set('strictQuery', true);
 export async function connectMongoDB(): Promise<void> {
   try {
     await mongoose.connect(MONGODB_URI, {
