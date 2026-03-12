@@ -1,13 +1,17 @@
 import { Router } from 'express';
-import { AuthenticatedRequest, apiKeyAuthMiddleware } from '../middleware/apiKeyAuth';
+import { apiKeyAuthMiddleware, isAuthenticatedRequest } from '../middleware/apiKeyAuth';
 import * as messageService from '../../services/messageService';
 
 const router = Router();
 
 router.use(apiKeyAuthMiddleware);
 
-router.post('/', async (req: AuthenticatedRequest, res) => {
+router.post('/', async (req, res) => {
   try {
+    if (!isAuthenticatedRequest(req)) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
     const { content, metadata } = req.body;
 
     if (!content) {
@@ -27,8 +31,12 @@ router.post('/', async (req: AuthenticatedRequest, res) => {
   }
 });
 
-router.get('/', async (req: AuthenticatedRequest, res) => {
+router.get('/', async (req, res) => {
   try {
+    if (!isAuthenticatedRequest(req)) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
     const messages = await messageService.getUserMessages(req.userId);
     res.json({
       count: messages.length,
@@ -40,8 +48,12 @@ router.get('/', async (req: AuthenticatedRequest, res) => {
   }
 });
 
-router.get('/search', async (req: AuthenticatedRequest, res) => {
+router.get('/search', async (req, res) => {
   try {
+    if (!isAuthenticatedRequest(req)) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
     const { q } = req.query;
 
     if (!q) {
@@ -63,8 +75,12 @@ router.get('/search', async (req: AuthenticatedRequest, res) => {
   }
 });
 
-router.get('/:messageId', async (req: AuthenticatedRequest, res) => {
+router.get('/:messageId', async (req, res) => {
   try {
+    if (!isAuthenticatedRequest(req)) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
     const message = await messageService.getMessageById(
       req.userId,
       req.params.messageId
@@ -81,8 +97,12 @@ router.get('/:messageId', async (req: AuthenticatedRequest, res) => {
   }
 });
 
-router.put('/:messageId', async (req: AuthenticatedRequest, res) => {
+router.put('/:messageId', async (req, res) => {
   try {
+    if (!isAuthenticatedRequest(req)) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
     const { content, metadata } = req.body;
 
     if (!content) {
@@ -107,8 +127,12 @@ router.put('/:messageId', async (req: AuthenticatedRequest, res) => {
   }
 });
 
-router.delete('/:messageId', async (req: AuthenticatedRequest, res) => {
+router.delete('/:messageId', async (req, res) => {
   try {
+    if (!isAuthenticatedRequest(req)) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
     const success = await messageService.deleteMessage(
       req.userId,
       req.params.messageId
