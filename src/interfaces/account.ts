@@ -1,5 +1,7 @@
+import mongoose from 'mongoose';
+
 interface IAccount {
-  _id?: string;
+  _id?: mongoose.Types.ObjectId;
   apiKey: string;
   customMessage: string;
   createdAt: Date;
