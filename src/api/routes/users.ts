@@ -27,15 +27,16 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.get('/me', apiKeyAuthMiddleware, async (req: AuthenticatedRequest, res) => {
+router.get('/me', apiKeyAuthMiddleware, async (req, res) => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const user = await userService.getUser(req.userId);
+    const user = await userService.getUser(authReq.userId);
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const messageCount = await messageService.getUserMessageCount(req.userId);
+    const messageCount = await messageService.getUserMessageCount(authReq.userId);
 
     res.json({
       ...user,
@@ -47,9 +48,10 @@ router.get('/me', apiKeyAuthMiddleware, async (req: AuthenticatedRequest, res) =
   }
 });
 
-router.delete('/me', apiKeyAuthMiddleware, async (req: AuthenticatedRequest, res) => {
+router.delete('/me', apiKeyAuthMiddleware, async (req, res) => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const success = await userService.deleteUser(req.userId);
+    const success = await userService.deleteUser(authReq.userId);
 
     if (!success) {
       return res.status(404).json({ error: 'User not found' });
