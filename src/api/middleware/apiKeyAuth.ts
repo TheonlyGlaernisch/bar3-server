@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction, RequestHandler } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import * as userService from '../../services/userService';
 
 declare global {
@@ -10,16 +10,16 @@ declare global {
   }
 }
 
-export type AuthenticatedRequest = Request & {
+export interface AuthenticatedRequest extends Request {
   userId: string;
   apiKey: string;
-};
+}
 
-export const apiKeyAuthMiddleware: RequestHandler = async (
+export async function apiKeyAuthMiddleware(
   req: Request,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void | Response> {
   try {
     const apiKey = req.headers['x-api-key'] as string;
 
@@ -41,6 +41,10 @@ export const apiKeyAuthMiddleware: RequestHandler = async (
     next();
   } catch (error) {
     console.error('Authentication error:', error);
-    res.status(500).json({ error: 'Authentication failed' });
+    return res.status(500).json({ error: 'Authentication failed' });
   }
-};
+}
+
+export function isAuthenticatedRequest(req: Request): req is AuthenticatedRequest {
+  return typeof req.userId === 'string' && typeof req.apiKey === 'string';
+}
