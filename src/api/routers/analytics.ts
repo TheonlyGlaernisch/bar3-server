@@ -16,7 +16,7 @@ router.get('/campaigns', async (req: Request, res: Response) => {
     logs.logError(`Cannot update latest campaign, ${e}`);
   });
 
-  const campaigns = database.getAllCampaigns();
+  const campaigns = await database.getAllCampaigns();
 
   res.status(200).contentType('json').send(campaigns).end();
 });
