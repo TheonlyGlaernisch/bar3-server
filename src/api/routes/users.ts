@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { AuthenticatedRequest, apiKeyAuthMiddleware } from '../middleware/apiKeyAuth';
+import { apiKeyAuthMiddleware, isAuthenticatedRequest } from '../middleware/apiKeyAuth';
 import * as userService from '../../services/userService';
 import * as messageService from '../../services/messageService';
 
@@ -28,15 +28,18 @@ router.post('/', async (req, res) => {
 });
 
 router.get('/me', apiKeyAuthMiddleware, async (req, res) => {
-  const authReq = req as AuthenticatedRequest;
   try {
-    const user = await userService.getUser(authReq.userId);
+    if (!isAuthenticatedRequest(req)) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const user = await userService.getUser(req.userId);
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const messageCount = await messageService.getUserMessageCount(authReq.userId);
+    const messageCount = await messageService.getUserMessageCount(req.userId);
 
     res.json({
       ...user,
@@ -49,9 +52,12 @@ router.get('/me', apiKeyAuthMiddleware, async (req, res) => {
 });
 
 router.delete('/me', apiKeyAuthMiddleware, async (req, res) => {
-  const authReq = req as AuthenticatedRequest;
   try {
-    const success = await userService.deleteUser(authReq.userId);
+    if (!isAuthenticatedRequest(req)) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const success = await userService.deleteUser(req.userId);
 
     if (!success) {
       return res.status(404).json({ error: 'User not found' });
