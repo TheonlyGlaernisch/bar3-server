@@ -46,7 +46,8 @@ export async function loginWithPwApiKey(pwApiKey: string): Promise<LoginResult> 
     { upsert: true, new: true, setDefaultsOnInsert: true }
   ).exec();
 
-  const token = crypto.randomBytes(32).toString('base64url');
+  // Use hex to stay compatible with older Node/types used in deployments.
+  const token = crypto.randomBytes(32).toString('hex');
   const tokenHash = sha256Hex(token);
 
   await PwSession.create({

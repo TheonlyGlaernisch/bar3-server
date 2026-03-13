@@ -7,6 +7,7 @@ import v2AuthRouter from './api/routers/v2/auth';
 import v2TemplatesRouter from './api/routers/v2/templates';
 import v2AutomationRouter from './api/routers/v2/automation';
 import v2AnalyticsRouter from './api/routers/v2/analytics';
+import v2SendTestRouter from './api/routers/v2/sendTest';
 import { startAutomationLoop } from './services/v2AutomationRunner';
 
 mongoose.set('strictQuery', true);
@@ -51,6 +52,7 @@ mountLegacyUiAndApi(app);
 app.use('/api/v2/auth', v2AuthRouter);
 app.use('/api/v2/templates', v2TemplatesRouter);
 app.use('/api/v2/automation', v2AutomationRouter);
+app.use('/api/v2/send-test', v2SendTestRouter);
 app.use('/analytics/v2', v2AnalyticsRouter);
 
 // Health check endpoint

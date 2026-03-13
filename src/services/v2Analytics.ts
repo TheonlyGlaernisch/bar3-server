@@ -1,9 +1,10 @@
 import crypto from 'crypto';
 import { parse } from 'node-html-parser';
-import { MessageView, TrackingLink } from '../interfaces/schemas/AnalyticsSchemas';
+import { ITrackingLink, MessageView, TrackingLink } from '../interfaces/schemas/AnalyticsSchemas';
 
 function makeId(bytes = 8): string {
-  return crypto.randomBytes(bytes).toString('base64url');
+  // Hex is URL-safe and supported in older Node typings.
+  return crypto.randomBytes(bytes).toString('hex');
 }
 
 export async function getOrCreateTrackingLink(accountId: string, url: string): Promise<string> {
@@ -16,7 +17,7 @@ export async function getOrCreateTrackingLink(accountId: string, url: string): P
   return shortId;
 }
 
-export async function recordClick(shortId: string): Promise<TrackingLink | null> {
+export async function recordClick(shortId: string): Promise<ITrackingLink | null> {
   return TrackingLink.findOneAndUpdate(
     { shortId },
     { $inc: { clickCount: 1 }, $push: { clickHistory: new Date() } },
