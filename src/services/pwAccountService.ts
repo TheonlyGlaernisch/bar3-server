@@ -18,7 +18,20 @@ async function validatePoliticsAndWarApiKey(apiKey: string): Promise<boolean> {
     .then();
 
   const body = res?.body as any;
-  return !!body?.api_request?.success;
+  const req = body?.api_request;
+
+  // P&W returns `success=false` with `error_msg="No results to display."` when the key is valid
+  // but the filter returns no nations. Treat that as a valid key.
+  if (req?.success === false && req?.error_msg === 'No results to display.') {
+    return true;
+  }
+
+  // Some responses may still include api_key_details even when success=false.
+  if (req?.api_key_details?.api_key && typeof req.api_key_details.api_key === 'string') {
+    return req.api_key_details.api_key.trim() === apiKey.trim();
+  }
+
+  return !!req?.success;
 }
 
 export type LoginResult = {
