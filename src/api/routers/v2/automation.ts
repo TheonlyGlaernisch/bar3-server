@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { requirePwSession } from '../../middleware/pwAuth';
 import { AutomationSettings } from '../../../interfaces/schemas/AutomationSettingsSchema';
+import AutomationState from '../../../models/AutomationState';
 
 const router = express.Router();
 router.use(express.json());
