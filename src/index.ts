@@ -21,8 +21,12 @@ app.use(express.static(join(__dirname, '../..', 'public')));
 
 // CORS (if needed for frontend communication)
 app.use((req: Request, res: Response, next: NextFunction) => {
+  // For production you might want to restrict this to your actual frontend domain
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, x-api-key');
+  res.header(
+    'Access-Control-Allow-Headers',
+    'Origin, X-Requested-With, Content-Type, Accept, x-api-key, Authorization'
+  );
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') {
     res.sendStatus(200);
@@ -30,7 +34,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     next();
   }
 });
-
 // MongoDB Connection
 const connectDB = async () => {
   try {
