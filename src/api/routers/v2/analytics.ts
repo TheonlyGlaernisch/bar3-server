@@ -34,22 +34,27 @@ router.get('/p/:messageId', async (req: Request, res: Response) => {
 // Authenticated analytics summary
 router.get('/me', requirePwSession, async (req: Request, res: Response) => {
   const accountId = req.pwAccount!._id;
-  const links = await TrackingLink.find({ accountId }).sort({ updatedAt: -1 }).limit(200).exec();
-  const views = await MessageView.find({ accountId }).sort({ updatedAt: -1 }).limit(200).exec();
-  return res.status(200).json({
-    links: links.map(l => ({
-      shortId: l.shortId,
-      url: l.url,
-      clickCount: l.clickCount,
-      lastClickedAt: l.clickHistory.length ? l.clickHistory[l.clickHistory.length - 1] : null,
-    })),
-    messages: views.map(v => ({
-      messageId: v.messageId,
-      viewCount: v.viewCount,
-      lastViewedAt: v.viewHistory.length ? v.viewHistory[v.viewHistory.length - 1] : null,
-    })),
-  });
+  try {
+    const links = await TrackingLink.find({ accountId }).sort({ updatedAt: -1 }).limit(200).exec();
+    const views = await MessageView.find({ accountId }).sort({ updatedAt: -1 }).limit(200).exec();
+    return res.status(200).json({
+      links: links.map((l: typeof TrackingLink.prototype) => ({
+        shortId: l.shortId,
+        url: l.url,
+        clickCount: l.clickCount,
+        lastClickedAt: l.clickHistory && l.clickHistory.length ? l.clickHistory[l.clickHistory.length - 1] : null,
+      })),
+      messages: views.map((v: typeof MessageView.prototype) => ({
+        messageId: v.messageId,
+        viewCount: v.viewCount,
+        lastViewedAt: v.viewHistory && v.viewHistory.length ? v.viewHistory[v.viewHistory.length - 1] : null,
+      })),
+    });
+  } catch (e) {
+    console.error('Analytics /me error:', e);
+    // Always respond with something
+    return res.status(200).json({ links: [], messages: [] });
+  }
 });
 
 export default router;
-
