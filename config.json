@@ -1,0 +1,14 @@
+{
+  "messageSubject": "My subject",
+  "messageHTML": "<div>message</div>",
+  "advancedRaw": {
+    "html": "<div>...</div>",
+    "css": ".someclass { ... }"
+  },
+  "currentEditor": 0,
+  "apiKey": "",
+  "analyticsEnabled": false,
+  "updatePeriodMilliseconds": 180000,
+  "queueTime": 300000,
+  "configVersion": "v1.1"
+}
