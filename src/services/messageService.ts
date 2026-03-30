@@ -6,7 +6,8 @@ import { IMessage } from '../interfaces/schemas/MessageSchema'; // Interface (na
 export interface MessageResponse {
   id: string;
   userId: string;
-  content: string;
+  bodyHtml: string;
+  bodyCss: string;
   metadata?: Record<string, any>;
   createdAt: Date;
   updatedAt: Date;
