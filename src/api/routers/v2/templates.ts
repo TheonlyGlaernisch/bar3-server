@@ -27,20 +27,22 @@ router.post('/', requirePwSession, async (req: Request, res: Response) => {
   const bodyText = typeof req.body?.bodyText === 'string' ? req.body.bodyText : undefined;
   const bodyHtml = typeof req.body?.bodyHtml === 'string' ? req.body.bodyHtml : undefined;
 
-  if (!subject.trim()) return res.status(400).json({ error: 'subject required' });
-  if (!bodyText?.trim() && !bodyHtml?.trim()) return res.status(400).json({ error: 'bodyText or bodyHtml required' });
+const bodyHtml = typeof req.body?.bodyHtml === 'string' ? req.body.bodyHtml : '';
+const bodyCss = typeof req.body?.bodyCss === 'string' ? req.body.bodyCss : '';
 
   // Try to find the latest (by updatedAt) and update it, else create new
   let template = await MessageTemplate.findOneAndUpdate(
-    { accountId },
-    {
-      subject: subject.trim(),
-      bodyText: bodyText?.toString(),
-      bodyHtml: bodyHtml?.toString(),
-      updatedAt: new Date(),
-    },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
-  ).exec();
+  { accountId },
+  {
+    subject: subject.trim(),
+    bodyHtml,
+    bodyCss,                // <-- add here
+    bodyText,
+    bodyHtml,               // (for PUT)
+    updatedAt: new Date(),
+  },
+  { new: true, upsert: true, setDefaultsOnInsert: true }
+).exec();
 
   return res.status(200).json({
     id: template._id.toString(),
