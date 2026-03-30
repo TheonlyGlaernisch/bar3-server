@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { User, IUser } from '../interfaces/schemas/UserSchema';
-import { Message } from '../interfaces/schemas/MessageSchema';
+import * as MessageSchemaModule from '../interfaces/schemas/MessageSchema';
 
 export interface UserResponse {
   userId: string;
@@ -87,7 +87,12 @@ export async function getAllUsers(): Promise<UserResponse[]> {
 }
 
 export async function deleteUser(userId: string): Promise<boolean> {
-  await Message.deleteMany({ userId });
+  const MessageModel = (MessageSchemaModule as any).Message;
+  if (!MessageModel || typeof MessageModel.deleteMany !== 'function') {
+    throw new Error('Message model is not available from MessageSchema module');
+  }
+
+  await MessageModel.deleteMany({ userId });
 
   const result = await User.findByIdAndDelete(userId);
 
