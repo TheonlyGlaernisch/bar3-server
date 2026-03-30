@@ -8,7 +8,8 @@ import messages from '../services/messages';
 import dLog from '../utilities/debugLog';
 import * as userService from '../services/userService';
 import * as messageService from '../services/messageService';
-import analyticsRouter from './routers/v2/analytics';
+import analyticsRouterV2 from './routers/v2/analytics';
+import analyticsRouter from './routers/analytics';
 
 const legacyApiRouter = Router();
 const app = express();
@@ -166,7 +167,7 @@ legacyApiRouter.post('/setConfig', async (req, res) => {
   dLog('Updated config: ' + JSON.stringify(req.body.config));
   return res.status(204).end();
 });
-app.use('/api/v2/analytics', analyticsRouter);
+app.use('/api/v2/analytics', analyticsRouterV2);
 
 legacyApiRouter.post('/setApplicationState', async (req, res) => {
   const apiKey = requireApiKey(req, res);
