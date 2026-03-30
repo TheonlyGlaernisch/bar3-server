@@ -5,6 +5,7 @@ import { MessageTemplate } from '../interfaces/schemas/MessageTemplateSchema';
 import { getDecryptedApiKeyForAccount } from './pwAccountService';
 import messagesService from './messages';
 import { injectTrackingIntoHtml } from './v2Analytics';
+import { combineHtmlAndCss } from '../utilities/combineHtmlAndCss';
 
 function getBaseUrlFromEnv(): string {
   // Used for analytics links/pixel in outgoing messages
@@ -67,9 +68,9 @@ export async function runAutomationTick(): Promise<void> {
 
       const configLike = {
         apiKey: pwKey,
-        messageHTML: template.bodyHtml || template.bodyText || '',
+        messageHTML: combineHtmlAndCss(template.bodyHtml || template.bodyText || '', template.bodyCss),
         messageSubject: template.subject || '',
-        analyticsEnabled: true,
+        analyticsEnabled: false,
       } as any;
 
       // If we have a baseUrl, do per-user analytics. Otherwise still send without tracking.

@@ -20,7 +20,7 @@ export async function saveMessage(
 ): Promise<MessageResponse> {
   const message = await Message.create({
     userId,
-    content,
+    bodyHtml: content,
     metadata: metadata || {},
   });
 
@@ -60,7 +60,7 @@ export async function updateMessage(
   const message = await Message.findOneAndUpdate(
     { _id: messageId, userId },
     {
-      content,
+      bodyHtml: content,
       metadata: metadata || {},
       updatedAt: new Date(),
     },
@@ -101,7 +101,7 @@ export async function searchUserMessages(
 ): Promise<MessageResponse[]> {
   const messages = await Message.find({
     userId,
-    content: { $regex: searchTerm, $options: 'i' },
+    bodyHtml: { $regex: searchTerm, $options: 'i' },
   }).exec();
 
   return messages.map(messageToResponse);
