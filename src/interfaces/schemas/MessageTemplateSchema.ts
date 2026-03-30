@@ -6,6 +6,7 @@ export interface IMessageTemplate extends Document {
   subject: string;
   bodyText?: string;
   bodyHtml?: string;
+  bodyCss?: string; // <-- Add this line for CSS support!
   createdAt: Date;
   updatedAt: Date;
 }
@@ -16,6 +17,7 @@ const messageTemplateSchema = new Schema<IMessageTemplate>(
     subject: { type: String, required: true, default: '' },
     bodyText: { type: String, required: false },
     bodyHtml: { type: String, required: false },
+    bodyCss: { type: String, default: '' }, // <-- add this
   },
   {
     timestamps: true,
@@ -26,4 +28,3 @@ const messageTemplateSchema = new Schema<IMessageTemplate>(
 messageTemplateSchema.index({ accountId: 1, updatedAt: -1 });
 
 export const MessageTemplate = mongoose.model<IMessageTemplate>('MessageTemplate', messageTemplateSchema);
-
