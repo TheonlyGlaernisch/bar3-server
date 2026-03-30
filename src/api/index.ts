@@ -138,9 +138,9 @@ legacyApiRouter.get('/config', async (req, res) => {
   const userId = await getValidatedUserIdFromApiKey(apiKey);
   if (userId) {
     const userMessages = await messageService.getUserMessages(userId).catch(() => []);
-    if (userMessages.length > 0 && typeof userMessages[0].content === 'string') {
-      scopedConfig.messageHTML = userMessages[0].content;
-    }
+  if (userMessages.length > 0 && typeof userMessages[0].bodyHtml === 'string') {
+  scopedConfig.messageHTML = userMessages[0].bodyHtml;
+}
   }
 
   dLog(`Sending config for legacy session ${apiKey}`);
