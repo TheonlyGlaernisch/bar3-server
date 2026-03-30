@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import express from 'express';
+import { Express } from 'express'
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { Config, Message } from '../interfaces/types';
@@ -177,7 +178,7 @@ legacyApiRouter.post('/setApplicationState', async (req, res) => {
   return res.status(204).end();
 });
 
-export const mountLegacyUiAndApi = (app: Express) => {
+export const mountLegacyUiAndApi = (app: Express ) => {
   app.use('/api', legacyApiRouter);
   app.use('/analytics', analyticsRouter);
 
