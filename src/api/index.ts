@@ -8,8 +8,10 @@ import dLog from '../utilities/debugLog';
 import analyticsRouter from './routers/analytics';
 import * as userService from '../services/userService';
 import * as messageService from '../services/messageService';
+import analyticsRouter from './routers/v2/analytics';
 
 const legacyApiRouter = Router();
+app.use('/api/v2/analytics', analyticsRouter);
 
 const ensureSession = (apiKey: string) => {
   if (!state.userKeys[apiKey]) {
@@ -164,6 +166,7 @@ legacyApiRouter.post('/setConfig', async (req, res) => {
   dLog('Updated config: ' + JSON.stringify(req.body.config));
   return res.status(204).end();
 });
+app.use('/api/v2/analytics', analyticsRouter);
 
 legacyApiRouter.post('/setApplicationState', async (req, res) => {
   const apiKey = requireApiKey(req, res);
