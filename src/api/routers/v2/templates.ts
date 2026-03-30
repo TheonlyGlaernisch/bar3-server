@@ -12,8 +12,9 @@ router.get('/', requirePwSession, async (req: Request, res: Response) => {
     templates.map(t => ({
       id: t._id.toString(),
       subject: t.subject,
-      bodyText: t.bodyText,
       bodyHtml: t.bodyHtml,
+      bodyCss: t.bodyCss,          // <-- Add this line!
+      bodyText: t.bodyText,        // (if you still support bodyText)
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
     }))
