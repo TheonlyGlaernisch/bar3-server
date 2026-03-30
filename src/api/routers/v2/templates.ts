@@ -26,6 +26,7 @@ router.post('/', requirePwSession, async (req: Request, res: Response) => {
   const subject = typeof req.body?.subject === 'string' ? req.body.subject : '';
   const bodyText = typeof req.body?.bodyText === 'string' ? req.body.bodyText : undefined;
   const bodyHtml = typeof req.body?.bodyHtml === 'string' ? req.body.bodyHtml : undefined;
+  const bodyCss = typeof req.body?.bodyCss === 'string' ? req.body.bodyCss : undefined;
 
 
 
