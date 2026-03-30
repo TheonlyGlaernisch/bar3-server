@@ -18,6 +18,8 @@ import { MessageTemplate } from '../interfaces/schemas/MessageTemplateSchema';
 const legacyApiRouter = Router();
 const app = express();
 
+const ADVANCED_EDITOR = 1;
+
 const ensureSession = (apiKey: string) => {
   if (!state.userKeys[apiKey]) {
     const sessionConfig = new Config();
@@ -155,7 +157,7 @@ legacyApiRouter.get('/config', async (req, res) => {
       if (template.bodyCss) {
         scopedConfig.advancedRaw.css = template.bodyCss;
         // bodyCss being present means the advanced editor was used.
-        scopedConfig.currentEditor = 1;
+        scopedConfig.currentEditor = ADVANCED_EDITOR;
       }
     }
   }
