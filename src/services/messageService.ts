@@ -107,9 +107,11 @@ function messageToResponse(message: IMessage): MessageResponse {
   return {
     id: message._id.toString(),
     userId: message.userId.toString(),
-    content: message.content,
+    bodyHtml: message.bodyHtml,         // <-- changed from content
+    bodyCss: message.bodyCss || '',     // <-- add this line if you want to expose CSS
     metadata: message.metadata,
     createdAt: message.createdAt,
     updatedAt: message.updatedAt,
   };
+}
 }
