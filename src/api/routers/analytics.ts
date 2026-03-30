@@ -36,7 +36,7 @@ router.post('/newCampaign', celebrate({
     return;
   });
 
-  res.status(200).json({ success: true }).end();
+  res.status(200).json({ success: true });
 });
 
 export default router;
