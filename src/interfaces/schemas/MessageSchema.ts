@@ -3,7 +3,8 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface IMessage extends Document {
   _id: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
-  content: string;
+  bodyHtml: string;
+  bodyCss?: string;
   metadata?: Record<string, any>;
   createdAt: Date;
   updatedAt: Date;
@@ -17,12 +18,8 @@ const messageSchema = new Schema<IMessage>(
       required: true,
       index: true,
     },
-    content: {
-      type: String,
-      required: true,
-    },
-    bodyHtml: { type: String, required: true },  // HTML markup only, no <style>
-    bodyCss: { type: String, default: '' },      // CSS only, no <style> tags
+    bodyHtml: { type: String, required: true },
+    bodyCss: { type: String, default: '' },
     metadata: {
       type: Schema.Types.Mixed,
       default: {},
@@ -36,4 +33,4 @@ const messageSchema = new Schema<IMessage>(
 
 messageSchema.index({ userId: 1, createdAt: -1 });
 
-export const Message = mongoose.model<IMessage>('Message', messageSchema);
+export default mongoose.model<IMessage>('Message', messageSchema);
