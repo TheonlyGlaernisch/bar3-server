@@ -70,7 +70,7 @@ export async function runAutomationTick(): Promise<void> {
         apiKey: pwKey,
         messageHTML: combineHtmlAndCss(template.bodyHtml || template.bodyText || '', template.bodyCss),
         messageSubject: template.subject || '',
-        analyticsEnabled: true,
+        analyticsEnabled: false,
       } as any;
 
       // If we have a baseUrl, do per-user analytics. Otherwise still send without tracking.

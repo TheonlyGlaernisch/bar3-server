@@ -13,8 +13,9 @@ router.get('/', requirePwSession, async (req: Request, res: Response) => {
       id: t._id.toString(),
       subject: t.subject,
       bodyHtml: t.bodyHtml,
-      bodyCss: t.bodyCss,          // <-- Add this line!
-      bodyText: t.bodyText,        // (if you still support bodyText)
+      bodyCss: t.bodyCss,
+      bodyText: t.bodyText,
+      currentEditor: t.currentEditor ?? 0,
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
     }))
@@ -27,21 +28,21 @@ router.post('/', requirePwSession, async (req: Request, res: Response) => {
   const bodyText = typeof req.body?.bodyText === 'string' ? req.body.bodyText : undefined;
   const bodyHtml = typeof req.body?.bodyHtml === 'string' ? req.body.bodyHtml : undefined;
   const bodyCss = typeof req.body?.bodyCss === 'string' ? req.body.bodyCss : undefined;
-
-
+  const currentEditor = typeof req.body?.currentEditor === 'number' ? req.body.currentEditor : undefined;
 
   // Try to find the latest (by updatedAt) and update it, else create new
- let template = await MessageTemplate.findOneAndUpdate(
-  { accountId },
-  {
-    subject: subject.trim(),
-    bodyHtml,
-    bodyCss,                // <-- add here
-    bodyText,
-    updatedAt: new Date(),
-  },
-  { new: true, upsert: true, setDefaultsOnInsert: true }
-).exec();
+  let template = await MessageTemplate.findOneAndUpdate(
+    { accountId },
+    {
+      subject: subject.trim(),
+      bodyHtml,
+      bodyCss,
+      bodyText,
+      ...(currentEditor !== undefined ? { currentEditor } : {}),
+      updatedAt: new Date(),
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  ).exec();
 
   return res.status(200).json({
     id: template._id.toString(),
@@ -49,6 +50,7 @@ router.post('/', requirePwSession, async (req: Request, res: Response) => {
     bodyText: template.bodyText,
     bodyHtml: template.bodyHtml,
     bodyCss: template.bodyCss || '',
+    currentEditor: template.currentEditor ?? 0,
     createdAt: template.createdAt,
     updatedAt: template.updatedAt,
   });
@@ -61,10 +63,19 @@ router.put('/:id', requirePwSession, async (req: Request, res: Response) => {
   const subject = typeof req.body?.subject === 'string' ? req.body.subject : '';
   const bodyText = typeof req.body?.bodyText === 'string' ? req.body.bodyText : undefined;
   const bodyHtml = typeof req.body?.bodyHtml === 'string' ? req.body.bodyHtml : undefined;
+  const bodyCss = typeof req.body?.bodyCss === 'string' ? req.body.bodyCss : undefined;
+  const currentEditor = typeof req.body?.currentEditor === 'number' ? req.body.currentEditor : undefined;
 
   const updated = await MessageTemplate.findOneAndUpdate(
     { _id: id, accountId },
-    { subject: subject.trim(), bodyText, bodyHtml, updatedAt: new Date() },
+    {
+      subject: subject.trim(),
+      bodyText,
+      bodyHtml,
+      bodyCss,
+      ...(currentEditor !== undefined ? { currentEditor } : {}),
+      updatedAt: new Date(),
+    },
     { new: true }
   ).exec();
 
@@ -76,6 +87,7 @@ router.put('/:id', requirePwSession, async (req: Request, res: Response) => {
     bodyText: updated.bodyText,
     bodyHtml: updated.bodyHtml,
     bodyCss: updated.bodyCss || '',
+    currentEditor: updated.currentEditor ?? 0,
     createdAt: updated.createdAt,
     updatedAt: updated.updatedAt,
   });

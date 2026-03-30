@@ -6,7 +6,8 @@ export interface IMessageTemplate extends Document {
   subject: string;
   bodyText?: string;
   bodyHtml?: string;
-  bodyCss?: string; // <-- Add this line for CSS support!
+  bodyCss?: string;
+  currentEditor?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -17,7 +18,8 @@ const messageTemplateSchema = new Schema<IMessageTemplate>(
     subject: { type: String, required: true, default: '' },
     bodyText: { type: String, required: false },
     bodyHtml: { type: String, required: false },
-    bodyCss: { type: String, default: '' }, // <-- add this
+    bodyCss: { type: String, default: '' },
+    currentEditor: { type: Number, default: 0 },
   },
   {
     timestamps: true,

@@ -31,7 +31,7 @@ router.post('/', requirePwSession, async (req: Request, res: Response) => {
     apiKey: pwKey,
     messageHTML: combineHtmlAndCss(template.bodyHtml || template.bodyText || '', template.bodyCss),
     messageSubject: template.subject || '',
-    analyticsEnabled: true,
+    analyticsEnabled: false,
   } as any;
 
   if (baseUrl) {
