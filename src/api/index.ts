@@ -1,5 +1,6 @@
-import {  Express , Request, Response } from 'express';
+import {  Router , Request, Response } from 'express';
 import express from 'express';
+import { Express } from 'express';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { Config, Message } from '../interfaces/types';
