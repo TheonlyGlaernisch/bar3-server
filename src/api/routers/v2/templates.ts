@@ -49,6 +49,7 @@ router.post('/', requirePwSession, async (req: Request, res: Response) => {
     bodyHtml: template.bodyHtml,
     createdAt: template.createdAt,
     updatedAt: template.updatedAt,
+    bodyCss: template.bodyCss || '',
   });
 });
 
