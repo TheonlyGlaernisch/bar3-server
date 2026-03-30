@@ -21,6 +21,8 @@ const messageSchema = new Schema<IMessage>(
       type: String,
       required: true,
     },
+    bodyHtml: { type: String, required: true },  // HTML markup only, no <style>
+    bodyCss: { type: String, default: '' },      // CSS only, no <style> tags
     metadata: {
       type: Schema.Types.Mixed,
       default: {},
