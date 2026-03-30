@@ -56,8 +56,8 @@ app.use('/api/v2/templates', v2TemplatesRouter);
 app.use('/api/v2/automation', v2AutomationRouter);
 app.use('/api/v2/send-test', v2SendTestRouter);
 app.use('/api/v2/analytics', v2AnalyticsRouter);
+// Mount legacy UI + wildcard route after API routes so it doesn't intercept /api/v2/* GET requests.
 mountLegacyUiAndApi(app);
-
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
@@ -89,3 +89,4 @@ process.on('SIGINT', async () => {
   await mongoose.connection.close();
   process.exit(0);
 });
+
