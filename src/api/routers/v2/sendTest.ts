@@ -4,6 +4,7 @@ import { MessageTemplate } from '../../../interfaces/schemas/MessageTemplateSche
 import { getDecryptedApiKeyForAccount } from '../../../services/pwAccountService';
 import messagesService from '../../../services/messages';
 import { injectTrackingIntoHtml } from '../../../services/v2Analytics';
+import { combineHtmlAndCss } from '../../../utilities/combineHtmlAndCss';
 
 const router = express.Router();
 router.use(express.json());
@@ -28,7 +29,7 @@ router.post('/', requirePwSession, async (req: Request, res: Response) => {
 
   const configLike = {
     apiKey: pwKey,
-    messageHTML: template.bodyHtml || template.bodyText || '',
+    messageHTML: combineHtmlAndCss(template.bodyHtml || template.bodyText || '', template.bodyCss),
     messageSubject: template.subject || '',
     analyticsEnabled: true,
   } as any;
