@@ -117,4 +117,3 @@ function messageToResponse(message: IMessage): MessageResponse {
     updatedAt: message.updatedAt,
   };
 }
-}
