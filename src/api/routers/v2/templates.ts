@@ -31,7 +31,7 @@ const bodyHtml = typeof req.body?.bodyHtml === 'string' ? req.body.bodyHtml : ''
 const bodyCss = typeof req.body?.bodyCss === 'string' ? req.body.bodyCss : '';
 
   // Try to find the latest (by updatedAt) and update it, else create new
-  let template = await MessageTemplate.findOneAndUpdate(
+ let template = await MessageTemplate.findOneAndUpdate(
   { accountId },
   {
     subject: subject.trim(),
