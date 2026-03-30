@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { User, IUser } from '../interfaces/schemas/UserSchema';
+import Message from '../interfaces/schemas/MessageSchema';
 
 export interface UserResponse {
   userId: string;
