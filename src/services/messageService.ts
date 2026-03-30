@@ -1,6 +1,5 @@
 import { Message, IMessage } from '../interfaces/schemas/MessageSchema';
-import Message from '../interfaces/schemas/MessageSchema'; // <-- default export: the model
-import { IMessage } from '../interfaces/schemas/MessageSchema'; // <-- named export: the type/interface
+
 
 
 export interface MessageResponse {
