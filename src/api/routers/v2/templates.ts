@@ -47,9 +47,9 @@ router.post('/', requirePwSession, async (req: Request, res: Response) => {
     subject: template.subject,
     bodyText: template.bodyText,
     bodyHtml: template.bodyHtml,
+    bodyCss: template.bodyCss || '',
     createdAt: template.createdAt,
     updatedAt: template.updatedAt,
-    bodyCss: template.bodyCss || '',
   });
 });
 
@@ -74,6 +74,7 @@ router.put('/:id', requirePwSession, async (req: Request, res: Response) => {
     subject: updated.subject,
     bodyText: updated.bodyText,
     bodyHtml: updated.bodyHtml,
+    bodyCss: updated.bodyCss || '',
     createdAt: updated.createdAt,
     updatedAt: updated.updatedAt,
   });
