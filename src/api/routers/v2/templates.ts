@@ -27,8 +27,7 @@ router.post('/', requirePwSession, async (req: Request, res: Response) => {
   const bodyText = typeof req.body?.bodyText === 'string' ? req.body.bodyText : undefined;
   const bodyHtml = typeof req.body?.bodyHtml === 'string' ? req.body.bodyHtml : undefined;
 
-const bodyHtml = typeof req.body?.bodyHtml === 'string' ? req.body.bodyHtml : '';
-const bodyCss = typeof req.body?.bodyCss === 'string' ? req.body.bodyCss : '';
+
 
   // Try to find the latest (by updatedAt) and update it, else create new
  let template = await MessageTemplate.findOneAndUpdate(
