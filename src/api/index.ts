@@ -11,6 +11,9 @@ import * as userService from '../services/userService';
 import * as messageService from '../services/messageService';
 import analyticsRouterV2 from './routers/v2/analytics';
 import analyticsRouter from './routers/analytics';
+import { sha256Hex } from '../utilities/cryptoBox';
+import { PwAccount } from '../interfaces/schemas/PwAccountSchema';
+import { MessageTemplate } from '../interfaces/schemas/MessageTemplateSchema';
 
 const legacyApiRouter = Router();
 const app = express();
@@ -134,13 +137,27 @@ legacyApiRouter.get('/config', async (req, res) => {
 
   const scopedConfig = getScopedConfig(apiKey);
 
-  // Load latest editor message from Mongo per user (if this api key belongs to a User account).
-  const userId = await getValidatedUserIdFromApiKey(apiKey);
-  if (userId) {
-    const userMessages = await messageService.getUserMessages(userId).catch(() => []);
-  if (userMessages.length > 0 && typeof userMessages[0].bodyHtml === 'string') {
-  scopedConfig.messageHTML = userMessages[0].bodyHtml;
-}
+  // Load latest template from MongoDB for the PwAccount that owns this API key.
+  // This is the canonical store for subject, bodyHtml, bodyCss saved via the v2 editor.
+  const pwApiKeyHash = sha256Hex(apiKey);
+  const pwAccount = await PwAccount.findOne({ pwApiKeyHash }).exec().catch(() => null);
+  if (pwAccount) {
+    const template = await MessageTemplate.findOne({ accountId: pwAccount._id })
+      .sort({ updatedAt: -1 })
+      .exec()
+      .catch(() => null);
+    if (template) {
+      if (template.subject) scopedConfig.messageSubject = template.subject;
+      if (template.bodyHtml) {
+        scopedConfig.messageHTML = template.bodyHtml;
+        scopedConfig.advancedRaw.html = template.bodyHtml;
+      }
+      if (template.bodyCss) {
+        scopedConfig.advancedRaw.css = template.bodyCss;
+        // bodyCss being present means the advanced editor was used.
+        scopedConfig.currentEditor = 1;
+      }
+    }
   }
 
   dLog(`Sending config for legacy session ${apiKey}`);
@@ -168,7 +185,6 @@ legacyApiRouter.post('/setConfig', async (req, res) => {
   dLog('Updated config: ' + JSON.stringify(req.body.config));
   return res.status(204).end();
 });
-app.use('/api/v2/analytics', analyticsRouterV2);
 
 legacyApiRouter.post('/setApplicationState', async (req, res) => {
   const apiKey = requireApiKey(req, res);
@@ -181,6 +197,9 @@ legacyApiRouter.post('/setApplicationState', async (req, res) => {
 export const mountLegacyUiAndApi = (app: Express ) => {
   app.use('/api', legacyApiRouter);
   app.use('/analytics', analyticsRouter);
+  // Compatibility alias: the client calls /analytics/v2/me but the canonical path is
+  // /api/v2/analytics/me (mounted in src/index.ts). Mount it here too so both work.
+  app.use('/analytics/v2', analyticsRouterV2);
 
   const indexPath = join(__dirname, '../../..', 'public/index.html');
 

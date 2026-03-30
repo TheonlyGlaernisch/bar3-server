@@ -20,7 +20,7 @@ export async function saveMessage(
 ): Promise<MessageResponse> {
   const message = await Message.create({
     userId,
-    content,
+    bodyHtml: content,
     metadata: metadata || {},
   });
 
