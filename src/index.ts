@@ -51,12 +51,13 @@ connectDB();
 
 // Routes
 app.use('/api', accountRoutes);
-mountLegacyUiAndApi(app);
 app.use('/api/v2/auth', v2AuthRouter);
 app.use('/api/v2/templates', v2TemplatesRouter);
 app.use('/api/v2/automation', v2AutomationRouter);
 app.use('/api/v2/send-test', v2SendTestRouter);
 app.use('/api/v2/analytics', v2AnalyticsRouter);
+mountLegacyUiAndApi(app);
+
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
