@@ -38,7 +38,6 @@ const bodyCss = typeof req.body?.bodyCss === 'string' ? req.body.bodyCss : '';
     bodyHtml,
     bodyCss,                // <-- add here
     bodyText,
-    bodyHtml,               // (for PUT)
     updatedAt: new Date(),
   },
   { new: true, upsert: true, setDefaultsOnInsert: true }
