@@ -28,6 +28,7 @@ const ensureSession = (apiKey: string) => {
       sentMessages: [],
       config: sessionConfig,
       applicationOn: false,
+      apiDetails: { used: 0, max: 0 },
     };
   }
 
@@ -124,10 +125,7 @@ legacyApiRouter.get('/appData', async (req, res) => {
     applicationOn: scopedSession.applicationOn,
     isSetup: state.isSetup,
     sentMessages: getScopedSentMessages(apiKey),
-    apiDetails: {
-      used: state.requestsUsed,
-      max: state.requestsMax,
-    },
+    apiDetails: scopedSession.apiDetails ?? { used: state.requestsUsed, max: state.requestsMax },
     serverVersion: state.serverVersion,
   });
 });

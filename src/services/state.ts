@@ -9,6 +9,7 @@ interface UserKeyState {
   sentMessages: unknown[];
   config: Config;
   applicationOn: boolean; // per-user runtime toggle (NOT persisted)
+  apiDetails: { used: number; max: number };
 }
 
 /**
