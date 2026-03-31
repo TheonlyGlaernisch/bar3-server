@@ -1,11 +1,12 @@
 import superagent from 'superagent';
-import { NationAPICall } from '../interfaces/types';
+import { Config, NationAPICall } from '../interfaces/types';
 import { AutomationSettings } from '../interfaces/schemas/AutomationSettingsSchema';
 import { MessageTemplate } from '../interfaces/schemas/MessageTemplateSchema';
 import { getDecryptedApiKeyForAccount } from './pwAccountService';
 import messagesService from './messages';
 import { injectTrackingIntoHtml } from './v2Analytics';
 import { combineHtmlAndCss } from '../utilities/combineHtmlAndCss';
+import state from './state';
 
 function getBaseUrlFromEnv(): string {
   // Used for analytics links/pixel in outgoing messages
@@ -86,7 +87,15 @@ export async function runAutomationTick(): Promise<void> {
         configLike.messageHTML = injected;
       }
 
-      await messagesService.sendMessageWithConfig(configLike, nation).catch(() => undefined);
+      const sentMessage = await messagesService.sendMessageWithConfig(configLike, nation).catch(() => undefined);
+      if (sentMessage) {
+        if (!state.userKeys[pwKey]) {
+          const sessionConfig = new Config();
+          sessionConfig.apiKey = pwKey;
+          state.userKeys[pwKey] = { sentMessages: [], config: sessionConfig, applicationOn: false, apiDetails: { used: 0, max: 0 } };
+        }
+        state.userKeys[pwKey].sentMessages.push(sentMessage);
+      }
       seen.add(nation.nation_id);
       sentThisTick++;
     }
