@@ -191,16 +191,18 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       return res.redirect('/auth/login?error=auth_failed');
     }
 
-    // Ask flame_bot whether this Discord user holds the bar3_server role.
+    // Ask flame_bot whether this Discord user holds bar3 roles.
     // flame_bot keeps guild membership up-to-date via the Discord gateway, so
     // we do not need the guilds.members.read scope on the user's token.
     const rolesRes = await superagent
       .get(`${FLAME_BOT_API_URL}/api/roles/${discordId}`)
       .set('X-API-Key', FLAME_BOT_API_KEY);
 
-    const hasServerRole: boolean = rolesRes.body?.roles?.bar3_server === true;
+    const flameBotRoles = rolesRes.body?.roles ?? {};
+    const hasAccess: boolean =
+      flameBotRoles.bar3_client === true || flameBotRoles.bar3_server === true;
 
-    if (!hasServerRole) {
+    if (!hasAccess) {
       return res.send(ACCESS_DENIED_HTML);
     }
 
@@ -208,6 +210,11 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
     req.session.discordAuthenticated = true;
     req.session.discordUserId = discordId;
     req.session.discordUsername = discordUsername;
+    req.session.discordRoles = {
+      verified: flameBotRoles.verified === true,
+      bar3_client: flameBotRoles.bar3_client === true,
+      bar3_server: flameBotRoles.bar3_server === true,
+    };
 
     const returnTo =
       typeof req.session.discordReturnTo === 'string' ? req.session.discordReturnTo : '/';
