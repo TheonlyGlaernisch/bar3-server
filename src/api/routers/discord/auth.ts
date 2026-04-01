@@ -199,8 +199,10 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       .set('X-API-Key', FLAME_BOT_API_KEY);
 
     const flameBotRoles = rolesRes.body?.roles ?? {};
-    const hasAccess: boolean =
-      flameBotRoles.bar3_client === true || flameBotRoles.bar3_server === true;
+
+    // Full access: bar3_client role required.
+    // TODO: add a second condition here for the limited-access role when ready.
+    const hasAccess: boolean = flameBotRoles.bar3_client === true;
 
     if (!hasAccess) {
       return res.send(ACCESS_DENIED_HTML);
