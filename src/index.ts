@@ -1,6 +1,7 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { join } from 'path';
+import session from 'express-session';
 import accountRoutes from './api/AccountRoutes';
 import { mountLegacyUiAndApi } from './api';
 import v2AuthRouter from './api/routers/v2/auth';
@@ -8,15 +9,49 @@ import v2TemplatesRouter from './api/routers/v2/templates';
 import v2AutomationRouter from './api/routers/v2/automation';
 import v2AnalyticsRouter from './api/routers/v2/analytics';
 import v2SendTestRouter from './api/routers/v2/sendTest';
+import discordAuthRouter from './api/routers/discord/auth';
+import { requireDiscordAuth } from './api/middleware/discordAuth';
 import { startAutomationLoop } from './services/v2AutomationRunner';
+// Extend express-session SessionData with Discord fields
+import './interfaces/session';
 
 mongoose.set('strictQuery', true);
 
 const app: Express = express();
 
+// Session middleware — must come before any route that reads req.session
+const sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret || sessionSecret === 'bar3-change-me-in-production') {
+  console.warn(
+    '[Warning] SESSION_SECRET is not set or is using the default value. ' +
+    'Set a strong random secret in your .env file before deploying to production.'
+  );
+}
+app.use(
+  session({
+    secret: sessionSecret || 'bar3-change-me-in-production',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      // Use secure cookies in production (requires HTTPS)
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    },
+  })
+);
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Discord OAuth routes — must be mounted BEFORE the auth guard so the login
+// page and callback are reachable without an existing session.
+app.use('/auth', discordAuthRouter);
+
+// Discord authentication guard — protects every subsequent route and static file.
+app.use(requireDiscordAuth);
+
 app.use(express.static(join(__dirname, '../..', 'public')));
 
 // CORS (if needed for frontend communication)
