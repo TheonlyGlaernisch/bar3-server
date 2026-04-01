@@ -8,8 +8,11 @@ const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || '';
 const DISCORD_REDIRECT_URI =
   process.env.DISCORD_REDIRECT_URI || 'http://localhost:3000/auth/discord/callback';
 
-const REQUIRED_GUILD_ID = '1358837641973338334';
-const REQUIRED_ROLE_ID = '1361784636119978086';
+// flame_bot HTTP API — used to check whether the user holds the bar3_server role.
+// Set FLAME_BOT_API_URL to the base URL of the running flame_bot (e.g. http://localhost:8080)
+// and FLAME_BOT_API_KEY to the same secret configured in flame_bot's API_KEY env var.
+const FLAME_BOT_API_URL = (process.env.FLAME_BOT_API_URL || 'http://localhost:8080').replace(/\/$/, '');
+const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || '';
 
 const LOGIN_PAGE_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -148,7 +151,8 @@ router.get('/discord', (req: Request, res: Response) => {
     client_id: DISCORD_CLIENT_ID,
     redirect_uri: DISCORD_REDIRECT_URI,
     response_type: 'code',
-    scope: 'identify guilds.members.read',
+    // Only 'identify' is needed — role verification is delegated to flame_bot.
+    scope: 'identify',
   });
   return res.redirect(`https://discord.com/oauth2/authorize?${params.toString()}`);
 });
@@ -175,25 +179,35 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
 
     const accessToken: string = tokenRes.body.access_token;
 
-    // Fetch the user's member record for the required guild
-    // scope: guilds.members.read allows GET /users/@me/guilds/{guild.id}/member
-    const memberRes = await superagent
-      .get(`https://discord.com/api/users/@me/guilds/${REQUIRED_GUILD_ID}/member`)
+    // Fetch the user's own Discord profile (requires only 'identify' scope).
+    const meRes = await superagent
+      .get('https://discord.com/api/users/@me')
       .set('Authorization', `Bearer ${accessToken}`);
 
-    const member = memberRes.body;
-    const roles: string[] = Array.isArray(member.roles) ? member.roles : [];
-    const hasRole = roles.includes(REQUIRED_ROLE_ID);
+    const discordId: string = meRes.body.id;
+    const discordUsername: string = meRes.body.username;
 
-    if (!hasRole) {
+    if (!discordId) {
+      return res.redirect('/auth/login?error=auth_failed');
+    }
+
+    // Ask flame_bot whether this Discord user holds the bar3_server role.
+    // flame_bot keeps guild membership up-to-date via the Discord gateway, so
+    // we do not need the guilds.members.read scope on the user's token.
+    const rolesRes = await superagent
+      .get(`${FLAME_BOT_API_URL}/api/roles/${discordId}`)
+      .set('X-API-Key', FLAME_BOT_API_KEY);
+
+    const hasServerRole: boolean = rolesRes.body?.roles?.bar3_server === true;
+
+    if (!hasServerRole) {
       return res.send(ACCESS_DENIED_HTML);
     }
 
     // Mark this browser session as Discord-authenticated
     req.session.discordAuthenticated = true;
-    req.session.discordUserId = typeof member.user?.id === 'string' ? member.user.id : undefined;
-    req.session.discordUsername =
-      typeof member.user?.username === 'string' ? member.user.username : undefined;
+    req.session.discordUserId = discordId;
+    req.session.discordUsername = discordUsername;
 
     const returnTo =
       typeof req.session.discordReturnTo === 'string' ? req.session.discordReturnTo : '/';
