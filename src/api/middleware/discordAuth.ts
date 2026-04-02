@@ -7,6 +7,7 @@ const PUBLIC_PREFIXES = [
   '/auth/session',
   '/auth/logout',
   '/health',
+  '/favicon.ico',
 ];
 
 /**
