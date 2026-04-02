@@ -10,6 +10,7 @@ import v2AutomationRouter from './api/routers/v2/automation';
 import v2AnalyticsRouter from './api/routers/v2/analytics';
 import v2SendTestRouter from './api/routers/v2/sendTest';
 import discordAuthRouter from './api/routers/discord/auth';
+import rolesRouter from './api/routers/discord/roles';
 import { requireDiscordAuth } from './api/middleware/discordAuth';
 import { startAutomationLoop } from './services/v2AutomationRunner';
 // Extend express-session SessionData with Discord fields
@@ -36,6 +37,9 @@ app.use(
       httpOnly: true,
       // Use secure cookies in production (requires HTTPS)
       secure: process.env.NODE_ENV === 'production',
+      // 'none' is required for cross-origin requests (client on a different
+      // domain) to send the session cookie.  Must be paired with secure:true.
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     },
   })
@@ -44,6 +48,45 @@ app.use(
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// CORS — must come before the Discord auth guard so that ALL responses
+// (including 401s) carry the correct Access-Control-* headers and preflight
+// OPTIONS requests are never blocked by the auth middleware.
+//
+// Set CLIENT_ORIGIN in your environment to a comma-separated list of allowed
+// frontend origins, e.g. "https://bar3-client.onrender.com".
+// If CLIENT_ORIGIN is unset the middleware falls back to wildcard (*) which is
+// suitable for local development but incompatible with credentialled requests.
+const ALLOWED_ORIGINS: Set<string> = new Set(
+  (process.env.CLIENT_ORIGIN || '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean)
+);
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    // Reflect the exact origin back and allow credentials (cookies/auth headers)
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Vary', 'Origin');
+  } else if (ALLOWED_ORIGINS.size === 0) {
+    // No explicit allow-list configured — permissive fallback for development.
+    // Note: wildcard is incompatible with credentials; fine for non-credentialled dev use.
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  res.header(
+    'Access-Control-Allow-Headers',
+    'Origin, X-Requested-With, Content-Type, Accept, x-api-key, Authorization'
+  );
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+    return;
+  }
+  next();
+});
 
 // Discord OAuth routes — must be mounted BEFORE the auth guard so the login
 // page and callback are reachable without an existing session.
@@ -54,21 +97,6 @@ app.use(requireDiscordAuth);
 
 app.use(express.static(join(__dirname, '../..', 'public')));
 
-// CORS (if needed for frontend communication)
-app.use((req: Request, res: Response, next: NextFunction) => {
-  // For production you might want to restrict this to your actual frontend domain
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header(
-    'Access-Control-Allow-Headers',
-    'Origin, X-Requested-With, Content-Type, Accept, x-api-key, Authorization'
-  );
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(200);
-  } else {
-    next();
-  }
-});
 // MongoDB Connection
 const connectDB = async () => {
   try {
@@ -86,6 +114,7 @@ connectDB();
 
 // Routes
 app.use('/api', accountRoutes);
+app.use('/api/roles', rolesRouter);
 app.use('/api/v2/auth', v2AuthRouter);
 app.use('/api/v2/templates', v2TemplatesRouter);
 app.use('/api/v2/automation', v2AutomationRouter);
