@@ -14,6 +14,20 @@ const DISCORD_REDIRECT_URI =
 const FLAME_BOT_API_URL = (process.env.FLAME_BOT_API_URL || 'http://localhost:8080').replace(/\/$/, '');
 const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || '';
 
+// After a successful OAuth2 login the browser is redirected here.
+// Set CLIENT_APP_URL to the root URL of the bar3-client SPA
+// (e.g. https://bar3-client.onrender.com).  When unset, the server redirects
+// to the relative path saved in the session (discordReturnTo) or '/' as a fallback.
+const CLIENT_APP_URL = (process.env.CLIENT_APP_URL || '').replace(/\/$/, '');
+
+/**
+ * Return true only for safe relative-path redirects (no protocol or host).
+ * Rejects protocol-relative URLs (//evil.com) and absolute URLs.
+ */
+function isSafeReturnTo(url: unknown): url is string {
+  return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
+}
+
 const LOGIN_PAGE_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -218,15 +232,55 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       bar3_server: flameBotRoles.bar3_server === true,
     };
 
-    const returnTo =
-      typeof req.session.discordReturnTo === 'string' ? req.session.discordReturnTo : '/';
+    // Determine where to send the browser after a successful login.
+    // Priority: CLIENT_APP_URL env var > validated discordReturnTo > '/'
+    const savedReturnTo = req.session.discordReturnTo;
     delete req.session.discordReturnTo;
 
-    return res.redirect(returnTo);
+    let destination: string;
+    if (CLIENT_APP_URL) {
+      destination = CLIENT_APP_URL;
+    } else if (isSafeReturnTo(savedReturnTo)) {
+      destination = savedReturnTo;
+    } else {
+      destination = '/';
+    }
+
+    return res.redirect(destination);
   } catch (err: any) {
     console.error('[Discord Auth] OAuth callback error:', err?.response?.body || err?.message || err);
     return res.redirect('/auth/login?error=auth_failed');
   }
+});
+
+/** GET /auth/session — lightweight session introspection for SPA router guards.
+ *  Always returns 200; authenticated=false when no valid session exists. */
+router.get('/session', (req: Request, res: Response) => {
+  if (req.session?.discordAuthenticated === true) {
+    return res.json({
+      authenticated: true,
+      user: {
+        id: req.session.discordUserId,
+        username: req.session.discordUsername,
+      },
+      roles: req.session.discordRoles,
+    });
+  }
+  return res.json({ authenticated: false });
+});
+
+/** POST /auth/logout — destroy the server-side session and clear the cookie. */
+router.post('/logout', (req: Request, res: Response) => {
+  req.session.destroy((err) => {
+    if (err) {
+      console.error('[Discord Auth] Session destroy error:', err);
+      return res.status(500).json({ error: 'Failed to destroy session' });
+    }
+    // 'connect.sid' is the default express-session cookie name.
+    // If you set the `name` option in the session middleware, change this to match.
+    res.clearCookie('connect.sid');
+    return res.json({ ok: true });
+  });
 });
 
 export default router;
