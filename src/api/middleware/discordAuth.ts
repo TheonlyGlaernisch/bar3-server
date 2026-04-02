@@ -4,6 +4,8 @@ import { Request, Response, NextFunction } from 'express';
 const PUBLIC_PREFIXES = [
   '/auth/login',
   '/auth/discord',
+  '/auth/session',
+  '/auth/logout',
   '/health',
 ];
 
