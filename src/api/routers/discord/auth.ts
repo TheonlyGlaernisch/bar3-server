@@ -246,7 +246,16 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       destination = '/';
     }
 
-    return res.redirect(destination);
+    // Save session before redirecting so the cookie is persisted before the
+    // browser follows the redirect and the next request arrives.
+    req.session.save((saveErr) => {
+      if (saveErr) {
+        console.error('[Discord Auth] Session save error:', saveErr);
+        return res.redirect('/auth/login?error=auth_failed');
+      }
+      return res.redirect(destination);
+    });
+    return;
   } catch (err: any) {
     console.error('[Discord Auth] OAuth callback error:', err?.response?.body || err?.message || err);
     return res.redirect('/auth/login?error=auth_failed');
