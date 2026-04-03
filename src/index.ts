@@ -57,16 +57,24 @@ app.use(express.urlencoded({ extended: true }));
 // (including 401s) carry the correct Access-Control-* headers and preflight
 // OPTIONS requests are never blocked by the auth middleware.
 //
-// Set CLIENT_ORIGIN in your environment to a comma-separated list of allowed
-// frontend origins, e.g. "https://bar3-client.onrender.com".
-// If CLIENT_ORIGIN is unset the middleware falls back to wildcard (*) which is
-// suitable for local development but incompatible with credentialled requests.
+// CLIENT_APP_URL is automatically included as an allowed origin (see below).
+// Set CLIENT_ORIGIN to any additional comma-separated origins that also need
+// credentialled cross-origin access.  If neither is set the middleware falls
+// back to wildcard (*) which is suitable for local development but
+// incompatible with credentialled requests.
 const ALLOWED_ORIGINS: Set<string> = new Set(
   (process.env.CLIENT_ORIGIN || '')
     .split(',')
     .map((o) => o.trim())
     .filter(Boolean)
 );
+// If CLIENT_APP_URL is set, that origin must always be allowed so that the
+// client SPA can make credentialled cross-origin requests (e.g. /auth/session).
+// This means you only need to set CLIENT_APP_URL; setting CLIENT_ORIGIN
+// separately is optional and additive.
+if (CLIENT_APP_URL) {
+  ALLOWED_ORIGINS.add(CLIENT_APP_URL);
+}
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const origin = req.headers.origin;
