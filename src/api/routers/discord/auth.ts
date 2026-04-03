@@ -163,6 +163,13 @@ router.get('/discord', (req: Request, res: Response) => {
   if (!DISCORD_CLIENT_ID) {
     return res.status(500).send('DISCORD_CLIENT_ID is not configured on this server.');
   }
+  // If the SPA passes a ?returnTo= param (its current client-side route), save it in
+  // the session so the callback can append it to CLIENT_APP_URL after a successful login.
+  // This lets the SPA navigate the user back to where they were before the auth wall.
+  const returnTo = typeof req.query.returnTo === 'string' ? req.query.returnTo : null;
+  if (returnTo && isSafeReturnTo(returnTo)) {
+    req.session.discordReturnTo = returnTo;
+  }
   const params = new URLSearchParams({
     client_id: DISCORD_CLIENT_ID,
     redirect_uri: DISCORD_REDIRECT_URI,
@@ -243,7 +250,12 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
 
     let destination: string;
     if (CLIENT_APP_URL) {
-      destination = CLIENT_APP_URL;
+      // When redirecting to the client SPA, append the saved returnTo path as a
+      // query param so the SPA can navigate the user back to their original route.
+      // The SPA should read window.location.search for ?returnTo= on startup.
+      destination = isSafeReturnTo(savedReturnTo)
+        ? `${CLIENT_APP_URL}?returnTo=${encodeURIComponent(savedReturnTo)}`
+        : CLIENT_APP_URL;
     } else if (isSafeReturnTo(savedReturnTo)) {
       destination = savedReturnTo;
     } else {
