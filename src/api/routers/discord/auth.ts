@@ -287,7 +287,9 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
 });
 
 /** GET /auth/session — lightweight session introspection for SPA router guards.
- *  Always returns 200; authenticated=false when no valid session exists. */
+ *  Returns 200 with authenticated=true when a valid session exists.
+ *  Returns 401 with authenticated=false when no valid session exists so that
+ *  clients can use response.ok to gate access without parsing the body. */
 router.get('/session', (req: Request, res: Response) => {
   if (req.session?.discordAuthenticated === true) {
     return res.json({
@@ -299,7 +301,7 @@ router.get('/session', (req: Request, res: Response) => {
       roles: req.session.discordRoles,
     });
   }
-  return res.json({ authenticated: false });
+  return res.status(401).json({ authenticated: false });
 });
 
 /** POST /auth/logout — destroy the server-side session and clear the cookie. */
