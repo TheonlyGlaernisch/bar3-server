@@ -150,6 +150,8 @@ router.get('/login', (req: Request, res: Response) => {
     errorBlock = '<div class="error">Discord authentication failed. Please try again.</div>';
   } else if (error === 'no_code') {
     errorBlock = '<div class="error">No authorization code received from Discord. Please try again.</div>';
+  } else if (error === 'role_check_failed') {
+    errorBlock = '<div class="error">Role verification is temporarily unavailable. Please try again in a moment.</div>';
   }
   const html = LOGIN_PAGE_HTML.replace('{{ERROR_BLOCK}}', errorBlock);
   res.setHeader('Content-Type', 'text/html');
@@ -208,11 +210,22 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
     // Ask flame_bot whether this Discord user holds bar3 roles.
     // flame_bot keeps guild membership up-to-date via the Discord gateway, so
     // we do not need the guilds.members.read scope on the user's token.
-    const rolesRes = await superagent
-      .get(`${FLAME_BOT_API_URL}/api/roles/${discordId}`)
-      .set('X-API-Key', FLAME_BOT_API_KEY);
-
-    const flameBotRoles = rolesRes.body?.roles ?? {};
+    // Timeouts: 10 s to receive the first response byte, 15 s total deadline,
+    // so the callback never hangs if flame_bot is temporarily unreachable.
+    let flameBotRoles: Record<string, unknown> = {};
+    try {
+      const rolesRes = await superagent
+        .get(`${FLAME_BOT_API_URL}/api/roles/${discordId}`)
+        .set('X-API-Key', FLAME_BOT_API_KEY)
+        .timeout({ response: 10000, deadline: 15000 });
+      flameBotRoles = (rolesRes.body?.roles ?? {}) as Record<string, unknown>;
+    } catch (roleErr: unknown) {
+      console.error(
+        '[Discord Auth] flame_bot role check failed:',
+        (roleErr as any)?.response?.body || (roleErr as any)?.message || roleErr,
+      );
+      return res.redirect('/auth/login?error=role_check_failed');
+    }
 
     // Grant access to users holding either bar3_client or bar3_server role.
     const hasAccess: boolean =
@@ -222,20 +235,11 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       return res.send(ACCESS_DENIED_HTML);
     }
 
-    // Mark this browser session as Discord-authenticated
-    req.session.discordAuthenticated = true;
-    req.session.discordUserId = discordId;
-    req.session.discordUsername = discordUsername;
-    req.session.discordRoles = {
-      verified: flameBotRoles.verified === true,
-      bar3_client: flameBotRoles.bar3_client === true,
-      bar3_server: flameBotRoles.bar3_server === true,
-    };
-
     // Determine where to send the browser after a successful login.
     // Priority: CLIENT_APP_URL env var > validated discordReturnTo > '/'
+    // Read discordReturnTo into a local variable now, before session
+    // regeneration destroys the old session data.
     const savedReturnTo = req.session.discordReturnTo;
-    delete req.session.discordReturnTo;
 
     let destination: string;
     if (CLIENT_APP_URL) {
@@ -246,18 +250,38 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       destination = '/';
     }
 
-    // Save session before redirecting so the cookie is persisted before the
-    // browser follows the redirect and the next request arrives.
-    req.session.save((saveErr) => {
-      if (saveErr) {
-        console.error('[Discord Auth] Session save error:', saveErr);
+    // Regenerate the session before writing auth data to prevent session
+    // fixation attacks and to ensure a fresh session is always issued after
+    // a successful login.
+    req.session.regenerate((regenErr) => {
+      if (regenErr) {
+        console.error('[Discord Auth] Session regeneration error:', regenErr);
         return res.redirect('/auth/login?error=auth_failed');
       }
-      return res.redirect(destination);
+
+      // Mark this browser session as Discord-authenticated
+      req.session.discordAuthenticated = true;
+      req.session.discordUserId = discordId;
+      req.session.discordUsername = discordUsername;
+      req.session.discordRoles = {
+        verified: flameBotRoles.verified === true,
+        bar3_client: flameBotRoles.bar3_client === true,
+        bar3_server: flameBotRoles.bar3_server === true,
+      };
+
+      // Save session before redirecting so the cookie is persisted before the
+      // browser follows the redirect and the next request arrives.
+      req.session.save((saveErr) => {
+        if (saveErr) {
+          console.error('[Discord Auth] Session save error:', saveErr);
+          return res.redirect('/auth/login?error=auth_failed');
+        }
+        return res.redirect(destination);
+      });
     });
     return;
-  } catch (err: any) {
-    console.error('[Discord Auth] OAuth callback error:', err?.response?.body || err?.message || err);
+  } catch (err: unknown) {
+    console.error('[Discord Auth] OAuth callback error:', (err as any)?.response?.body || (err as any)?.message || err);
     return res.redirect('/auth/login?error=auth_failed');
   }
 });
