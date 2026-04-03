@@ -8,11 +8,15 @@ const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || '';
 const DISCORD_REDIRECT_URI =
   process.env.DISCORD_REDIRECT_URI || 'http://localhost:3000/auth/discord/callback';
 
-// flame_bot HTTP API — used to check whether the user holds the bar3_server role.
-// Set FLAME_BOT_API_URL to the base URL of the running flame_bot (e.g. http://localhost:8080)
-// and FLAME_BOT_API_KEY to the same secret configured in flame_bot's API_KEY env var.
-const FLAME_BOT_API_URL = (process.env.FLAME_BOT_API_URL || 'http://localhost:8080').replace(/\/$/, '');
-const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || '';
+// Direct Discord guild-member role check.
+// DISCORD_BOT_TOKEN  — bot token from the Discord Developer Portal (Bot tab).
+// DISCORD_GUILD_ID   — ID of the Discord server to check membership in.
+// BAR3_CLIENT_ROLE_ID — ID of the Discord role that grants client access (e.g. "member").
+// BAR3_SERVER_ROLE_ID — (optional) ID of a second Discord role that also grants access.
+const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || '';
+const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID || '';
+const BAR3_CLIENT_ROLE_ID = process.env.BAR3_CLIENT_ROLE_ID || '';
+const BAR3_SERVER_ROLE_ID = process.env.BAR3_SERVER_ROLE_ID || '';
 
 // After a successful OAuth2 login the browser is redirected here.
 // Set CLIENT_APP_URL to the root URL of the bar3-client SPA
@@ -214,31 +218,31 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       return res.redirect('/auth/login?error=auth_failed');
     }
 
-    // Ask flame_bot whether this Discord user holds bar3 roles.
-    // flame_bot keeps guild membership up-to-date via the Discord gateway, so
-    // we do not need the guilds.members.read scope on the user's token.
-    // Timeouts: 10 s to receive the first response byte, 15 s total deadline,
-    // so the callback never hangs if flame_bot is temporarily unreachable.
-    let flameBotRoles: Record<string, unknown> = {};
+    // Check whether this Discord user holds an authorised role in the configured guild.
+    // Uses the bot token to call GET /guilds/{guild_id}/members/{user_id} so that no
+    // additional OAuth scope is required from the user.
+    let memberRoles: string[] = [];
     try {
-      const rolesRes = await superagent
-        .get(`${FLAME_BOT_API_URL}/api/roles/${discordId}`)
-        .set('X-API-Key', FLAME_BOT_API_KEY)
+      if (!DISCORD_BOT_TOKEN || !DISCORD_GUILD_ID) {
+        throw new Error('DISCORD_BOT_TOKEN or DISCORD_GUILD_ID is not configured');
+      }
+      const memberRes = await superagent
+        .get(`https://discord.com/api/guilds/${DISCORD_GUILD_ID}/members/${discordId}`)
+        .set('Authorization', `Bot ${DISCORD_BOT_TOKEN}`)
         .timeout({ response: 10000, deadline: 15000 });
-      flameBotRoles = (rolesRes.body?.roles ?? {}) as Record<string, unknown>;
+      memberRoles = (memberRes.body?.roles ?? []) as string[];
     } catch (roleErr: unknown) {
       console.error(
-        '[Discord Auth] flame_bot role check failed:',
+        '[Discord Auth] Guild member role check failed:',
         (roleErr as any)?.response?.body || (roleErr as any)?.message || roleErr,
       );
       return res.redirect('/auth/login?error=role_check_failed');
     }
 
-    // Grant access to users holding verified, bar3_client, or bar3_server role.
+    // Grant access when the user holds BAR3_CLIENT_ROLE_ID or BAR3_SERVER_ROLE_ID.
     const hasAccess: boolean =
-      flameBotRoles.verified === true ||
-      flameBotRoles.bar3_client === true ||
-      flameBotRoles.bar3_server === true;
+      (BAR3_CLIENT_ROLE_ID !== '' && memberRoles.includes(BAR3_CLIENT_ROLE_ID)) ||
+      (BAR3_SERVER_ROLE_ID !== '' && memberRoles.includes(BAR3_SERVER_ROLE_ID));
 
     if (!hasAccess) {
       return res.send(ACCESS_DENIED_HTML);
@@ -278,9 +282,9 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       req.session.discordUserId = discordId;
       req.session.discordUsername = discordUsername;
       req.session.discordRoles = {
-        verified: flameBotRoles.verified === true,
-        bar3_client: flameBotRoles.bar3_client === true,
-        bar3_server: flameBotRoles.bar3_server === true,
+        verified: false,
+        bar3_client: BAR3_CLIENT_ROLE_ID !== '' && memberRoles.includes(BAR3_CLIENT_ROLE_ID),
+        bar3_server: BAR3_SERVER_ROLE_ID !== '' && memberRoles.includes(BAR3_SERVER_ROLE_ID),
       };
 
       // Save session before redirecting so the cookie is persisted before the
