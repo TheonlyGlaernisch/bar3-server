@@ -234,9 +234,11 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       return res.redirect('/auth/login?error=role_check_failed');
     }
 
-    // Grant access to users holding either bar3_client or bar3_server role.
+    // Grant access to users holding verified, bar3_client, or bar3_server role.
     const hasAccess: boolean =
-      flameBotRoles.bar3_client === true || flameBotRoles.bar3_server === true;
+      flameBotRoles.verified === true ||
+      flameBotRoles.bar3_client === true ||
+      flameBotRoles.bar3_server === true;
 
     if (!hasAccess) {
       return res.send(ACCESS_DENIED_HTML);
