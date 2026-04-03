@@ -17,6 +17,7 @@
   "author": "bsnk-dev",
   "license": "MIT",
   "dependencies": {
+    "@types/express": "^4.17.11",
     "celebrate": "^14.0.0",
     "chalk": "^4.1.0",
     "cors": "^2.8.5",
@@ -35,7 +36,6 @@
   },
   "devDependencies": {
     "@types/cors": "^2.8.9",
-    "@types/express": "^4.17.11",
     "@types/express-session": "^1.18.2",
     "@types/nedb": "^1.8.11",
     "@types/superagent": "^4.1.10",
