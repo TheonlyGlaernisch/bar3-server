@@ -88,6 +88,9 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+// Suppress browser favicon 404s — there is no icon file to serve.
+app.get('/favicon.ico', (_req: Request, res: Response) => res.status(204).end());
+
 // Discord OAuth routes — must be mounted BEFORE the auth guard so the login
 // page and callback are reachable without an existing session.
 app.use('/auth', discordAuthRouter);
