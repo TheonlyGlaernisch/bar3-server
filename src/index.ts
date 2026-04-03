@@ -20,6 +20,10 @@ mongoose.set('strictQuery', true);
 
 const app: Express = express();
 
+// Trust the first hop from a reverse proxy (Render, Heroku, nginx, etc.) so
+// that req.protocol is 'https' and secure session cookies are sent correctly.
+app.set('trust proxy', 1);
+
 // Session middleware — must come before any route that reads req.session
 const sessionSecret = process.env.SESSION_SECRET;
 if (!sessionSecret || sessionSecret === 'bar3-change-me-in-production') {
