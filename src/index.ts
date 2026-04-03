@@ -62,6 +62,7 @@ app.use(express.urlencoded({ extended: true }));
 // credentialled cross-origin access.  If neither is set the middleware falls
 // back to wildcard (*) which is suitable for local development but
 // incompatible with credentialled requests.
+const CLIENT_APP_URL = process.env.CLIENT_APP_URL;
 const ALLOWED_ORIGINS: Set<string> = new Set(
   (process.env.CLIENT_ORIGIN || '')
     .split(',')
