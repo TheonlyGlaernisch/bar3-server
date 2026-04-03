@@ -71,8 +71,11 @@ class StateHandler {
     try {
       const rawConfig = readFileSync(join(this.workingDir, './state.json')).toString();
       this.isApplicationOn = JSON.parse(rawConfig).isApplicationOn;
-    } catch {
-      console.error('Can\'t load state!');
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.error('Can\'t load state!');
+      }
+      // ENOENT on first run is expected — state.json is created on first save.
     }
   }
 
@@ -84,8 +87,11 @@ class StateHandler {
       const rawConfig = readFileSync(join(this.workingDir, './config.json')).toString();
       this.config = JSON.parse(rawConfig);
       this.isSetup = true;
-    } catch {
-      console.error('Can\'t load raw config!');
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.error('Can\'t load raw config!');
+      }
+      // ENOENT on first run is expected — config.json is created on first save.
       this.isSetup = false;
     }
   }
