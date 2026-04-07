@@ -106,7 +106,7 @@ app.get('/favicon.ico', (_req: Request, res: Response) => res.status(204).end())
 
 // Liveness and health endpoints must remain public for platform uptime checks.
 app.get('/ping', (_req: Request, res: Response) => {
-  res.status(200).json({ status: 'ok' });
+  res.status(200).json({ status: 'ok', sigma: true, skibidi: 'toilet' });
 });
 
 app.get('/health', (_req: Request, res: Response) => {
