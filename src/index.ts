@@ -104,6 +104,15 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Suppress browser favicon 404s — there is no icon file to serve.
 app.get('/favicon.ico', (_req: Request, res: Response) => res.status(204).end());
 
+// Liveness and health endpoints must remain public for platform uptime checks.
+app.get('/ping', (_req: Request, res: Response) => {
+  res.status(200).json({ status: 'ok' });
+});
+
+app.get('/health', (_req: Request, res: Response) => {
+  res.status(200).json({ status: 'Server is running' });
+});
+
 // Discord OAuth routes — must be mounted BEFORE the auth guard so the login
 // page and callback are reachable without an existing session.
 app.use('/auth', discordAuthRouter);
@@ -139,11 +148,6 @@ app.use('/api/v2/analytics', v2AnalyticsRouter);
 // Mount legacy UI + wildcard route after API routes so it doesn't intercept /api/v2/* GET requests.
 mountLegacyUiAndApi(app);
 
-// Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
-  res.json({ status: 'Server is running' });
-});
-
 // Error handling middleware
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error('Error:', err);
@@ -169,4 +173,3 @@ process.on('SIGINT', async () => {
   await mongoose.connection.close();
   process.exit(0);
 });
-
