@@ -32,29 +32,197 @@ interface CandidateFilters {
   maxCities?: number;
 }
 
-async function getActiveUnalliedCandidates(
+interface GraphqlNationLike {
+  nation_id?: number;
+  id?: number;
+  nation?: string;
+  nation_name?: string;
+  leader?: string;
+  leader_name?: string;
+  cities?: number;
+  num_cities?: number;
+  alliance_id?: number;
+  alliance_position?: number;
+  last_active?: string;
+  discord?: string;
+}
+
+function parseOptionalNumber(value: unknown): number | undefined {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function toV2NationShape(node: GraphqlNationLike): NationAPICall.Nation | null {
+  const nationId = parseOptionalNumber(node.nation_id ?? node.id);
+  const nationName = typeof node.nation === 'string' ? node.nation : node.nation_name;
+  const leaderName = typeof node.leader === 'string' ? node.leader : node.leader_name;
+  const cities = parseOptionalNumber(node.cities ?? node.num_cities);
+  const allianceId = parseOptionalNumber(node.alliance_id) ?? 0;
+  const alliancePosition = parseOptionalNumber(node.alliance_position) ?? 0;
+  const lastActive = typeof node.last_active === 'string' ? node.last_active : '';
+
+  if (!nationId || !nationName || !leaderName || typeof cities !== 'number') return null;
+
+  return {
+    nation_id: nationId,
+    nation: nationName,
+    leader: leaderName,
+    continent: 0,
+    war_policy: 0,
+    domestic_policy: 0,
+    color: 0,
+    alliance_id: allianceId,
+    alliance: '',
+    alliance_position: alliancePosition,
+    cities,
+    offensive_wars: 0,
+    defensive_wars: 0,
+    score: 0,
+    v_mode: false,
+    v_mode_turns: 0,
+    beige_turns: 0,
+    last_active: lastActive,
+    discord: typeof node.discord === 'string' ? node.discord : '',
+    founded: '',
+    soldiers: 0,
+    tanks: 0,
+    aircraft: 0,
+    ships: 0,
+    missiles: 0,
+    nukes: 0,
+  };
+}
+
+async function getActiveUnalliedCandidatesGraphql(
   apiKey: string,
   filters?: CandidateFilters
 ): Promise<NationAPICall.Nation[] | null> {
-  const nationLookupApiKey = (process.env.NATION_CHECK_API_KEY || '').trim() || apiKey;
-  const response = await superagent
-    .get(`https://politicsandwar.com/api/v2/nations/${nationLookupApiKey}/&alliance_position=0`)
-    .accept('json')
-    .ok(() => true)
-    .catch(() => undefined);
+  const endpoint = (process.env.PW_GRAPHQL_URL || 'https://api.politicsandwar.com/graphql').trim();
+  const queries = [
+    `
+      query Nations {
+        nations(alliance_position: 0) {
+          id
+          nation_name
+          leader_name
+          alliance_id
+          alliance_position
+          num_cities
+          last_active
+          discord
+        }
+      }
+    `,
+    `
+      query Nations {
+        nations {
+          id
+          nation_name
+          leader_name
+          alliance_id
+          alliance_position
+          num_cities
+          last_active
+          discord
+        }
+      }
+    `,
+    `
+      query Nations {
+        nations(first: 500, page: 1) {
+          data {
+            id
+            nation_name
+            leader_name
+            alliance_id
+            alliance_position
+            num_cities
+            last_active
+            discord
+          }
+        }
+      }
+    `,
+    `
+      query Nations {
+        nations(first: 500) {
+          data {
+            id
+            nation_name
+            leader_name
+            alliance_id
+            alliance_position
+            num_cities
+            last_active
+            discord
+          }
+        }
+      }
+    `,
+    `
+      query Nations {
+        nations(alliancePosition: 0) {
+          id
+          nation_name
+          leader_name
+          alliance_id
+          alliance_position
+          num_cities
+          last_active
+          discord
+        }
+      }
+    `,
+  ];
 
-  const body = response?.body as NationAPICall.RootObject | undefined;
-  if (!body?.api_request) return null;
-  if (!body.api_request.success) {
-    // "No results to display." should be treated as an empty candidate list, not a hard failure.
-    if (body.api_request.error_msg === 'No results to display.') return [];
-    return null;
+  const authModes: Array<(req: superagent.SuperAgentRequest) => superagent.SuperAgentRequest> = [
+    (req) => req.query({api_key: apiKey}),
+    (req) => req.set('Authorization', `Bearer ${apiKey}`),
+    (req) => req.set('X-Api-Key', apiKey),
+  ];
+
+  let nations: NationAPICall.Nation[] | null = null;
+  for (const query of queries) {
+    for (const applyAuth of authModes) {
+      const request = applyAuth(superagent.post(endpoint))
+        .accept('json')
+        .send({query})
+        .ok(() => true);
+
+      const response = await request.catch(() => undefined);
+      const body = response?.body as {
+        data?: { nations?: GraphqlNationLike[] };
+        errors?: Array<{ message?: string }>;
+      } | undefined;
+
+      if (!body) continue;
+      const nationNodes = Array.isArray((body.data as any)?.nations)
+        ? (body.data as any).nations
+        : Array.isArray((body.data as any)?.nations?.data)
+          ? (body.data as any).nations.data
+          : Array.isArray((body.data as any)?.nations?.edges)
+            ? (body.data as any).nations.edges.map((edge: any) => edge?.node).filter(Boolean)
+            : undefined;
+
+      if (Array.isArray(nationNodes)) {
+        nations = nationNodes
+          .map((node) => toV2NationShape(node))
+          .filter((nation): nation is NationAPICall.Nation => nation !== null);
+        break;
+      }
+    }
+    if (nations) break;
   }
-  if (!Array.isArray(body.data)) return [];
+
+  if (!nations) return null;
 
   const now = Date.now();
   const activeSince = now - (24 * 60 * 60 * 1000);
-  return body.data
+  return nations
     .filter((nation) => nation.alliance_id === 0 || nation.alliance_position === 0)
     .filter((nation) => {
       const ts = parseLastActive(nation.last_active);
@@ -65,6 +233,13 @@ async function getActiveUnalliedCandidates(
       if (typeof filters?.maxCities === 'number' && nation.cities > filters.maxCities) return false;
       return true;
     });
+}
+
+async function getActiveUnalliedCandidates(
+  apiKey: string,
+  filters?: CandidateFilters
+): Promise<NationAPICall.Nation[] | null> {
+  return getActiveUnalliedCandidatesGraphql(apiKey, filters);
 }
 
 // GET automation state
@@ -92,8 +267,8 @@ router.post('/state', requirePwSession, async (req: Request, res: Response) => {
 router.post('/send-active-unallied', requirePwSession, async (req: Request, res: Response) => {
   const accountId = req.pwAccount!._id.toString();
   const dryRun = req.body?.dryRun === true;
-  const minCities = Number.isFinite(Number(req.body?.minCities)) ? Number(req.body.minCities) : undefined;
-  const maxCities = Number.isFinite(Number(req.body?.maxCities)) ? Number(req.body.maxCities) : undefined;
+  const minCities = parseOptionalNumber(req.body?.minCities);
+  const maxCities = parseOptionalNumber(req.body?.maxCities);
 
   if (typeof minCities === 'number' && minCities < 0) {
     return res.status(400).json({ error: 'minCities must be >= 0' });
@@ -195,8 +370,8 @@ router.post('/send-active-unallied-discord', requirePwSession, async (req: Reque
   const accountId = req.pwAccount!._id.toString();
   const dryRun = req.body?.dryRun === true;
   const hasDiscord = req.body?.hasDiscord;
-  const minCities = Number.isFinite(Number(req.body?.minCities)) ? Number(req.body.minCities) : undefined;
-  const maxCities = Number.isFinite(Number(req.body?.maxCities)) ? Number(req.body.maxCities) : undefined;
+  const minCities = parseOptionalNumber(req.body?.minCities);
+  const maxCities = parseOptionalNumber(req.body?.maxCities);
 
   if (typeof hasDiscord !== 'boolean') {
     return res.status(400).json({ error: 'hasDiscord (boolean) is required' });
