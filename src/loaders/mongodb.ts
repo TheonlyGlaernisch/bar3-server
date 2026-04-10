@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import chalk from 'chalk';
+import CampaignAnalyticsModel from '../models/campaignAnalytics';
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://glaernischgaming_db_user:64WKiJPOcvufLvWP@glaernisch.0o1fjdx.mongodb.net/?appName=Glaernisch';
 mongoose.set('strictQuery', true);
@@ -9,6 +10,12 @@ export async function connectMongoDB(): Promise<void> {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     } as any);
+
+    await CampaignAnalyticsModel.syncIndexes();
+    await CampaignAnalyticsModel.updateMany(
+      {createdAt: {$exists: false}},
+      {$set: {createdAt: new Date()}}
+    ).exec();
     
     console.log(chalk.green('✓ MongoDB connected successfully'));
   } catch (error) {
