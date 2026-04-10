@@ -131,11 +131,58 @@ async function getActiveUnalliedCandidatesGraphql(
         }
       }
     `,
+    `
+      query Nations {
+        nations(first: 500, page: 1) {
+          data {
+            id
+            nation_name
+            leader_name
+            alliance_id
+            alliance_position
+            num_cities
+            last_active
+            discord
+          }
+        }
+      }
+    `,
+    `
+      query Nations {
+        nations(first: 500) {
+          data {
+            id
+            nation_name
+            leader_name
+            alliance_id
+            alliance_position
+            num_cities
+            last_active
+            discord
+          }
+        }
+      }
+    `,
+    `
+      query Nations {
+        nations(alliancePosition: 0) {
+          id
+          nation_name
+          leader_name
+          alliance_id
+          alliance_position
+          num_cities
+          last_active
+          discord
+        }
+      }
+    `,
   ];
 
   const authModes: Array<(req: superagent.SuperAgentRequest) => superagent.SuperAgentRequest> = [
     (req) => req.query({api_key: apiKey}),
     (req) => req.set('Authorization', `Bearer ${apiKey}`),
+    (req) => req.set('X-Api-Key', apiKey),
   ];
 
   let nations: NationAPICall.Nation[] | null = null;
@@ -153,8 +200,16 @@ async function getActiveUnalliedCandidatesGraphql(
       } | undefined;
 
       if (!body) continue;
-      if (Array.isArray(body.data?.nations)) {
-        nations = body.data!.nations
+      const nationNodes = Array.isArray((body.data as any)?.nations)
+        ? (body.data as any).nations
+        : Array.isArray((body.data as any)?.nations?.data)
+          ? (body.data as any).nations.data
+          : Array.isArray((body.data as any)?.nations?.edges)
+            ? (body.data as any).nations.edges.map((edge: any) => edge?.node).filter(Boolean)
+            : undefined;
+
+      if (Array.isArray(nationNodes)) {
+        nations = nationNodes
           .map((node) => toV2NationShape(node))
           .filter((nation): nation is NationAPICall.Nation => nation !== null);
         break;
