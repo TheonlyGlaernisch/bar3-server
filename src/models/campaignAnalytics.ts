@@ -3,7 +3,10 @@ import { CampaignAnalytics, Link, Pixel } from '../interfaces/analytics';
 
 type PixelDocument = Pixel;
 type LinkDocument = Link;
-type CampaignAnalyticsDocument = Document & Omit<CampaignAnalytics, '_id'>;
+type CampaignAnalyticsDocument = Document &
+  Omit<CampaignAnalytics, '_id'> & {
+    createdAt: Date;
+  };
 
 const pixelSchema = new Schema<PixelDocument>(
   {
@@ -31,6 +34,7 @@ const campaignAnalyticsSchema = new Schema<CampaignAnalyticsDocument>(
     name: { type: String, required: true, unique: true, index: true },
     sentCount: { type: Number, required: true, default: 0 },
     createdTime: { type: Number, required: true, index: true },
+    createdAt: { type: Date, required: true, default: Date.now, expires: 60 * 60 * 24 * 14 },
     links: { type: [linkSchema], required: true, default: [] },
     messagePixel: { type: pixelSchema, required: true },
   },

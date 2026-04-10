@@ -91,6 +91,7 @@ export declare module NationAPICall {
       v_mode_turns: number;
       beige_turns: number;
       last_active: string;
+      discord?: string;
       founded: string;
       soldiers: number;
       tanks: number;
