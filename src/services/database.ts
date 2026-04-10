@@ -13,10 +13,14 @@ class DatabaseService {
    */
   async saveCampaignAnalytics(analytics: CampaignAnalytics, name: string): Promise<undefined> {
     debugLog(`saving campaign analytics for ${name}`);
+    const createdAt = analytics.createdAt || new Date(analytics.createdTime);
 
     await CampaignAnalyticsModel.findOneAndUpdate(
       {name},
-      analytics,
+      {
+        ...analytics,
+        createdAt,
+      },
       {
         upsert: true,
         new: true,
