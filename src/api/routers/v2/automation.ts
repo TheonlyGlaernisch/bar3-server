@@ -102,45 +102,68 @@ async function getActiveUnalliedCandidatesGraphql(
   filters?: CandidateFilters
 ): Promise<NationAPICall.Nation[] | null> {
   const endpoint = (process.env.PW_GRAPHQL_URL || 'https://api.politicsandwar.com/graphql').trim();
-  const query = `
-    query Nations($minCities: Int, $maxCities: Int) {
-      nations(alliance_position: 0, min_cities: $minCities, max_cities: $maxCities) {
-        id
-        nation_name
-        leader_name
-        alliance_id
-        alliance_position
-        num_cities
-        last_active
-        discord
+  const queries = [
+    `
+      query Nations {
+        nations(alliance_position: 0) {
+          id
+          nation_name
+          leader_name
+          alliance_id
+          alliance_position
+          num_cities
+          last_active
+          discord
+        }
+      }
+    `,
+    `
+      query Nations {
+        nations {
+          id
+          nation_name
+          leader_name
+          alliance_id
+          alliance_position
+          num_cities
+          last_active
+          discord
+        }
+      }
+    `,
+  ];
+
+  const authModes: Array<(req: superagent.SuperAgentRequest) => superagent.SuperAgentRequest> = [
+    (req) => req.query({api_key: apiKey}),
+    (req) => req.set('Authorization', `Bearer ${apiKey}`),
+  ];
+
+  let nations: NationAPICall.Nation[] | null = null;
+  for (const query of queries) {
+    for (const applyAuth of authModes) {
+      const request = applyAuth(superagent.post(endpoint))
+        .accept('json')
+        .send({query})
+        .ok(() => true);
+
+      const response = await request.catch(() => undefined);
+      const body = response?.body as {
+        data?: { nations?: GraphqlNationLike[] };
+        errors?: Array<{ message?: string }>;
+      } | undefined;
+
+      if (!body) continue;
+      if (Array.isArray(body.data?.nations)) {
+        nations = body.data!.nations
+          .map((node) => toV2NationShape(node))
+          .filter((nation): nation is NationAPICall.Nation => nation !== null);
+        break;
       }
     }
-  `;
+    if (nations) break;
+  }
 
-  const response = await superagent
-    .post(`${endpoint}?api_key=${encodeURIComponent(apiKey)}`)
-    .accept('json')
-    .send({
-      query,
-      variables: {
-        minCities: filters?.minCities,
-        maxCities: filters?.maxCities,
-      },
-    })
-    .ok(() => true)
-    .catch(() => undefined);
-
-  const body = response?.body as {
-    data?: { nations?: GraphqlNationLike[] };
-    errors?: Array<{ message?: string }>;
-  } | undefined;
-  if (!body || (Array.isArray(body.errors) && body.errors.length > 0)) return null;
-
-  const nations = Array.isArray(body.data?.nations)
-    ? body.data!.nations
-      .map((node) => toV2NationShape(node))
-      .filter((nation): nation is NationAPICall.Nation => nation !== null)
-    : [];
+  if (!nations) return null;
 
   const now = Date.now();
   const activeSince = now - (24 * 60 * 60 * 1000);
