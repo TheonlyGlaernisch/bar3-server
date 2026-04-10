@@ -2,6 +2,7 @@ export interface CampaignAnalytics {
   sentCount: number;
   name: string;
   createdTime: number;
+  createdAt?: Date;
   links: Link[];
   messagePixel: Pixel;
 }
