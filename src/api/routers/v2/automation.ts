@@ -27,7 +27,15 @@ function hasDiscordValue(value: unknown): boolean {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-async function getActiveUnalliedCandidates(apiKey: string): Promise<NationAPICall.Nation[] | null> {
+interface CandidateFilters {
+  minCities?: number;
+  maxCities?: number;
+}
+
+async function getActiveUnalliedCandidates(
+  apiKey: string,
+  filters?: CandidateFilters
+): Promise<NationAPICall.Nation[] | null> {
   const nationLookupApiKey = (process.env.NATION_CHECK_API_KEY || '').trim() || apiKey;
   const response = await superagent
     .get(`https://politicsandwar.com/api/v2/nations/${nationLookupApiKey}/&alliance_position=0`)
@@ -51,6 +59,11 @@ async function getActiveUnalliedCandidates(apiKey: string): Promise<NationAPICal
     .filter((nation) => {
       const ts = parseLastActive(nation.last_active);
       return Number.isFinite(ts) && ts >= activeSince;
+    })
+    .filter((nation) => {
+      if (typeof filters?.minCities === 'number' && nation.cities < filters.minCities) return false;
+      if (typeof filters?.maxCities === 'number' && nation.cities > filters.maxCities) return false;
+      return true;
     });
 }
 
@@ -79,6 +92,18 @@ router.post('/state', requirePwSession, async (req: Request, res: Response) => {
 router.post('/send-active-unallied', requirePwSession, async (req: Request, res: Response) => {
   const accountId = req.pwAccount!._id.toString();
   const dryRun = req.body?.dryRun === true;
+  const minCities = Number.isFinite(Number(req.body?.minCities)) ? Number(req.body.minCities) : undefined;
+  const maxCities = Number.isFinite(Number(req.body?.maxCities)) ? Number(req.body.maxCities) : undefined;
+
+  if (typeof minCities === 'number' && minCities < 0) {
+    return res.status(400).json({ error: 'minCities must be >= 0' });
+  }
+  if (typeof maxCities === 'number' && maxCities < 0) {
+    return res.status(400).json({ error: 'maxCities must be >= 0' });
+  }
+  if (typeof minCities === 'number' && typeof maxCities === 'number' && minCities > maxCities) {
+    return res.status(400).json({ error: 'minCities cannot be greater than maxCities' });
+  }
 
   const template = await MessageTemplate.findOne({ accountId }).sort({ updatedAt: -1 }).exec();
   if (!template) return res.status(400).json({ error: 'No saved template found for this user' });
@@ -86,7 +111,7 @@ router.post('/send-active-unallied', requirePwSession, async (req: Request, res:
   const pwKey = await getDecryptedApiKeyForAccount(accountId).catch(() => '');
   if (!pwKey) return res.status(500).json({ error: 'Could not decrypt user API key' });
 
-  const candidates = await getActiveUnalliedCandidates(pwKey);
+  const candidates = await getActiveUnalliedCandidates(pwKey, { minCities, maxCities });
   if (!candidates) {
     return res.status(502).json({ error: 'Failed to fetch target nations from Politics & War API' });
   }
@@ -95,12 +120,14 @@ router.post('/send-active-unallied', requirePwSession, async (req: Request, res:
     return res.status(200).json({
       success: true,
       dryRun: true,
+      filters: { minCities, maxCities },
       totalCandidates: candidates.length,
       preview: candidates.slice(0, 25).map((nation) => ({
         nationId: nation.nation_id,
         nation: nation.nation,
         leader: nation.leader,
         lastActive: nation.last_active,
+        cities: nation.cities,
       })),
     });
   }
@@ -155,6 +182,7 @@ router.post('/send-active-unallied', requirePwSession, async (req: Request, res:
 
   return res.status(200).json({
     success: true,
+    filters: { minCities, maxCities },
     attempted: candidates.length,
     sent,
     failed: failed.length,
@@ -167,9 +195,20 @@ router.post('/send-active-unallied-discord', requirePwSession, async (req: Reque
   const accountId = req.pwAccount!._id.toString();
   const dryRun = req.body?.dryRun === true;
   const hasDiscord = req.body?.hasDiscord;
+  const minCities = Number.isFinite(Number(req.body?.minCities)) ? Number(req.body.minCities) : undefined;
+  const maxCities = Number.isFinite(Number(req.body?.maxCities)) ? Number(req.body.maxCities) : undefined;
 
   if (typeof hasDiscord !== 'boolean') {
     return res.status(400).json({ error: 'hasDiscord (boolean) is required' });
+  }
+  if (typeof minCities === 'number' && minCities < 0) {
+    return res.status(400).json({ error: 'minCities must be >= 0' });
+  }
+  if (typeof maxCities === 'number' && maxCities < 0) {
+    return res.status(400).json({ error: 'maxCities must be >= 0' });
+  }
+  if (typeof minCities === 'number' && typeof maxCities === 'number' && minCities > maxCities) {
+    return res.status(400).json({ error: 'minCities cannot be greater than maxCities' });
   }
 
   const template = await MessageTemplate.findOne({ accountId }).sort({ updatedAt: -1 }).exec();
@@ -178,7 +217,7 @@ router.post('/send-active-unallied-discord', requirePwSession, async (req: Reque
   const pwKey = await getDecryptedApiKeyForAccount(accountId).catch(() => '');
   if (!pwKey) return res.status(500).json({ error: 'Could not decrypt user API key' });
 
-  const candidates = await getActiveUnalliedCandidates(pwKey);
+  const candidates = await getActiveUnalliedCandidates(pwKey, { minCities, maxCities });
   if (!candidates) {
     return res.status(502).json({ error: 'Failed to fetch target nations from Politics & War API' });
   }
@@ -190,12 +229,14 @@ router.post('/send-active-unallied-discord', requirePwSession, async (req: Reque
       success: true,
       dryRun: true,
       hasDiscord,
+      filters: { minCities, maxCities },
       totalCandidates: filtered.length,
       preview: filtered.slice(0, 25).map((nation) => ({
         nationId: nation.nation_id,
         nation: nation.nation,
         leader: nation.leader,
         lastActive: nation.last_active,
+        cities: nation.cities,
         discord: (nation as any).discord || '',
       })),
     });
@@ -252,6 +293,7 @@ router.post('/send-active-unallied-discord', requirePwSession, async (req: Reque
   return res.status(200).json({
     success: true,
     hasDiscord,
+    filters: { minCities, maxCities },
     attempted: filtered.length,
     sent,
     failed: failed.length,
