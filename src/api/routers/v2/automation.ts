@@ -31,14 +31,22 @@ async function getActiveUnalliedCandidates(apiKey: string): Promise<NationAPICal
   const nationLookupApiKey = (process.env.NATION_CHECK_API_KEY || '').trim() || apiKey;
   const response = await superagent
     .get(`https://politicsandwar.com/api/v2/nations/${nationLookupApiKey}/&alliance_position=0`)
+    .accept('json')
     .ok(() => true)
     .catch(() => undefined);
 
-  if (!response?.body?.success || !Array.isArray(response.body?.data)) return null;
+  const body = response?.body as NationAPICall.RootObject | undefined;
+  if (!body?.api_request) return null;
+  if (!body.api_request.success) {
+    // "No results to display." should be treated as an empty candidate list, not a hard failure.
+    if (body.api_request.error_msg === 'No results to display.') return [];
+    return null;
+  }
+  if (!Array.isArray(body.data)) return [];
 
   const now = Date.now();
   const activeSince = now - (24 * 60 * 60 * 1000);
-  return (response.body.data as NationAPICall.Nation[])
+  return body.data
     .filter((nation) => nation.alliance_id === 0 || nation.alliance_position === 0)
     .filter((nation) => {
       const ts = parseLastActive(nation.last_active);
