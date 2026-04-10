@@ -223,7 +223,7 @@ async function getActiveUnalliedCandidatesGraphql(
   const now = Date.now();
   const activeSince = now - (24 * 60 * 60 * 1000);
   return nations
-    .filter((nation) => nation.alliance_id === 0 || nation.alliance_position === 0)
+    .filter((nation) => nation.alliance_id === 0 && nation.alliance_position === 0)
     .filter((nation) => {
       const ts = parseLastActive(nation.last_active);
       return Number.isFinite(ts) && ts >= activeSince;
