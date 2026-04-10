@@ -37,13 +37,19 @@ interface GraphqlNationLike {
   id?: number;
   nation?: string;
   nation_name?: string;
+  nationName?: string;
   leader?: string;
   leader_name?: string;
+  leaderName?: string;
   cities?: number;
   num_cities?: number;
+  numCities?: number;
   alliance_id?: number;
+  allianceId?: number;
   alliance_position?: number;
+  alliancePosition?: number;
   last_active?: string;
+  lastActive?: string;
   discord?: string;
 }
 
@@ -58,12 +64,12 @@ function parseOptionalNumber(value: unknown): number | undefined {
 
 function toV2NationShape(node: GraphqlNationLike): NationAPICall.Nation | null {
   const nationId = parseOptionalNumber(node.nation_id ?? node.id);
-  const nationName = typeof node.nation === 'string' ? node.nation : node.nation_name;
-  const leaderName = typeof node.leader === 'string' ? node.leader : node.leader_name;
-  const cities = parseOptionalNumber(node.cities ?? node.num_cities);
-  const allianceId = parseOptionalNumber(node.alliance_id) ?? 0;
-  const alliancePosition = parseOptionalNumber(node.alliance_position) ?? 0;
-  const lastActive = typeof node.last_active === 'string' ? node.last_active : '';
+  const nationName = typeof node.nation === 'string' ? node.nation : (node.nation_name ?? node.nationName);
+  const leaderName = typeof node.leader === 'string' ? node.leader : (node.leader_name ?? node.leaderName);
+  const cities = parseOptionalNumber(node.cities ?? node.num_cities ?? node.numCities);
+  const allianceId = parseOptionalNumber(node.alliance_id ?? node.allianceId);
+  const alliancePosition = parseOptionalNumber(node.alliance_position ?? node.alliancePosition);
+  const lastActive = typeof node.last_active === 'string' ? node.last_active : (node.lastActive ?? '');
 
   if (!nationId || !nationName || !leaderName || typeof cities !== 'number') return null;
 
@@ -75,9 +81,9 @@ function toV2NationShape(node: GraphqlNationLike): NationAPICall.Nation | null {
     war_policy: 0,
     domestic_policy: 0,
     color: 0,
-    alliance_id: allianceId,
+    alliance_id: typeof allianceId === 'number' ? allianceId : -1,
     alliance: '',
-    alliance_position: alliancePosition,
+    alliance_position: typeof alliancePosition === 'number' ? alliancePosition : -1,
     cities,
     offensive_wars: 0,
     defensive_wars: 0,
@@ -223,7 +229,7 @@ async function getActiveUnalliedCandidatesGraphql(
   const now = Date.now();
   const activeSince = now - (24 * 60 * 60 * 1000);
   return nations
-    .filter((nation) => nation.alliance_id === 0 || nation.alliance_position === 0)
+    .filter((nation) => nation.alliance_id === 0)
     .filter((nation) => {
       const ts = parseLastActive(nation.last_active);
       return Number.isFinite(ts) && ts >= activeSince;
