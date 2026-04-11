@@ -32,6 +32,10 @@ interface CandidateFilters {
   maxCities?: number;
 }
 
+const GRAPHQL_RESPONSE_TIMEOUT_MS = 15000;
+const GRAPHQL_DEADLINE_TIMEOUT_MS = 30000;
+const GRAPHQL_MAX_EXTRA_PAGES = 10;
+
 interface GraphqlNationLike {
   nation_id?: number;
   id?: number;
@@ -68,14 +72,17 @@ async function fetchAdditionalPaginatedNationNodes(
   query: string,
   applyAuth: (req: superagent.SuperAgentRequest) => superagent.SuperAgentRequest,
   startPage: number,
-  endPage: number
+  endPage: number,
+  maxPagesToFetch: number
 ): Promise<GraphqlNationLike[]> {
   const aggregated: GraphqlNationLike[] = [];
-  for (let page = startPage; page <= endPage; page += 1) {
+  const cappedEndPage = Math.min(endPage, startPage + maxPagesToFetch - 1);
+  for (let page = startPage; page <= cappedEndPage; page += 1) {
     const pagedQuery = query.replace(/page:\s*\d+/g, `page: ${page}`);
     const request = applyAuth(superagent.post(endpoint))
       .accept('json')
       .send({query: pagedQuery})
+      .timeout({ response: GRAPHQL_RESPONSE_TIMEOUT_MS, deadline: GRAPHQL_DEADLINE_TIMEOUT_MS })
       .ok(() => true);
 
     const response = await request.catch(() => undefined);
@@ -226,6 +233,7 @@ async function getActiveUnalliedCandidatesGraphql(
       const request = applyAuth(superagent.post(endpoint))
         .accept('json')
         .send({query})
+        .timeout({ response: GRAPHQL_RESPONSE_TIMEOUT_MS, deadline: GRAPHQL_DEADLINE_TIMEOUT_MS })
         .ok(() => true);
 
       const response = await request.catch(() => undefined);
@@ -249,7 +257,14 @@ async function getActiveUnalliedCandidatesGraphql(
         const hasMorePages = nationsContainer?.paginatorInfo?.hasMorePages === true;
         const lastPage = parseOptionalNumber(nationsContainer?.paginatorInfo?.lastPage);
         if (hasMorePages && typeof lastPage === 'number' && query.includes('page: 1')) {
-          const extraPages = await fetchAdditionalPaginatedNationNodes(endpoint, query, applyAuth, 2, lastPage);
+          const extraPages = await fetchAdditionalPaginatedNationNodes(
+            endpoint,
+            query,
+            applyAuth,
+            2,
+            lastPage,
+            GRAPHQL_MAX_EXTRA_PAGES
+          );
           if (extraPages.length > 0) {
             allNationNodes = [...nationNodes, ...extraPages];
           }
