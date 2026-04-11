@@ -32,18 +32,29 @@ interface CandidateFilters {
   maxCities?: number;
 }
 
+const GRAPHQL_RESPONSE_TIMEOUT_MS = 15000;
+const GRAPHQL_DEADLINE_TIMEOUT_MS = 30000;
+const GRAPHQL_MAX_EXTRA_PAGES = 10;
+
 interface GraphqlNationLike {
   nation_id?: number;
   id?: number;
   nation?: string;
   nation_name?: string;
+  nationName?: string;
   leader?: string;
   leader_name?: string;
+  leaderName?: string;
   cities?: number;
   num_cities?: number;
+  numCities?: number;
   alliance_id?: number;
+  allianceId?: number;
   alliance_position?: number;
+  alliancePosition?: number;
+  alliance?: { id?: number | string } | null;
   last_active?: string;
+  lastActive?: string;
   discord?: string;
 }
 
@@ -56,14 +67,40 @@ function parseOptionalNumber(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+async function fetchAdditionalPaginatedNationNodes(
+  endpoint: string,
+  query: string,
+  applyAuth: (req: superagent.SuperAgentRequest) => superagent.SuperAgentRequest,
+  startPage: number,
+  endPage: number,
+  maxPagesToFetch: number
+): Promise<GraphqlNationLike[]> {
+  const aggregated: GraphqlNationLike[] = [];
+  const cappedEndPage = Math.min(endPage, startPage + maxPagesToFetch - 1);
+  for (let page = startPage; page <= cappedEndPage; page += 1) {
+    const pagedQuery = query.replace(/page:\s*\d+/g, `page: ${page}`);
+    const request = applyAuth(superagent.post(endpoint))
+      .accept('json')
+      .send({query: pagedQuery})
+      .timeout({ response: GRAPHQL_RESPONSE_TIMEOUT_MS, deadline: GRAPHQL_DEADLINE_TIMEOUT_MS })
+      .ok(() => true);
+
+    const response = await request.catch(() => undefined);
+    const pageData = (response?.body?.data as any)?.nations?.data;
+    if (!Array.isArray(pageData) || pageData.length === 0) break;
+    aggregated.push(...pageData);
+  }
+  return aggregated;
+}
+
 function toV2NationShape(node: GraphqlNationLike): NationAPICall.Nation | null {
   const nationId = parseOptionalNumber(node.nation_id ?? node.id);
-  const nationName = typeof node.nation === 'string' ? node.nation : node.nation_name;
-  const leaderName = typeof node.leader === 'string' ? node.leader : node.leader_name;
-  const cities = parseOptionalNumber(node.cities ?? node.num_cities);
-  const allianceId = parseOptionalNumber(node.alliance_id) ?? 0;
-  const alliancePosition = parseOptionalNumber(node.alliance_position) ?? 0;
-  const lastActive = typeof node.last_active === 'string' ? node.last_active : '';
+  const nationName = typeof node.nation === 'string' ? node.nation : (node.nation_name ?? node.nationName);
+  const leaderName = typeof node.leader === 'string' ? node.leader : (node.leader_name ?? node.leaderName);
+  const cities = parseOptionalNumber(node.cities ?? node.num_cities ?? node.numCities);
+  const allianceId = parseOptionalNumber(node.alliance_id ?? node.allianceId ?? node.alliance?.id);
+  const alliancePosition = parseOptionalNumber(node.alliance_position ?? node.alliancePosition);
+  const lastActive = typeof node.last_active === 'string' ? node.last_active : (node.lastActive ?? '');
 
   if (!nationId || !nationName || !leaderName || typeof cities !== 'number') return null;
 
@@ -75,9 +112,9 @@ function toV2NationShape(node: GraphqlNationLike): NationAPICall.Nation | null {
     war_policy: 0,
     domestic_policy: 0,
     color: 0,
-    alliance_id: allianceId,
+    alliance_id: typeof allianceId === 'number' ? allianceId : -1,
     alliance: '',
-    alliance_position: alliancePosition,
+    alliance_position: typeof alliancePosition === 'number' ? alliancePosition : -1,
     cities,
     offensive_wars: 0,
     defensive_wars: 0,
@@ -105,12 +142,13 @@ async function getActiveUnalliedCandidatesGraphql(
   const queries = [
     `
       query Nations {
-        nations(alliance_position: 0) {
+        nations(alliance_id: 0) {
           id
           nation_name
           leader_name
           alliance_id
           alliance_position
+          alliance { id }
           num_cities
           last_active
           discord
@@ -125,6 +163,7 @@ async function getActiveUnalliedCandidatesGraphql(
           leader_name
           alliance_id
           alliance_position
+          alliance { id }
           num_cities
           last_active
           discord
@@ -140,6 +179,7 @@ async function getActiveUnalliedCandidatesGraphql(
             leader_name
             alliance_id
             alliance_position
+            alliance { id }
             num_cities
             last_active
             discord
@@ -156,6 +196,7 @@ async function getActiveUnalliedCandidatesGraphql(
             leader_name
             alliance_id
             alliance_position
+            alliance { id }
             num_cities
             last_active
             discord
@@ -165,12 +206,13 @@ async function getActiveUnalliedCandidatesGraphql(
     `,
     `
       query Nations {
-        nations(alliancePosition: 0) {
+        nations(allianceId: 0) {
           id
           nation_name
           leader_name
           alliance_id
           alliance_position
+          alliance { id }
           num_cities
           last_active
           discord
@@ -191,6 +233,7 @@ async function getActiveUnalliedCandidatesGraphql(
       const request = applyAuth(superagent.post(endpoint))
         .accept('json')
         .send({query})
+        .timeout({ response: GRAPHQL_RESPONSE_TIMEOUT_MS, deadline: GRAPHQL_DEADLINE_TIMEOUT_MS })
         .ok(() => true);
 
       const response = await request.catch(() => undefined);
@@ -200,16 +243,34 @@ async function getActiveUnalliedCandidatesGraphql(
       } | undefined;
 
       if (!body) continue;
+      const nationsContainer = (body.data as any)?.nations;
       const nationNodes = Array.isArray((body.data as any)?.nations)
         ? (body.data as any).nations
-        : Array.isArray((body.data as any)?.nations?.data)
-          ? (body.data as any).nations.data
-          : Array.isArray((body.data as any)?.nations?.edges)
-            ? (body.data as any).nations.edges.map((edge: any) => edge?.node).filter(Boolean)
+        : Array.isArray(nationsContainer?.data)
+          ? nationsContainer.data
+          : Array.isArray(nationsContainer?.edges)
+            ? nationsContainer.edges.map((edge: any) => edge?.node).filter(Boolean)
             : undefined;
 
       if (Array.isArray(nationNodes)) {
-        nations = nationNodes
+        let allNationNodes = nationNodes;
+        const hasMorePages = nationsContainer?.paginatorInfo?.hasMorePages === true;
+        const lastPage = parseOptionalNumber(nationsContainer?.paginatorInfo?.lastPage);
+        if (hasMorePages && typeof lastPage === 'number' && query.includes('page: 1')) {
+          const extraPages = await fetchAdditionalPaginatedNationNodes(
+            endpoint,
+            query,
+            applyAuth,
+            2,
+            lastPage,
+            GRAPHQL_MAX_EXTRA_PAGES
+          );
+          if (extraPages.length > 0) {
+            allNationNodes = [...nationNodes, ...extraPages];
+          }
+        }
+
+        nations = allNationNodes
           .map((node) => toV2NationShape(node))
           .filter((nation): nation is NationAPICall.Nation => nation !== null);
         break;
@@ -223,7 +284,7 @@ async function getActiveUnalliedCandidatesGraphql(
   const now = Date.now();
   const activeSince = now - (24 * 60 * 60 * 1000);
   return nations
-    .filter((nation) => nation.alliance_id === 0 || nation.alliance_position === 0)
+    .filter((nation) => nation.alliance_id === 0)
     .filter((nation) => {
       const ts = parseLastActive(nation.last_active);
       return Number.isFinite(ts) && ts >= activeSince;
