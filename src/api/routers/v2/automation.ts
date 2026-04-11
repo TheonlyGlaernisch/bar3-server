@@ -30,11 +30,13 @@ function hasDiscordValue(value: unknown): boolean {
 interface CandidateFilters {
   minCities?: number;
   maxCities?: number;
+  hasDiscord?: boolean;
+  maxResults?: number;
 }
 
 const GRAPHQL_RESPONSE_TIMEOUT_MS = 15000;
 const GRAPHQL_DEADLINE_TIMEOUT_MS = 30000;
-const GRAPHQL_MAX_EXTRA_PAGES = 50;
+const GRAPHQL_MAX_EXTRA_PAGES = 20;
 
 interface GraphqlNationLike {
   nation_id?: number;
@@ -142,37 +144,7 @@ async function getActiveUnalliedCandidatesGraphql(
   const queries = [
     `
       query Nations {
-        nations(alliance_id: [0]) {
-          id
-          nation_name
-          leader_name
-          alliance_id
-          alliance_position
-          alliance { id }
-          num_cities
-          last_active
-          discord
-        }
-      }
-    `,
-    `
-      query Nations {
-        nations {
-          id
-          nation_name
-          leader_name
-          alliance_id
-          alliance_position
-          alliance { id }
-          num_cities
-          last_active
-          discord
-        }
-      }
-    `,
-    `
-      query Nations {
-        nations(first: 500, page: 1) {
+        nations(alliance_id: [0], first: 500, page: 1) {
           paginatorInfo {
             hasMorePages
             lastPage
@@ -193,7 +165,7 @@ async function getActiveUnalliedCandidatesGraphql(
     `,
     `
       query Nations {
-        nations(first: 500) {
+        nations(allianceId: [0], first: 500, page: 1) {
           paginatorInfo {
             hasMorePages
             lastPage
@@ -209,21 +181,6 @@ async function getActiveUnalliedCandidatesGraphql(
             last_active
             discord
           }
-        }
-      }
-    `,
-    `
-      query Nations {
-        nations(allianceId: [0]) {
-          id
-          nation_name
-          leader_name
-          alliance_id
-          alliance_position
-          alliance { id }
-          num_cities
-          last_active
-          discord
         }
       }
     `,
@@ -278,9 +235,29 @@ async function getActiveUnalliedCandidatesGraphql(
           }
         }
 
-        nations = allNationNodes
-          .map((node) => toV2NationShape(node))
-          .filter((nation): nation is NationAPICall.Nation => nation !== null);
+        const now = Date.now();
+        const activeSince = now - (24 * 60 * 60 * 1000);
+        const maxResults = typeof filters?.maxResults === 'number' && filters.maxResults > 0
+          ? Math.floor(filters.maxResults)
+          : undefined;
+
+        const selected: NationAPICall.Nation[] = [];
+        for (const node of allNationNodes) {
+          const nation = toV2NationShape(node);
+          if (!nation) continue;
+          if (nation.alliance_id !== 0) continue;
+
+          const ts = parseLastActive(nation.last_active);
+          if (!Number.isFinite(ts) || ts < activeSince) continue;
+          if (typeof filters?.minCities === 'number' && nation.cities < filters.minCities) continue;
+          if (typeof filters?.maxCities === 'number' && nation.cities > filters.maxCities) continue;
+          if (typeof filters?.hasDiscord === 'boolean' && hasDiscordValue((nation as any).discord) !== filters.hasDiscord) continue;
+
+          selected.push(nation);
+          if (typeof maxResults === 'number' && selected.length >= maxResults) break;
+        }
+
+        nations = selected;
         break;
       }
     }
@@ -289,19 +266,7 @@ async function getActiveUnalliedCandidatesGraphql(
 
   if (!nations) return null;
 
-  const now = Date.now();
-  const activeSince = now - (24 * 60 * 60 * 1000);
-  return nations
-    .filter((nation) => nation.alliance_id === 0)
-    .filter((nation) => {
-      const ts = parseLastActive(nation.last_active);
-      return Number.isFinite(ts) && ts >= activeSince;
-    })
-    .filter((nation) => {
-      if (typeof filters?.minCities === 'number' && nation.cities < filters.minCities) return false;
-      if (typeof filters?.maxCities === 'number' && nation.cities > filters.maxCities) return false;
-      return true;
-    });
+  return nations;
 }
 
 async function getActiveUnalliedCandidates(
@@ -338,12 +303,16 @@ router.post('/send-active-unallied', requirePwSession, async (req: Request, res:
   const dryRun = req.body?.dryRun === true;
   const minCities = parseOptionalNumber(req.body?.minCities);
   const maxCities = parseOptionalNumber(req.body?.maxCities);
+  const maxTargets = parseOptionalNumber(req.body?.maxTargets) ?? 200;
 
   if (typeof minCities === 'number' && minCities < 0) {
     return res.status(400).json({ error: 'minCities must be >= 0' });
   }
   if (typeof maxCities === 'number' && maxCities < 0) {
     return res.status(400).json({ error: 'maxCities must be >= 0' });
+  }
+  if (!Number.isInteger(maxTargets) || maxTargets <= 0 || maxTargets > 1000) {
+    return res.status(400).json({ error: 'maxTargets must be an integer between 1 and 1000' });
   }
   if (typeof minCities === 'number' && typeof maxCities === 'number' && minCities > maxCities) {
     return res.status(400).json({ error: 'minCities cannot be greater than maxCities' });
@@ -355,18 +324,20 @@ router.post('/send-active-unallied', requirePwSession, async (req: Request, res:
   const pwKey = await getDecryptedApiKeyForAccount(accountId).catch(() => '');
   if (!pwKey) return res.status(500).json({ error: 'Could not decrypt user API key' });
 
-  const candidates = await getActiveUnalliedCandidates(pwKey, { minCities, maxCities });
+  const candidates = await getActiveUnalliedCandidates(pwKey, { minCities, maxCities, maxResults: maxTargets });
   if (!candidates) {
     return res.status(502).json({ error: 'Failed to fetch target nations from Politics & War API' });
   }
+
+  const selectedCandidates = candidates;
 
   if (dryRun) {
     return res.status(200).json({
       success: true,
       dryRun: true,
-      filters: { minCities, maxCities },
-      totalCandidates: candidates.length,
-      preview: candidates.slice(0, 25).map((nation) => ({
+      filters: { minCities, maxCities, maxTargets },
+      totalCandidates: selectedCandidates.length,
+      preview: selectedCandidates.slice(0, 25).map((nation) => ({
         nationId: nation.nation_id,
         nation: nation.nation,
         leader: nation.leader,
@@ -391,7 +362,7 @@ router.post('/send-active-unallied', requirePwSession, async (req: Request, res:
   let sent = 0;
   const failed: Array<{ nationId: number; nation: string; error: string }> = [];
 
-  for (const nation of candidates) {
+  for (const nation of selectedCandidates) {
     if (baseUrl) {
       const messageId = `${accountId}-${nation.nation_id}-${Date.now()}`;
       const injected = await injectTrackingIntoHtml({
@@ -427,7 +398,7 @@ router.post('/send-active-unallied', requirePwSession, async (req: Request, res:
   return res.status(200).json({
     success: true,
     filters: { minCities, maxCities },
-    attempted: candidates.length,
+    attempted: selectedCandidates.length,
     sent,
     failed: failed.length,
     failures: failed.slice(0, 50),
@@ -441,6 +412,7 @@ router.post('/send-active-unallied-discord', requirePwSession, async (req: Reque
   const hasDiscord = req.body?.hasDiscord;
   const minCities = parseOptionalNumber(req.body?.minCities);
   const maxCities = parseOptionalNumber(req.body?.maxCities);
+  const maxTargets = parseOptionalNumber(req.body?.maxTargets) ?? 200;
 
   if (typeof hasDiscord !== 'boolean') {
     return res.status(400).json({ error: 'hasDiscord (boolean) is required' });
@@ -450,6 +422,9 @@ router.post('/send-active-unallied-discord', requirePwSession, async (req: Reque
   }
   if (typeof maxCities === 'number' && maxCities < 0) {
     return res.status(400).json({ error: 'maxCities must be >= 0' });
+  }
+  if (!Number.isInteger(maxTargets) || maxTargets <= 0 || maxTargets > 1000) {
+    return res.status(400).json({ error: 'maxTargets must be an integer between 1 and 1000' });
   }
   if (typeof minCities === 'number' && typeof maxCities === 'number' && minCities > maxCities) {
     return res.status(400).json({ error: 'minCities cannot be greater than maxCities' });
@@ -461,21 +436,26 @@ router.post('/send-active-unallied-discord', requirePwSession, async (req: Reque
   const pwKey = await getDecryptedApiKeyForAccount(accountId).catch(() => '');
   if (!pwKey) return res.status(500).json({ error: 'Could not decrypt user API key' });
 
-  const candidates = await getActiveUnalliedCandidates(pwKey, { minCities, maxCities });
+  const candidates = await getActiveUnalliedCandidates(pwKey, {
+    minCities,
+    maxCities,
+    hasDiscord,
+    maxResults: maxTargets,
+  });
   if (!candidates) {
     return res.status(502).json({ error: 'Failed to fetch target nations from Politics & War API' });
   }
 
-  const filtered = candidates.filter((nation) => hasDiscordValue((nation as any).discord) === hasDiscord);
+  const selectedCandidates = candidates;
 
   if (dryRun) {
     return res.status(200).json({
       success: true,
       dryRun: true,
       hasDiscord,
-      filters: { minCities, maxCities },
-      totalCandidates: filtered.length,
-      preview: filtered.slice(0, 25).map((nation) => ({
+      filters: { minCities, maxCities, maxTargets },
+      totalCandidates: selectedCandidates.length,
+      preview: selectedCandidates.slice(0, 25).map((nation) => ({
         nationId: nation.nation_id,
         nation: nation.nation,
         leader: nation.leader,
@@ -501,7 +481,7 @@ router.post('/send-active-unallied-discord', requirePwSession, async (req: Reque
   let sent = 0;
   const failed: Array<{ nationId: number; nation: string; error: string }> = [];
 
-  for (const nation of filtered) {
+  for (const nation of selectedCandidates) {
     if (baseUrl) {
       const messageId = `${accountId}-${nation.nation_id}-${Date.now()}`;
       const injected = await injectTrackingIntoHtml({
@@ -538,7 +518,7 @@ router.post('/send-active-unallied-discord', requirePwSession, async (req: Reque
     success: true,
     hasDiscord,
     filters: { minCities, maxCities },
-    attempted: filtered.length,
+    attempted: selectedCandidates.length,
     sent,
     failed: failed.length,
     failures: failed.slice(0, 50),
