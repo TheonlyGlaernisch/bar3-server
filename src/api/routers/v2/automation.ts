@@ -34,7 +34,7 @@ interface CandidateFilters {
 
 const GRAPHQL_RESPONSE_TIMEOUT_MS = 15000;
 const GRAPHQL_DEADLINE_TIMEOUT_MS = 30000;
-const GRAPHQL_MAX_EXTRA_PAGES = 10;
+const GRAPHQL_MAX_EXTRA_PAGES = 50;
 
 interface GraphqlNationLike {
   nation_id?: number;
@@ -142,7 +142,7 @@ async function getActiveUnalliedCandidatesGraphql(
   const queries = [
     `
       query Nations {
-        nations(alliance_id: 0) {
+        nations(alliance_id: [0]) {
           id
           nation_name
           leader_name
@@ -173,6 +173,10 @@ async function getActiveUnalliedCandidatesGraphql(
     `
       query Nations {
         nations(first: 500, page: 1) {
+          paginatorInfo {
+            hasMorePages
+            lastPage
+          }
           data {
             id
             nation_name
@@ -190,6 +194,10 @@ async function getActiveUnalliedCandidatesGraphql(
     `
       query Nations {
         nations(first: 500) {
+          paginatorInfo {
+            hasMorePages
+            lastPage
+          }
           data {
             id
             nation_name
@@ -206,7 +214,7 @@ async function getActiveUnalliedCandidatesGraphql(
     `,
     `
       query Nations {
-        nations(allianceId: 0) {
+        nations(allianceId: [0]) {
           id
           nation_name
           leader_name
