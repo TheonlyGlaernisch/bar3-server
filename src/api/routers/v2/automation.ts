@@ -1,28 +1,33 @@
-import express, { Request, Response } from 'express';
-import { requirePwSession } from '../../middleware/pwAuth';
-import { AutomationSettings } from '../../../interfaces/schemas/AutomationSettingsSchema';
 
-const router = express.Router();
-router.use(express.json());
+function getActiveUnalliedCandidatesGraphql(min_last_active = 86400, min_cities = null, max_cities = null) {
+    const query = `
+        query ($min_last_active: Int, $min_cities: Int, $max_cities: Int) {
+            activeUnalliedCandidates(min_last_active: $min_last_active, min_cities: $min_cities, max_cities: $max_cities) {
+                id
+                last_active
+                cities
+                discord_id
+            }
+        }
+    `;
 
-router.get('/state', requirePwSession, async (req: Request, res: Response) => {
-  const accountId = req.pwAccount!._id;
-  const settings = await AutomationSettings.findOne({ accountId }).exec();
-  return res.status(200).json({
-    enabled: settings?.enabled || false,
-  });
-});
+    const variables = { min_last_active };
 
-router.post('/state', requirePwSession, async (req: Request, res: Response) => {
-  const accountId = req.pwAccount!._id;
-  const enabled = !!req.body?.enabled;
-  await AutomationSettings.findOneAndUpdate(
-    { accountId },
-    { enabled, lastScanAt: new Date() },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  ).exec();
-  return res.status(204).end();
-});
+    // Conditionally include min_cities and max_cities
+    if (min_cities !== null) {
+        variables.min_cities = min_cities;
+    }
+    if (max_cities !== null) {
+        variables.max_cities = max_cities;
+    }
 
-export default router;
-
+    return fetch('https://api.politicsandwar.com/graphql', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query, variables }),
+    }).then(res => res.json()).then(data => {
+        return data.data.activeUnalliedCandidates.filter(candidate => candidate.discord_id); // Keep only Discord filtering client-side
+    });
+}
