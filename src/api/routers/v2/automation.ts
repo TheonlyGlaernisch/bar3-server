@@ -70,17 +70,13 @@ function parseOptionalNumber(value: unknown): number | undefined {
 }
 
 function parseNationIdsInput(value: unknown): number[] {
-  const seen = new Set<number>();
   const parsed: number[] = [];
   const rawValues = Array.isArray(value) ? value : [value];
 
   for (const rawValue of rawValues) {
     if (typeof rawValue === 'number') {
       const nationId = Math.floor(rawValue);
-      if (nationId > 0 && !seen.has(nationId)) {
-        seen.add(nationId);
-        parsed.push(nationId);
-      }
+      if (nationId > 0) parsed.push(nationId);
       continue;
     }
 
@@ -92,8 +88,6 @@ function parseNationIdsInput(value: unknown): number[] {
       if (!trimmed) continue;
       const parsedId = Number(trimmed);
       if (!Number.isInteger(parsedId) || parsedId <= 0) continue;
-      if (seen.has(parsedId)) continue;
-      seen.add(parsedId);
       parsed.push(parsedId);
     }
   }
@@ -102,6 +96,18 @@ function parseNationIdsInput(value: unknown): number[] {
 }
 
 function resolveNationIdsFromBody(body: any): number[] {
+  if (typeof body === 'string') {
+    const trimmed = body.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return resolveNationIdsFromBody(parsed);
+      } catch (_error) {
+        // ignore malformed JSON strings and continue with normal parsing fallbacks
+      }
+    }
+  }
+
   const candidateInputs: unknown[] = [
     body?.nationIds,
     body?.nationIDs,
@@ -110,12 +116,57 @@ function resolveNationIdsFromBody(body: any): number[] {
     body?.nationIdsCsv,
     body?.nationIdsText,
     body?.nationIdCsv,
+    body?.nationIdsInput,
+    body?.nationIdsRaw,
+    body?.nationIdsValue,
+    body?.nationIDs,
+    body?.nationIDsCsv,
+    body?.nation_list,
+    body?.nationList,
+    body?.nation_list_ids,
+    body?.targetNationIds,
+    body?.targetNations,
+    body?.targets,
+    body?.nations,
     body?.ids,
   ];
 
   // Backward-compat: support a single nation id too.
   if (body?.nationId !== undefined) candidateInputs.push(body.nationId);
   if (body?.nationID !== undefined) candidateInputs.push(body.nationID);
+
+  const parsedFromKnownKeys = parseNationIdsInput(candidateInputs);
+  if (parsedFromKnownKeys.length > 0) return parsedFromKnownKeys;
+
+  // Fallback: inspect nested objects and include values for keys that look
+  // like nation id payloads to improve compatibility with varied clients.
+  const queue: unknown[] = [body];
+  const seenObjects = new Set<Record<string, unknown>>();
+  const regexLikelyNationIdsKey = /(nation.*id|nation.*ids|nationid|nationids|targets?|ids?)/i;
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current === null || current === undefined) continue;
+
+    if (Array.isArray(current)) {
+      for (const item of current) queue.push(item);
+      continue;
+    }
+
+    if (typeof current === 'object') {
+      const currentObj = current as Record<string, unknown>;
+      if (seenObjects.has(currentObj)) continue;
+      seenObjects.add(currentObj);
+
+      for (const [key, value] of Object.entries(currentObj)) {
+        if (regexLikelyNationIdsKey.test(key)) {
+          candidateInputs.push(value);
+        }
+        queue.push(value);
+      }
+      continue;
+    }
+  }
 
   return parseNationIdsInput(candidateInputs);
 }
@@ -710,8 +761,13 @@ const sendByNationIdsHandler = async (req: Request, res: Response) => {
     return res.status(502).json({ error: 'Failed to fetch nation details from Politics & War API' });
   }
 
-  const candidateIdSet = new Set<number>(candidates.map((nation) => nation.nation_id));
-  const missingNationIds = selectedIds.filter((nationId) => !candidateIdSet.has(nationId));
+  const candidatesById = new Map<number, NationAPICall.Nation>(
+    candidates.map((nation) => [nation.nation_id, nation])
+  );
+  const orderedCandidates = selectedIds
+    .map((nationId) => candidatesById.get(nationId))
+    .filter((nation): nation is NationAPICall.Nation => !!nation);
+  const missingNationIds = selectedIds.filter((nationId) => !candidatesById.has(nationId));
 
   if (dryRun) {
     return res.status(200).json({
@@ -719,9 +775,9 @@ const sendByNationIdsHandler = async (req: Request, res: Response) => {
       dryRun: true,
       requested: nationIds.length,
       attempted: selectedIds.length,
-      found: candidates.length,
+      found: orderedCandidates.length,
       missingNationIds,
-      preview: candidates.slice(0, 25).map((nation) => ({
+      preview: orderedCandidates.slice(0, 25).map((nation) => ({
         nationId: nation.nation_id,
         nation: nation.nation,
         leader: nation.leader,
@@ -745,7 +801,7 @@ const sendByNationIdsHandler = async (req: Request, res: Response) => {
   let sent = 0;
   const failed: Array<{ nationId: number; nation: string; error: string }> = [];
 
-  for (const nation of candidates) {
+  for (const nation of orderedCandidates) {
     if (baseUrl) {
       const messageId = `${accountId}-${nation.nation_id}-${Date.now()}`;
       const injected = await injectTrackingIntoHtml({
@@ -782,7 +838,7 @@ const sendByNationIdsHandler = async (req: Request, res: Response) => {
     success: true,
     requested: nationIds.length,
     attempted: selectedIds.length,
-    found: candidates.length,
+    found: orderedCandidates.length,
     missingNationIds,
     sent,
     failed: failed.length,
