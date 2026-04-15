@@ -12,6 +12,7 @@ import { NationAPICall } from '../../../interfaces/types';
 
 const router = express.Router();
 router.use(express.json());
+router.use(express.text({ type: 'text/plain' }));
 
 function parseLastActive(lastActive: string): number {
   const parsed = Date.parse(lastActive);
@@ -67,6 +68,214 @@ function parseOptionalNumber(value: unknown): number | undefined {
   if (!trimmed) return undefined;
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseNationIdsInput(value: unknown): number[] {
+  const parsed: number[] = [];
+  const rawValues = Array.isArray(value) ? value : [value];
+
+  for (const rawValue of rawValues) {
+    if (typeof rawValue === 'number') {
+      const nationId = Math.floor(rawValue);
+      if (nationId > 0) parsed.push(nationId);
+      continue;
+    }
+
+    if (typeof rawValue !== 'string') continue;
+
+    const chunks = rawValue.split(',');
+    for (const chunk of chunks) {
+      const trimmed = chunk.trim();
+      if (!trimmed) continue;
+      const parsedId = Number(trimmed);
+      if (!Number.isInteger(parsedId) || parsedId <= 0) continue;
+      parsed.push(parsedId);
+    }
+  }
+
+  return parsed;
+}
+
+function resolveNationIdsFromBody(body: any): number[] {
+  if (typeof body === 'string') {
+    const trimmed = body.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return resolveNationIdsFromBody(parsed);
+      } catch (_error) {
+        // ignore malformed JSON strings and continue with normal parsing fallbacks
+      }
+    }
+  }
+
+  const candidateInputs: unknown[] = [
+    body?.nationIds,
+    body?.nationIDs,
+    body?.nation_ids,
+    body?.nationIdList,
+    body?.nationIdsCsv,
+    body?.nationIdsText,
+    body?.nationIdCsv,
+    body?.nationIdsInput,
+    body?.nationIdsRaw,
+    body?.nationIdsValue,
+    body?.nationIDs,
+    body?.nationIDsCsv,
+    body?.nation_list,
+    body?.nationList,
+    body?.nation_list_ids,
+    body?.targetNationIds,
+    body?.targetNations,
+    body?.targets,
+    body?.nations,
+    body?.ids,
+  ];
+
+  // Backward-compat: support a single nation id too.
+  if (body?.nationId !== undefined) candidateInputs.push(body.nationId);
+  if (body?.nationID !== undefined) candidateInputs.push(body.nationID);
+
+  const parsedFromKnownKeys = parseNationIdsInput(candidateInputs);
+  if (parsedFromKnownKeys.length > 0) return parsedFromKnownKeys;
+
+  // Fallback: inspect nested objects and include values for keys that look
+  // like nation id payloads to improve compatibility with varied clients.
+  const queue: unknown[] = [body];
+  const seenObjects = new Set<Record<string, unknown>>();
+  const regexLikelyNationIdsKey = /(nation.*id|nation.*ids|nationid|nationids|targets?|ids?)/i;
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current === null || current === undefined) continue;
+
+    if (Array.isArray(current)) {
+      for (const item of current) queue.push(item);
+      continue;
+    }
+
+    if (typeof current === 'object') {
+      const currentObj = current as Record<string, unknown>;
+      if (seenObjects.has(currentObj)) continue;
+      seenObjects.add(currentObj);
+
+      for (const [key, value] of Object.entries(currentObj)) {
+        if (regexLikelyNationIdsKey.test(key)) {
+          candidateInputs.push(value);
+        }
+        queue.push(value);
+      }
+      continue;
+    }
+  }
+
+  return parseNationIdsInput(candidateInputs);
+}
+
+async function getNationsByIdsGraphql(
+  apiKey: string,
+  nationIds: number[]
+): Promise<NationAPICall.Nation[] | null> {
+  if (nationIds.length === 0) return [];
+
+  const endpoint = (process.env.PW_GRAPHQL_URL || 'https://api.politicsandwar.com/graphql').trim();
+  const idsArg = nationIds.join(',');
+  const queries = [
+    `
+      query NationsByIds {
+        nations(id: [${idsArg}], first: 500, page: 1) {
+          data {
+            id
+            nation_name
+            leader_name
+            alliance_id
+            alliance_position
+            alliance { id }
+            num_cities
+            last_active
+            discord
+          }
+        }
+      }
+    `,
+    `
+      query NationsByIds {
+        nations(nation_id: [${idsArg}], first: 500, page: 1) {
+          data {
+            id
+            nation_name
+            leader_name
+            alliance_id
+            alliance_position
+            alliance { id }
+            num_cities
+            last_active
+            discord
+          }
+        }
+      }
+    `,
+    `
+      query NationsByIds {
+        nations(nationId: [${idsArg}], first: 500, page: 1) {
+          data {
+            id
+            nation_name
+            leader_name
+            alliance_id
+            alliance_position
+            alliance { id }
+            num_cities
+            last_active
+            discord
+          }
+        }
+      }
+    `,
+  ];
+
+  const authModes: Array<(req: superagent.SuperAgentRequest) => superagent.SuperAgentRequest> = [
+    (req) => req.query({api_key: apiKey}),
+    (req) => req.set('Authorization', `Bearer ${apiKey}`),
+    (req) => req.set('X-Api-Key', apiKey),
+  ];
+
+  for (const query of queries) {
+    for (const applyAuth of authModes) {
+      const request = applyAuth(superagent.post(endpoint))
+        .accept('json')
+        .send({query})
+        .timeout({ response: GRAPHQL_RESPONSE_TIMEOUT_MS, deadline: GRAPHQL_DEADLINE_TIMEOUT_MS })
+        .ok(() => true);
+
+      const response = await request.catch(() => undefined);
+      const body = response?.body as {
+        data?: { nations?: GraphqlNationLike[] | { data?: GraphqlNationLike[] } };
+      } | undefined;
+      if (!body) continue;
+
+      const nationsContainer = (body.data as any)?.nations;
+      const nationNodes = Array.isArray(nationsContainer)
+        ? nationsContainer
+        : Array.isArray(nationsContainer?.data)
+          ? nationsContainer.data
+          : undefined;
+      if (!Array.isArray(nationNodes)) continue;
+
+      const byId = new Map<number, NationAPICall.Nation>();
+      for (const node of nationNodes) {
+        const nation = toV2NationShape(node);
+        if (!nation) continue;
+        byId.set(nation.nation_id, nation);
+      }
+
+      return nationIds
+        .map((nationId) => byId.get(nationId))
+        .filter((nation): nation is NationAPICall.Nation => !!nation);
+    }
+  }
+
+  return null;
 }
 
 async function fetchAdditionalPaginatedNationNodes(
@@ -524,5 +733,134 @@ router.post('/send-active-unallied-discord', requirePwSession, async (req: Reque
     failures: failed.slice(0, 50),
   });
 });
+
+const sendByNationIdsHandler = async (req: Request, res: Response) => {
+  const accountId = req.pwAccount!._id.toString();
+  const dryRun = req.body?.dryRun === true;
+  const maxTargets = parseOptionalNumber(req.body?.maxTargets) ?? 250;
+  const nationIdsFromBody = resolveNationIdsFromBody(req.body);
+  const nationIdsFromQuery = resolveNationIdsFromBody(req.query);
+  const nationIdsFromHeader = parseNationIdsInput(req.headers['x-nation-ids']);
+  const nationIds = nationIdsFromBody.length > 0
+    ? nationIdsFromBody
+    : nationIdsFromQuery.length > 0
+      ? nationIdsFromQuery
+      : nationIdsFromHeader;
+
+  if (nationIds.length === 0) {
+    return res.status(400).json({
+      error: 'nationIds is required (comma-separated ids or array of ids)',
+      hint: 'Send in JSON body, query param, or x-nation-ids header',
+      receivedBodyType: typeof req.body,
+    });
+  }
+  if (nationIds.length > 1000) {
+    return res.status(400).json({ error: 'nationIds supports at most 1000 ids per request' });
+  }
+  if (!Number.isInteger(maxTargets) || maxTargets <= 0 || maxTargets > 1000) {
+    return res.status(400).json({ error: 'maxTargets must be an integer between 1 and 1000' });
+  }
+
+  const selectedIds = nationIds.slice(0, maxTargets);
+  const template = await MessageTemplate.findOne({ accountId }).sort({ updatedAt: -1 }).exec();
+  if (!template) return res.status(400).json({ error: 'No saved template found for this user' });
+
+  const pwKey = await getDecryptedApiKeyForAccount(accountId).catch(() => '');
+  if (!pwKey) return res.status(500).json({ error: 'Could not decrypt user API key' });
+
+  const candidates = await getNationsByIdsGraphql(pwKey, selectedIds);
+  if (!candidates) {
+    return res.status(502).json({ error: 'Failed to fetch nation details from Politics & War API' });
+  }
+
+  const candidatesById = new Map<number, NationAPICall.Nation>(
+    candidates.map((nation) => [nation.nation_id, nation])
+  );
+  const orderedCandidates = selectedIds
+    .map((nationId) => candidatesById.get(nationId))
+    .filter((nation): nation is NationAPICall.Nation => !!nation);
+  const missingNationIds = selectedIds.filter((nationId) => !candidatesById.has(nationId));
+
+  if (dryRun) {
+    return res.status(200).json({
+      success: true,
+      dryRun: true,
+      requested: nationIds.length,
+      attempted: selectedIds.length,
+      found: orderedCandidates.length,
+      missingNationIds,
+      preview: orderedCandidates.slice(0, 25).map((nation) => ({
+        nationId: nation.nation_id,
+        nation: nation.nation,
+        leader: nation.leader,
+        cities: nation.cities,
+      })),
+    });
+  }
+
+  const baseUrl = (process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || '')
+    .trim()
+    .replace(/\/$/, '');
+
+  const configLike = {
+    apiKey: pwKey,
+    messageHTML: combineHtmlAndCss(template.bodyHtml || template.bodyText || '', template.bodyCss),
+    messageSubject: template.subject || '',
+    analyticsEnabled: false,
+  } as any;
+  const originalHtml = configLike.messageHTML;
+
+  let sent = 0;
+  const failed: Array<{ nationId: number; nation: string; error: string }> = [];
+
+  for (const nation of orderedCandidates) {
+    if (baseUrl) {
+      const messageId = `${accountId}-${nation.nation_id}-${Date.now()}`;
+      const injected = await injectTrackingIntoHtml({
+        baseUrl,
+        accountId,
+        messageId,
+        html: originalHtml,
+        trackLinks: true,
+      });
+      configLike.messageHTML = injected;
+    } else {
+      configLike.messageHTML = originalHtml;
+    }
+
+    const result = await messagesService.sendMessageWithConfig(configLike, {
+      nation_id: nation.nation_id,
+      nation: nation.nation,
+      leader: nation.leader,
+    } as any).catch(() => undefined);
+
+    if (result?.successful) {
+      sent += 1;
+      continue;
+    }
+
+    failed.push({
+      nationId: nation.nation_id,
+      nation: nation.nation,
+      error: result?.error || 'Send failed',
+    });
+  }
+
+  return res.status(200).json({
+    success: true,
+    requested: nationIds.length,
+    attempted: selectedIds.length,
+    found: orderedCandidates.length,
+    missingNationIds,
+    sent,
+    failed: failed.length,
+    failures: failed.slice(0, 50),
+  });
+};
+
+// Send to explicit nation ids (comma-separated string or array) using the latest saved template.
+router.post('/send-by-nation-ids', requirePwSession, sendByNationIdsHandler);
+// Compatibility alias for older/newer client route naming.
+router.post('/send-by-ids', requirePwSession, sendByNationIdsHandler);
 
 export default router;
