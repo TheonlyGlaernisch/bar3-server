@@ -12,6 +12,7 @@ import { NationAPICall } from '../../../interfaces/types';
 
 const router = express.Router();
 router.use(express.json());
+router.use(express.text({ type: 'text/plain' }));
 
 function parseLastActive(lastActive: string): number {
   const parsed = Date.parse(lastActive);
@@ -737,10 +738,21 @@ const sendByNationIdsHandler = async (req: Request, res: Response) => {
   const accountId = req.pwAccount!._id.toString();
   const dryRun = req.body?.dryRun === true;
   const maxTargets = parseOptionalNumber(req.body?.maxTargets) ?? 250;
-  const nationIds = resolveNationIdsFromBody(req.body);
+  const nationIdsFromBody = resolveNationIdsFromBody(req.body);
+  const nationIdsFromQuery = resolveNationIdsFromBody(req.query);
+  const nationIdsFromHeader = parseNationIdsInput(req.headers['x-nation-ids']);
+  const nationIds = nationIdsFromBody.length > 0
+    ? nationIdsFromBody
+    : nationIdsFromQuery.length > 0
+      ? nationIdsFromQuery
+      : nationIdsFromHeader;
 
   if (nationIds.length === 0) {
-    return res.status(400).json({ error: 'nationIds is required (comma-separated ids or array of ids)' });
+    return res.status(400).json({
+      error: 'nationIds is required (comma-separated ids or array of ids)',
+      hint: 'Send in JSON body, query param, or x-nation-ids header',
+      receivedBodyType: typeof req.body,
+    });
   }
   if (nationIds.length > 1000) {
     return res.status(400).json({ error: 'nationIds supports at most 1000 ids per request' });
