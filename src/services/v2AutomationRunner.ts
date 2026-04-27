@@ -88,7 +88,7 @@ export async function runAutomationTick(): Promise<void> {
       }
 
       const sentMessage = await messagesService.sendMessageWithConfig(configLike, nation).catch(() => undefined);
-      if (sentMessage) {
+      if (sentMessage?.successful) {
         if (!state.userKeys[pwKey]) {
           const sessionConfig = new Config();
           sessionConfig.apiKey = pwKey;
