@@ -10,7 +10,6 @@ import v2AutomationRouter from './api/routers/v2/automation';
 import v2AnalyticsRouter from './api/routers/v2/analytics';
 import v2SendTestRouter from './api/routers/v2/sendTest';
 import discordAuthRouter from './api/routers/discord/auth';
-import rolesRouter from './api/routers/discord/roles';
 import { requireDiscordAuth } from './api/middleware/discordAuth';
 import { startAutomationLoop } from './services/v2AutomationRunner';
 // Extend express-session SessionData with Discord fields
@@ -139,7 +138,6 @@ connectDB();
 
 // Routes
 app.use('/api', accountRoutes);
-app.use('/api/roles', rolesRouter);
 app.use('/api/v2/auth', v2AuthRouter);
 app.use('/api/v2/templates', v2TemplatesRouter);
 app.use('/api/v2/automation', v2AutomationRouter);

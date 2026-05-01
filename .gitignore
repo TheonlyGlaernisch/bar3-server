@@ -16,3 +16,12 @@ state.json
 
 #built web files
 public/
+
+# Python (flame_bot)
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+flame_bot/.env
