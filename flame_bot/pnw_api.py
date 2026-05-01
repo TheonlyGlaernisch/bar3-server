@@ -279,6 +279,24 @@ class NationWar:
     defender_name: str
 
 
+@dataclass
+class WarDetail:
+    """Full war information used for war-alert notifications."""
+
+    war_id: int
+    date: datetime
+    attacker_id: int
+    attacker_name: str
+    attacker_alliance_id: int
+    attacker_alliance_name: str
+    attacker_cities: int
+    defender_id: int
+    defender_name: str
+    defender_alliance_id: int
+    defender_alliance_name: str
+    defender_cities: int
+
+
 _NATION_FIELDS = """
     id
     nation_name
@@ -1434,7 +1452,99 @@ class PnWClient:
             )
         return list(dedup.values())
 
-    async def get_nations_in_alliance_by_score_range(
+    async def get_new_wars_for_alliance(
+        self, alliance_ids: list[int], since: datetime
+    ) -> list[WarDetail]:
+        """Return wars involving the given alliances declared on or after *since*.
+
+        Wars are returned in ascending date order (oldest first).  Only works in
+        GraphQL mode; returns an empty list in REST mode.
+        """
+        if self._rest_url is not None:
+            return []
+        results: list[WarDetail] = []
+        page = 1
+        while True:
+            query = """
+            query GetNewAllianceWars($alliance_id: [Int], $page: Int) {
+                wars(alliance_id: $alliance_id, page: $page, first: 100) {
+                    data {
+                        id
+                        date
+                        att_id
+                        def_id
+                        att_alliance_id
+                        def_alliance_id
+                        attacker {
+                            nation_name
+                            num_cities
+                        }
+                        defender {
+                            nation_name
+                            num_cities
+                        }
+                        att_alliance {
+                            name
+                        }
+                        def_alliance {
+                            name
+                        }
+                    }
+                    paginatorInfo {
+                        hasMorePages
+                    }
+                }
+            }
+            """
+            data = await self._query(query, {"alliance_id": alliance_ids, "page": page})
+            payload = data.get("data", {}).get("wars", {})
+            wars = payload.get("data", [])
+            has_more = payload.get("paginatorInfo", {}).get("hasMorePages", False)
+
+            all_before_since = True
+            for war in wars:
+                date_str = war.get("date", "") or ""
+                war_date: datetime | None = None
+                if date_str:
+                    try:
+                        war_date = datetime.fromisoformat(date_str)
+                        if war_date.tzinfo is None:
+                            war_date = war_date.replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        pass
+
+                if war_date is not None and war_date >= since:
+                    all_before_since = False
+                    war_id = int(war.get("id") or 0)
+                    if not war_id:
+                        continue
+                    attacker = war.get("attacker") or {}
+                    defender = war.get("defender") or {}
+                    att_alliance = war.get("att_alliance") or {}
+                    def_alliance = war.get("def_alliance") or {}
+                    results.append(WarDetail(
+                        war_id=war_id,
+                        date=war_date,
+                        attacker_id=int(war.get("att_id") or 0),
+                        attacker_name=attacker.get("nation_name") or str(war.get("att_id") or "?"),
+                        attacker_alliance_id=int(war.get("att_alliance_id") or 0),
+                        attacker_alliance_name=att_alliance.get("name") or "",
+                        attacker_cities=int(attacker.get("num_cities") or 0),
+                        defender_id=int(war.get("def_id") or 0),
+                        defender_name=defender.get("nation_name") or str(war.get("def_id") or "?"),
+                        defender_alliance_id=int(war.get("def_alliance_id") or 0),
+                        defender_alliance_name=def_alliance.get("name") or "",
+                        defender_cities=int(defender.get("num_cities") or 0),
+                    ))
+
+            if all_before_since or not has_more:
+                break
+            page += 1
+
+        results.sort(key=lambda w: w.date)
+        return results
+
+
         self,
         alliance_ids: list[int],
         min_score: float,
