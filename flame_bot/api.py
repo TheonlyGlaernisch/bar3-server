@@ -4,21 +4,11 @@ flame_bot – HTTP API server for bar3 integration.
 bar3 (the website) calls this API after a user logs in via Discord OAuth to
 decide whether the user should be granted access.
 
+Note: /health, /ping, and / are intentionally omitted here – bar3-server
+(the Node process) owns those routes since both processes share the same host.
+
 Endpoints
 ---------
-GET /
-    Returns plain text "would you kindly begone".  Useful as a health-check
-    when the bot is hosted on a platform like Render.
-
-GET /health
-    Returns ``{"status": "ok"}`` (200 OK).  Intended as a lightweight
-    liveness probe for uptime monitors and deployment platforms.
-
-GET /ping
-    Returns
-    ``{"ping": "pong", "sigma": true, "skibidi": "toilet"}`` (200 OK).
-    Simple round-trip check.
-
 GET /glaernisch
     Returns ``{"touch": "grass"}`` (200 OK).
 
@@ -97,17 +87,6 @@ def create_app(
     if role_config is None:
         role_config = RoleConfig()
 
-    async def index(request: web.Request) -> web.Response:
-        return web.Response(text="would you kindly begone")
-
-    async def health(request: web.Request) -> web.Response:
-        return web.json_response({"status": "ok"})
-
-    async def ping(request: web.Request) -> web.Response:
-        return web.json_response(
-            {"ping": "pong", "sigma": True, "skibidi": "toilet"}
-        )
-
     async def glaernisch(request: web.Request) -> web.Response:
         return web.json_response({"touch": "grass"})
 
@@ -179,9 +158,6 @@ def create_app(
         )
 
     app = web.Application()
-    app.router.add_get("/", index)
-    app.router.add_get("/health", health)
-    app.router.add_get("/ping", ping)
     app.router.add_get("/glaernisch", glaernisch)
     app.router.add_get("/egg", egg)
     app.router.add_get("/api/roles/{discord_id}", get_roles)

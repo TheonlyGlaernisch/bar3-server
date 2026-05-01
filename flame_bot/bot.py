@@ -194,6 +194,8 @@ async def _check_gov_access(interaction: discord.Interaction, *role_keys: str) -
     *role_keys* should be keys from the gov-roles config (e.g. ``"milcom"``, ``"econ"``, ``"ia"``).
     Admins always pass regardless of configured roles.
     """
+    if interaction.user.id in config.ADMIN_DISCORD_IDS:
+        return True
     guild_id = interaction.guild_id or 0
     member = interaction.guild and interaction.guild.get_member(interaction.user.id)
     if member and member.guild_permissions.administrator:
@@ -211,11 +213,14 @@ async def _check_member_access(interaction: discord.Interaction) -> bool:
     """Return True if the caller is allowed to use member-gated commands.
 
     Passes if:
+    - Caller is in ADMIN_DISCORD_IDS.
     - Caller is a guild admin.
     - The "member" role has not been configured yet (keeps backward compatibility).
     - Caller holds the configured "member" role.
     - Caller holds any configured gov role (gov members are implicitly members).
     """
+    if interaction.user.id in config.ADMIN_DISCORD_IDS:
+        return True
     guild_id = interaction.guild_id or 0
     member = interaction.guild and interaction.guild.get_member(interaction.user.id)
     if member and member.guild_permissions.administrator:

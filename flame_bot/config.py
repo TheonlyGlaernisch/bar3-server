@@ -31,6 +31,23 @@ def _optional_int(key: str) -> int | None:
         ) from e
 
 
+def _optional_int_list(key: str) -> frozenset[int]:
+    """Return a frozenset of ints parsed from a comma-separated env var, or an empty set."""
+    value = os.getenv(key, "")
+    ids: list[int] = []
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            ids.append(int(part))
+        except ValueError as e:
+            raise EnvironmentError(
+                f"Environment variable '{key}' contains a non-integer value: {part!r}"
+            ) from e
+    return frozenset(ids)
+
+
 DISCORD_TOKEN: str = _require("DISCORD_TOKEN")
 PNW_API_KEY: str = _require("PNW_API_KEY")
 PNW_TEST_API_KEY: str = _require("PNW_TEST_API_KEY")
@@ -57,3 +74,7 @@ if API_KEY and GUILD_ID is None:
     raise EnvironmentError(
         "Environment variable 'GUILD_ID' is required when 'API_KEY' is set."
     )
+
+# Comma-separated list of Discord user IDs that bypass all command role checks.
+# Example: ADMIN_DISCORD_IDS=123456789012345678,987654321098765432
+ADMIN_DISCORD_IDS: frozenset[int] = _optional_int_list("ADMIN_DISCORD_IDS")
