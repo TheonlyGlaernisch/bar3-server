@@ -4,11 +4,17 @@ flame_bot – HTTP API server for bar3 integration.
 bar3 (the website) calls this API after a user logs in via Discord OAuth to
 decide whether the user should be granted access.
 
-Note: /health, /ping, and / are intentionally omitted here – bar3-server
-(the Node process) owns those routes since both processes share the same host.
-
 Endpoints
 ---------
+GET /
+    Returns ``"would you kindly begone"`` (200 OK).
+
+GET /health
+    Returns ``{"status": "ok"}`` (200 OK).
+
+GET /ping
+    Returns ``"pong"`` (200 OK).
+
 GET /glaernisch
     Returns ``{"touch": "grass"}`` (200 OK).
 
@@ -157,7 +163,19 @@ def create_app(
             }
         )
 
+    async def index(request: web.Request) -> web.Response:
+        return web.Response(text="would you kindly begone")
+
+    async def health(request: web.Request) -> web.Response:
+        return web.json_response({"status": "ok"})
+
+    async def ping(request: web.Request) -> web.Response:
+        return web.json_response({"ping": "pong", "sigma": True, "skibidi": "toilet"})
+
     app = web.Application()
+    app.router.add_get("/", index)
+    app.router.add_get("/health", health)
+    app.router.add_get("/ping", ping)
     app.router.add_get("/glaernisch", glaernisch)
     app.router.add_get("/egg", egg)
     app.router.add_get("/api/roles/{discord_id}", get_roles)

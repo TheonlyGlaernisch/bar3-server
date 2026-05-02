@@ -202,3 +202,87 @@ class Database:
             {"$set": {"key": "pnw_api_key", "value": api_key}},
             upsert=True,
         )
+
+    # War alert subscription helpers -----------------------------------------
+
+    def _war_alert_col(self):  # type: ignore[return]
+        """Lazy accessor for the war_alert_subscriptions collection."""
+        col = self._client["TRF"]["war_alert_subscriptions"]
+        col.create_index(
+            [("guild_id", ASCENDING), ("channel_id", ASCENDING)], unique=True
+        )
+        return col
+
+    def add_war_alert_subscription(
+        self,
+        guild_id: int,
+        channel_id: int,
+        min_cities: int | None,
+        max_cities: int | None,
+    ) -> None:
+        """Upsert a war-alert subscription for a (guild, channel) pair."""
+        self._war_alert_col().update_one(
+            {"guild_id": str(guild_id), "channel_id": str(channel_id)},
+            {
+                "$set": {
+                    "guild_id": str(guild_id),
+                    "channel_id": str(channel_id),
+                    "min_cities": min_cities,
+                    "max_cities": max_cities,
+                }
+            },
+            upsert=True,
+        )
+
+    def remove_war_alert_subscription(self, guild_id: int, channel_id: int) -> bool:
+        """Remove a war-alert subscription. Returns True if one was deleted."""
+        result = self._war_alert_col().delete_one(
+            {"guild_id": str(guild_id), "channel_id": str(channel_id)}
+        )
+        return result.deleted_count > 0
+
+    def get_war_alert_subscriptions(self, guild_id: int) -> list[dict]:
+        """Return all war-alert subscriptions for a guild."""
+        return list(
+            self._war_alert_col().find({"guild_id": str(guild_id)}, {"_id": 0})
+        )
+
+    def get_all_war_alert_subscriptions(self) -> list[dict]:
+        """Return every war-alert subscription across all guilds."""
+        return list(self._war_alert_col().find({}, {"_id": 0}))
+
+    # Recruiter subscription helpers -----------------------------------------
+
+    def _recruiter_col(self):  # type: ignore[return]
+        """Lazy accessor for the recruiter_subscriptions collection."""
+        col = self._client["TRF"]["recruiter_subscriptions"]
+        col.create_index(
+            [("guild_id", ASCENDING), ("channel_id", ASCENDING)], unique=True
+        )
+        return col
+
+    def add_recruiter_subscription(self, guild_id: int, channel_id: int) -> None:
+        """Upsert a recruiter subscription for a (guild, channel) pair."""
+        self._recruiter_col().update_one(
+            {"guild_id": str(guild_id), "channel_id": str(channel_id)},
+            {"$set": {"guild_id": str(guild_id), "channel_id": str(channel_id)}},
+            upsert=True,
+        )
+
+    def remove_recruiter_subscription(self, guild_id: int, channel_id: int) -> bool:
+        """Remove a recruiter subscription. Returns True if one was deleted."""
+        result = self._recruiter_col().delete_one(
+            {"guild_id": str(guild_id), "channel_id": str(channel_id)}
+        )
+        return result.deleted_count > 0
+
+    def get_recruiter_subscriptions(self, guild_id: int) -> list[dict]:
+        """Return all recruiter subscriptions for a guild."""
+        return list(
+            self._recruiter_col().find({"guild_id": str(guild_id)}, {"_id": 0})
+        )
+
+    def get_all_recruiter_subscriptions(self) -> list[dict]:
+        """Return every recruiter subscription across all guilds."""
+        return list(self._recruiter_col().find({}, {"_id": 0}))
+
