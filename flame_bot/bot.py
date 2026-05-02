@@ -124,6 +124,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import random
 import time
 import re
@@ -164,8 +165,9 @@ from pnw_api import (
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
+log_level = logging.DEBUG if os.getenv("LOG_LEVEL", "").upper() == "DEBUG" else logging.INFO
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 log = logging.getLogger("flame_bot")
@@ -728,7 +730,21 @@ class FlameBot(discord.Client):
         """
         subscriptions = self.db.get_all_war_alert_subscriptions()
         if not subscriptions:
+            log.debug(
+                "War alert: war %d received (att_alliance=%d, def_alliance=%d) "
+                "but no subscriptions are configured — skipping.",
+                war.war_id, war.attacker_alliance_id, war.defender_alliance_id,
+            )
             return
+
+        log.debug(
+            "War alert: war %d received — att=%s (alliance %d) vs def=%s (alliance %d), "
+            "checking %d subscription(s).",
+            war.war_id,
+            war.attacker_name, war.attacker_alliance_id,
+            war.defender_name, war.defender_alliance_id,
+            len(subscriptions),
+        )
 
         for sub in subscriptions:
             guild_id_raw = sub.get("guild_id")
@@ -736,10 +752,21 @@ class FlameBot(discord.Client):
                 continue
             alliance_id = self.db.get_alliance_id(int(guild_id_raw))
             if alliance_id is None:
+                log.debug(
+                    "War alert: war %d — guild %s has no primary alliance configured "
+                    "(use /admin alliance set <id>); skipping.",
+                    war.war_id, guild_id_raw,
+                )
                 continue
 
             # Only alert if this guild's alliance is involved.
             if war.attacker_alliance_id != alliance_id and war.defender_alliance_id != alliance_id:
+                log.debug(
+                    "War alert: war %d — guild %s alliance %d not involved "
+                    "(att_alliance=%d, def_alliance=%d); skipping.",
+                    war.war_id, guild_id_raw, alliance_id,
+                    war.attacker_alliance_id, war.defender_alliance_id,
+                )
                 continue
 
             await self._dispatch_war_alert(war, alliance_id, sub)
@@ -753,6 +780,10 @@ class FlameBot(discord.Client):
             return
         channel = self.get_channel(int(channel_id_raw))
         if not isinstance(channel, discord.TextChannel):
+            log.debug(
+                "War alert: war %d — channel %s not found or not a text channel.",
+                war.war_id, channel_id_raw,
+            )
             return
 
         min_cities: int | None = sub.get("min_cities")
@@ -765,10 +796,26 @@ class FlameBot(discord.Client):
             our_cities = war.defender_cities
 
         if min_cities is not None and our_cities < min_cities:
+            log.debug(
+                "War alert: war %d — our member has %d cities, below min %d; skipping.",
+                war.war_id, our_cities, min_cities,
+            )
             return
         if max_cities is not None and our_cities > max_cities:
+            log.debug(
+                "War alert: war %d — our member has %d cities, above max %d; skipping.",
+                war.war_id, our_cities, max_cities,
+            )
             return
 
+        is_offensive = war.attacker_alliance_id == alliance_id
+        log.info(
+            "War alert: dispatching war %d (%s) to guild %s channel %s.",
+            war.war_id,
+            "offensive" if is_offensive else "defensive",
+            sub.get("guild_id"),
+            channel_id_raw,
+        )
         embed = _build_war_alert_embed(war, alliance_id)
         try:
             await channel.send(embed=embed)
