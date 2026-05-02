@@ -190,6 +190,21 @@ ROLE_IDS: dict[str, int | None] = {
 _MENTION_RE = re.compile(r"^<@!?(\d+)>$")
 
 
+
+
+def _has_admin_command_access(interaction: discord.Interaction) -> bool:
+    """Return True when a user is allowed to run admin commands."""
+    if interaction.user.id in config.ADMIN_DISCORD_IDS:
+        return True
+    member = interaction.guild and interaction.guild.get_member(interaction.user.id)
+    return bool(member and member.guild_permissions.administrator)
+
+
+def _admin_command_check() -> app_commands.Check:
+    async def predicate(interaction: discord.Interaction) -> bool:
+        return _has_admin_command_access(interaction)
+
+    return app_commands.check(predicate)
 def _get_role(guild: discord.Guild, role_id: int | None) -> discord.Role | None:
     if role_id is None:
         return None
@@ -221,7 +236,7 @@ async def _check_member_access(interaction: discord.Interaction) -> bool:
     """Return True if the caller is allowed to use member-gated commands.
 
     Passes if:
-    - Caller is in ADMIN_DISCORD_IDS.
+    - Caller is in the configured elevated-access list.
     - Caller is a guild admin.
     - The "member" role has not been configured yet (keeps backward compatibility).
     - Caller holds the configured "member" role.
@@ -1768,7 +1783,7 @@ async def alliance_lots_of_info(interaction: discord.Interaction, query: str) ->
 
 config_group = app_commands.Group(
     name="config",
-    description="Bot configuration commands (admin only).",
+    description="Bot configuration commands.",
 )
 bot.tree.add_command(config_group)
 
@@ -2159,7 +2174,7 @@ bot.tree.add_command(roles_group)
 
 @roles_group.command(
     name="setup",
-    description="Map existing server roles to government departments (admin only).",
+    description="Map existing server roles to government departments.",
 )
 @app_commands.describe(
     leader="Role that counts as Leader.",
@@ -2173,7 +2188,7 @@ bot.tree.add_command(roles_group)
     gov="Role that counts as Basic Gov.",
     member="Role required to use most bot commands (not shown in /gov).",
 )
-@app_commands.checks.has_permissions(administrator=True)
+@_admin_command_check()
 async def roles_setup(
     interaction: discord.Interaction,
     leader: discord.Role | None = None,
@@ -2227,9 +2242,9 @@ async def roles_setup(
 async def roles_setup_error(
     interaction: discord.Interaction, error: app_commands.AppCommandError
 ) -> None:
-    if isinstance(error, app_commands.MissingPermissions):
+    if isinstance(error, (app_commands.MissingPermissions, app_commands.CheckFailure)):
         await interaction.response.send_message(
-            "❌ You need the **Administrator** permission to use this command.",
+            "❌ You do not have permission to use this command.",
             ephemeral=True,
         )
     else:
@@ -2624,7 +2639,7 @@ async def test_alliance_find(interaction: discord.Interaction, query: str) -> No
 
 setup_group = app_commands.Group(
     name="setup",
-    description="Bot setup commands (admin only).",
+    description="Bot setup commands.",
 )
 bot.tree.add_command(setup_group)
 
@@ -3192,7 +3207,7 @@ async def request_grant(
 
 admin_group = app_commands.Group(
     name="admin",
-    description="Bot administration commands (admin only).",
+    description="Bot administration commands.",
 )
 bot.tree.add_command(admin_group)
 
@@ -3205,10 +3220,10 @@ admin_group.add_command(admin_alliance_group)
 
 @admin_alliance_group.command(
     name="set",
-    description="Set the primary alliance ID for this guild (admin only).",
+    description="Set the primary alliance ID for this guild.",
 )
 @app_commands.describe(alliance_id="The Politics and War alliance ID to associate with this guild.")
-@app_commands.checks.has_permissions(administrator=True)
+@_admin_command_check()
 async def admin_alliance_set(interaction: discord.Interaction, alliance_id: int) -> None:
     await interaction.response.defer(ephemeral=True)
     if alliance_id <= 0:
@@ -3230,9 +3245,9 @@ async def admin_alliance_set(interaction: discord.Interaction, alliance_id: int)
 async def admin_alliance_set_error(
     interaction: discord.Interaction, error: app_commands.AppCommandError
 ) -> None:
-    if isinstance(error, app_commands.MissingPermissions):
+    if isinstance(error, (app_commands.MissingPermissions, app_commands.CheckFailure)):
         await interaction.response.send_message(
-            "❌ You need the **Administrator** permission to use this command.",
+            "❌ You do not have permission to use this command.",
             ephemeral=True,
         )
     else:
@@ -3272,10 +3287,10 @@ admin_group.add_command(admin_api_key_group)
 
 @admin_api_key_group.command(
     name="set",
-    description="Override the PnW API key used by this bot (admin only).",
+    description="Override the PnW API key used by this bot.",
 )
 @app_commands.describe(api_key="The new Politics and War API key.")
-@app_commands.checks.has_permissions(administrator=True)
+@_admin_command_check()
 async def admin_api_key_set(interaction: discord.Interaction, api_key: str) -> None:
     await interaction.response.defer(ephemeral=True)
     bot.db.set_pnw_api_key(api_key)
@@ -3291,9 +3306,9 @@ async def admin_api_key_set(interaction: discord.Interaction, api_key: str) -> N
 async def admin_api_key_set_error(
     interaction: discord.Interaction, error: app_commands.AppCommandError
 ) -> None:
-    if isinstance(error, app_commands.MissingPermissions):
+    if isinstance(error, (app_commands.MissingPermissions, app_commands.CheckFailure)):
         await interaction.response.send_message(
-            "❌ You need the **Administrator** permission to use this command.",
+            "❌ You do not have permission to use this command.",
             ephemeral=True,
         )
     else:
@@ -3429,9 +3444,9 @@ async def admin_welcome_show(interaction: discord.Interaction) -> None:
 
 @admin_group.command(
     name="clear_guild_commands",
-    description="Clear all guild-scoped slash commands to remove duplicates (admin only).",
+    description="Clear all guild-scoped slash commands to remove duplicates.",
 )
-@app_commands.checks.has_permissions(administrator=True)
+@_admin_command_check()
 async def admin_clear_guild_commands(interaction: discord.Interaction) -> None:
     await interaction.response.defer(ephemeral=True)
     guild = interaction.guild
@@ -3451,9 +3466,9 @@ async def admin_clear_guild_commands(interaction: discord.Interaction) -> None:
 async def admin_clear_guild_commands_error(
     interaction: discord.Interaction, error: app_commands.AppCommandError
 ) -> None:
-    if isinstance(error, app_commands.MissingPermissions):
+    if isinstance(error, (app_commands.MissingPermissions, app_commands.CheckFailure)):
         await interaction.response.send_message(
-            "❌ You need the **Administrator** permission to use this command.",
+            "❌ You do not have permission to use this command.",
             ephemeral=True,
         )
     else:
@@ -3467,9 +3482,9 @@ async def admin_clear_guild_commands_error(
 
 @admin_group.command(
     name="sync",
-    description="Copy global commands to this server for instant propagation (admin only).",
+    description="Copy global commands to this server for instant propagation.",
 )
-@app_commands.checks.has_permissions(administrator=True)
+@_admin_command_check()
 async def admin_sync(interaction: discord.Interaction) -> None:
     await interaction.response.defer(ephemeral=True)
     guild = interaction.guild
@@ -3489,9 +3504,9 @@ async def admin_sync(interaction: discord.Interaction) -> None:
 async def admin_sync_error(
     interaction: discord.Interaction, error: app_commands.AppCommandError
 ) -> None:
-    if isinstance(error, app_commands.MissingPermissions):
+    if isinstance(error, (app_commands.MissingPermissions, app_commands.CheckFailure)):
         await interaction.response.send_message(
-            "❌ You need the **Administrator** permission to use this command.",
+            "❌ You do not have permission to use this command.",
             ephemeral=True,
         )
     else:
@@ -4947,7 +4962,7 @@ _HELP_COMMANDS = [
     ("/test alliance info <query>", "Look up an alliance via the PnW test API by ID, name, or @mention."),
     ("/gov", "Show members who hold a configured government role."),
     ("/slots", "Show open defensive war slots for monitored alliances."),
-    ("/roles setup", "Map server roles to government departments. *(admin)*"),
+    ("/roles setup", "Map server roles to government departments."),
     ("/roles show", "Show the currently configured government roles."),
     ("/config slots set <ids>", "Set alliance IDs monitored by /slots. *(admin or milcom)*"),
     ("/config slots show", "Show configured /slots alliance IDs."),
@@ -4957,14 +4972,15 @@ _HELP_COMMANDS = [
     ("/setup war_alerts remove <channel>", "Stop war alerts in a channel. *(admin or milcom)*"),
     ("/setup war_alerts list", "Show all war-alert subscriptions for this server."),
     ("/admin alliance set <id>", "Set the guild's primary alliance ID. *(admin)*"),
+    ("/admin alliance set <id>", "Set the guild's primary alliance ID."),
     ("/admin alliance show", "Show the guild's configured primary alliance ID."),
-    ("/admin api_key set <key>", "Override the PnW API key used by this bot. *(admin)*"),
+    ("/admin api_key set <key>", "Override the PnW API key used by this bot."),
     ("/admin welcome set_message <message>", "Set the welcome template. Tokens: !(user), !(mention), !(status), !(channel). *(admin/leader/2ic/ia)*"),
     ("/admin welcome set_channel <channel>", "Set the channel for welcome posts. *(admin/leader/2ic/ia)*"),
     ("/admin welcome toggle <enabled>", "Enable/disable welcome messages. *(admin/leader/2ic/ia)*"),
     ("/admin welcome show", "Show current welcome-message settings. *(admin/leader/2ic/ia)*"),
-    ("/admin clear_guild_commands", "Clear guild-scoped commands to remove duplicates. *(admin)*"),
-    ("/admin sync", "Copy global commands to this server for instant propagation. *(admin)*"),
+    ("/admin clear_guild_commands", "Clear guild-scoped commands to remove duplicates."),
+    ("/admin sync", "Copy global commands to this server for instant propagation."),
     ("/color", "Check whether alliance members are on the correct color."),
     ("/damage leaderboard", "Show all alliance members' war output over the past 7 days, including members with no wars at zero."),
     ("/spy target find <alliances>", "Find nations in given alliances (comma-separated names or IDs) sorted by spy capacity (cities)."),
