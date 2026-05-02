@@ -150,6 +150,7 @@ from pnw_api import (
     City,
     GameInfo,
     Nation,
+    NationCreateDetail,
     NationRevenue,
     PnWClient,
     PnWSubscriptionClient,
@@ -171,6 +172,10 @@ log = logging.getLogger("flame_bot")
 
 BOT_NAME = "flame_bot"
 DISCORD_COMMAND_COOLDOWN_SECONDS = 2.0
+
+# Minimum age of a new nation before a recruitment message can be sent.
+# The game blocks in-game messages to nations younger than 5 minutes.
+_RECRUIT_DELAY_SECONDS = 5 * 60
 
 # ---------------------------------------------------------------------------
 # Role helpers
@@ -509,6 +514,7 @@ class FlameBot(discord.Client):
         self._api_runner: web.AppRunner | None = None
         self._invite_refresh_task: asyncio.Task[None] | None = None
         self._war_alert_task: asyncio.Task[None] | None = None
+        self._nation_create_task: asyncio.Task[None] | None = None
         self._command_cooldowns: dict[int, float] = {}
 
     async def setup_hook(self) -> None:
@@ -621,6 +627,9 @@ class FlameBot(discord.Client):
         if self._war_alert_task is None or self._war_alert_task.done():
             self._war_alert_task = asyncio.create_task(self._war_alert_loop())
             log.info("Started war alert subscription loop.")
+        if self._nation_create_task is None or self._nation_create_task.done():
+            self._nation_create_task = asyncio.create_task(self._nation_create_loop())
+            log.info("Started recruiter nation-create subscription loop.")
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
         await self._persist_guild(guild)
@@ -754,6 +763,61 @@ class FlameBot(discord.Client):
                 channel.id, sub.get("guild_id"),
             )
 
+    # ------------------------------------------------------------------
+    # Recruiter nation-create subscription loop
+    # ------------------------------------------------------------------
+
+    async def _nation_create_loop(self) -> None:
+        """Background task: subscribe to PnW nationCreate events and schedule recruit alerts."""
+        await self.wait_until_ready()
+        log.info("Recruiter: starting PnW nationCreate subscription listener.")
+        async with PnWSubscriptionClient(self.pnw._api_key) as sub:
+            async for nation in sub.iter_nation_creates():
+                if self.is_closed():
+                    break
+                try:
+                    # Schedule delayed dispatch; fire-and-forget so the subscription
+                    # loop continues receiving events while others are waiting.
+                    asyncio.create_task(self._dispatch_nation_create_delayed(nation))
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.exception("Recruiter: error scheduling nation %d.", nation.nation_id)
+
+    async def _dispatch_nation_create_delayed(self, nation: NationCreateDetail) -> None:
+        """Wait out the game's 5-minute messaging restriction, then dispatch recruit embeds."""
+        now = datetime.now(tz=timezone.utc)
+        age_seconds = (now - nation.founded).total_seconds()
+        remaining = max(0.0, _RECRUIT_DELAY_SECONDS - age_seconds)
+        if remaining > 0:
+            log.debug(
+                "Recruiter: nation %d (%s) must wait %.0fs before messaging.",
+                nation.nation_id, nation.nation_name, remaining,
+            )
+            await asyncio.sleep(remaining)
+        await self._dispatch_nation_create_to_all_guilds(nation)
+
+    async def _dispatch_nation_create_to_all_guilds(self, nation: NationCreateDetail) -> None:
+        """Fan the nation-create event out to every recruiter subscription across all guilds."""
+        subscriptions = self.db.get_all_recruiter_subscriptions()
+        if not subscriptions:
+            return
+        embed = _build_recruiter_embed(nation)
+        for sub in subscriptions:
+            channel_id_raw = sub.get("channel_id")
+            if not channel_id_raw:
+                continue
+            channel = self.get_channel(int(channel_id_raw))
+            if not isinstance(channel, discord.TextChannel):
+                continue
+            try:
+                await channel.send(embed=embed)
+            except (discord.Forbidden, discord.HTTPException):
+                log.warning(
+                    "Recruiter: could not send to channel %d (guild %s).",
+                    channel.id, sub.get("guild_id"),
+                )
+
     async def close(self) -> None:
         await self.pnw.close()
         await self.pnw_test.close()
@@ -765,6 +829,10 @@ class FlameBot(discord.Client):
             self._war_alert_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._war_alert_task
+        if self._nation_create_task is not None:
+            self._nation_create_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._nation_create_task
         if self._api_runner is not None:
             await self._api_runner.cleanup()
         await super().close()
@@ -846,6 +914,31 @@ def _build_war_alert_embed(war: WarDetail, alliance_id: int) -> discord.Embed:
     )
     legend = "👥 soldiers  🪖 tanks  ✈️ aircraft  🚢 ships  🚀 missiles  ☢️ nukes"
     embed.set_footer(text=f"War ID {war.war_id} · {war.date.strftime('%Y-%m-%d %H:%M UTC')}  ·  {legend}")
+    return embed
+
+
+def _build_recruiter_embed(nation: NationCreateDetail) -> discord.Embed:
+    """Return a Discord embed announcing a newly-founded nation available for recruitment."""
+    nation_url = _nation_url(nation.nation_id)
+    embed = discord.Embed(
+        title=f"🌍 New Nation: {nation.nation_name}",
+        url=nation_url,
+        color=discord.Color.green(),
+    )
+    embed.add_field(name="Nation ID", value=str(nation.nation_id), inline=True)
+    embed.add_field(name="Leader", value=nation.leader_name or "—", inline=True)
+    embed.add_field(name="Cities", value=str(nation.cities), inline=True)
+    if nation.score > 0:
+        embed.add_field(name="Score", value=f"{nation.score:,.2f}", inline=True)
+    if nation.alliance_id:
+        embed.add_field(
+            name="Alliance",
+            value=f"[{nation.alliance_id}]({_alliance_url(nation.alliance_id)})",
+            inline=True,
+        )
+    embed.set_footer(
+        text=f"Founded {nation.founded.strftime('%Y-%m-%d %H:%M UTC')} · Recruit now!"
+    )
     return embed
 
 
@@ -2757,6 +2850,146 @@ async def setup_war_alerts_list(interaction: discord.Interaction) -> None:
         embed.set_footer(text=f"Monitoring alliance ID {alliance_id}")
     else:
         embed.set_footer(text="⚠️ No primary alliance set — use /admin alliance set")
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+# ---------------------------------------------------------------------------
+# /setup recruiter  (subgroup)
+# ---------------------------------------------------------------------------
+
+setup_recruiter_group = app_commands.Group(
+    name="recruiter",
+    description="Configure automatic new-nation recruit alerts for this server.",
+)
+setup_group.add_command(setup_recruiter_group)
+
+
+@setup_recruiter_group.command(
+    name="add",
+    description="Post new-nation alerts to a channel (admin/milcom/IA only).",
+)
+@app_commands.describe(channel="Text channel to receive new-nation recruit alerts.")
+async def setup_recruiter_add(
+    interaction: discord.Interaction,
+    channel: discord.TextChannel,
+) -> None:
+    await interaction.response.defer(ephemeral=True)
+
+    if not await _check_member_access(interaction):
+        await interaction.followup.send(
+            embed=_error_embed("❌ You need the **Member** role to use this command."),
+            ephemeral=True,
+        )
+        return
+
+    if not await _check_gov_access(interaction, "milcom", "milcom_gov", "ia", "ia_asst"):
+        await interaction.followup.send(
+            embed=_error_embed(
+                "❌ You need the **Administrator**, **Military Command**, or **Internal Affairs** role to use this command."
+            ),
+            ephemeral=True,
+        )
+        return
+
+    guild_id = interaction.guild_id or 0
+    bot.db.add_recruiter_subscription(guild_id, channel.id)
+    log.info(
+        "Guild %d: recruiter alerts added for channel #%s (%d) by %s",
+        guild_id, channel.name, channel.id, interaction.user,
+    )
+    await interaction.followup.send(
+        embed=_success_embed(
+            f"✅ New-nation recruit alerts will be posted in {channel.mention}.\n"
+            f"ℹ️ Alerts are sent 5 minutes after a nation is created (game restriction)."
+        ),
+        ephemeral=True,
+    )
+
+
+@setup_recruiter_group.command(
+    name="remove",
+    description="Stop posting recruit alerts to a channel (admin/milcom/IA only).",
+)
+@app_commands.describe(channel="Text channel to remove recruit alerts from.")
+async def setup_recruiter_remove(
+    interaction: discord.Interaction,
+    channel: discord.TextChannel,
+) -> None:
+    await interaction.response.defer(ephemeral=True)
+
+    if not await _check_member_access(interaction):
+        await interaction.followup.send(
+            embed=_error_embed("❌ You need the **Member** role to use this command."),
+            ephemeral=True,
+        )
+        return
+
+    if not await _check_gov_access(interaction, "milcom", "milcom_gov", "ia", "ia_asst"):
+        await interaction.followup.send(
+            embed=_error_embed(
+                "❌ You need the **Administrator**, **Military Command**, or **Internal Affairs** role to use this command."
+            ),
+            ephemeral=True,
+        )
+        return
+
+    guild_id = interaction.guild_id or 0
+    removed = bot.db.remove_recruiter_subscription(guild_id, channel.id)
+    if removed:
+        log.info(
+            "Guild %d: recruiter alerts removed from channel #%s (%d) by %s",
+            guild_id, channel.name, channel.id, interaction.user,
+        )
+        await interaction.followup.send(
+            embed=_success_embed(f"✅ Recruit alerts removed from {channel.mention}."),
+            ephemeral=True,
+        )
+    else:
+        await interaction.followup.send(
+            embed=_info_embed(f"ℹ️ No recruiter subscription found for {channel.mention}."),
+            ephemeral=True,
+        )
+
+
+@setup_recruiter_group.command(
+    name="list",
+    description="Show all recruit-alert subscriptions configured for this server.",
+)
+async def setup_recruiter_list(interaction: discord.Interaction) -> None:
+    await interaction.response.defer(ephemeral=True)
+
+    if not await _check_member_access(interaction):
+        await interaction.followup.send(
+            embed=_error_embed("❌ You need the **Member** role to use this command."),
+            ephemeral=True,
+        )
+        return
+
+    guild_id = interaction.guild_id or 0
+    subs = bot.db.get_recruiter_subscriptions(guild_id)
+
+    if not subs:
+        await interaction.followup.send(
+            embed=_info_embed(
+                "ℹ️ No recruiter subscriptions configured. "
+                "Use `/setup recruiter add` to add one."
+            ),
+            ephemeral=True,
+        )
+        return
+
+    lines: list[str] = []
+    for sub in subs:
+        channel_id_raw = sub.get("channel_id")
+        channel_mention = f"<#{channel_id_raw}>" if channel_id_raw else "*(unknown channel)*"
+        lines.append(f"• {channel_mention}")
+
+    embed = discord.Embed(
+        title="🌍 Recruiter Subscriptions",
+        description="\n".join(lines),
+        color=discord.Color.green(),
+    )
+    embed.set_footer(text="Alerts arrive 5 minutes after nation creation (game restriction)")
     await interaction.followup.send(embed=embed, ephemeral=True)
 
 

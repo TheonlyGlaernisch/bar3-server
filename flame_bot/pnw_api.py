@@ -2179,6 +2179,32 @@ def compute_nation_revenue(
 # See: https://github.com/enisdenjo/graphql-ws/blob/master/PROTOCOL.md
 PNW_WS_URL = "wss://api.politicsandwar.com/graphql-ws"
 
+@dataclass
+class NationCreateDetail:
+    """Lightweight summary of a newly-founded nation from the ``nationCreate`` subscription."""
+    nation_id: int
+    nation_name: str
+    leader_name: str
+    founded: datetime
+    alliance_id: int = 0
+    cities: int = 0
+    score: float = 0.0
+
+
+_NATION_CREATE_SUBSCRIPTION_QUERY = """
+subscription {
+    nationCreate {
+        id
+        nation_name
+        leader_name
+        date
+        alliance_id
+        num_cities
+        score
+    }
+}
+"""
+
 _WAR_SUBSCRIPTION_QUERY = """
 subscription {
     warCreate {
@@ -2226,6 +2252,41 @@ subscription {
     }
 }
 """
+
+
+def _parse_nation_create_event(payload: dict) -> Optional[NationCreateDetail]:
+    """Parse a ``nationCreate`` subscription event into a :class:`NationCreateDetail`.
+
+    Returns ``None`` if the payload is missing required data.
+    """
+    nation = (payload.get("data") or {}).get("nationCreate") or {}
+    if not nation:
+        return None
+    nation_id = int(nation.get("id") or 0)
+    if not nation_id:
+        return None
+
+    date_str = nation.get("date", "") or ""
+    founded: datetime | None = None
+    if date_str:
+        try:
+            founded = datetime.fromisoformat(date_str)
+            if founded.tzinfo is None:
+                founded = founded.replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+    if founded is None:
+        founded = datetime.now(tz=timezone.utc)
+
+    return NationCreateDetail(
+        nation_id=nation_id,
+        nation_name=nation.get("nation_name") or str(nation_id),
+        leader_name=nation.get("leader_name") or "",
+        founded=founded,
+        alliance_id=int(nation.get("alliance_id") or 0),
+        cities=int(nation.get("num_cities") or 0),
+        score=float(nation.get("score") or 0),
+    )
 
 
 def _parse_war_event(payload: dict) -> Optional[WarDetail]:
@@ -2403,4 +2464,85 @@ class PnWSubscriptionClient:
                     aiohttp.WSMsgType.CLOSING,
                 ):
                     log.info("PnW subscription: WebSocket closed (type=%s).", msg.type)
+                    return
+
+    async def iter_nation_creates(self):  # type: ignore[return]
+        """Async-iterate over :class:`NationCreateDetail` events as they arrive.
+
+        Reconnects automatically on connection failure with exponential back-off.
+        Raises :exc:`asyncio.CancelledError` when the surrounding task is cancelled.
+        """
+        delay = self._RECONNECT_BASE
+        while True:
+            try:
+                async for nation in self._subscribe_once_nations():
+                    delay = self._RECONNECT_BASE  # reset delay on successful event
+                    yield nation
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception(
+                    "PnW recruiter subscription: connection lost, reconnecting in %ds.", delay
+                )
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, self._RECONNECT_MAX)
+
+    async def _subscribe_once_nations(self):  # type: ignore[return]
+        """Open one WebSocket connection and yield NationCreateDetail events until it closes."""
+        if self._session is None:
+            raise RuntimeError("PnWSubscriptionClient used outside async context manager.")
+
+        url = f"{PNW_WS_URL}?api_key={self._api_key}"
+        headers = {"Sec-WebSocket-Protocol": self._SUBPROTOCOL}
+
+        async with self._session.ws_connect(
+            url,
+            protocols=[self._SUBPROTOCOL],
+            headers=headers,
+            heartbeat=30,
+        ) as ws:
+            log.info("PnW recruiter subscription: WebSocket connected.")
+
+            # graphql-transport-ws handshake
+            await ws.send_str(_json.dumps({"type": "connection_init", "payload": {}}))
+
+            # Wait for connection_ack
+            msg = await ws.receive()
+            if msg.type != aiohttp.WSMsgType.TEXT:
+                log.warning("PnW recruiter subscription: unexpected message type during handshake: %s", msg.type)
+                return
+            frame = _json.loads(msg.data)
+            if frame.get("type") != "connection_ack":
+                log.warning("PnW recruiter subscription: expected connection_ack, got: %s", frame.get("type"))
+                return
+
+            log.info("PnW recruiter subscription: connection_ack received, subscribing to nationCreate.")
+
+            # Send the subscription
+            await ws.send_str(_json.dumps({
+                "type": "subscribe",
+                "id": "nation_create",
+                "payload": {"query": _NATION_CREATE_SUBSCRIPTION_QUERY},
+            }))
+
+            async for msg in ws:
+                if msg.type == aiohttp.WSMsgType.TEXT:
+                    frame = _json.loads(msg.data)
+                    msg_type = frame.get("type", "")
+                    if msg_type == "next":
+                        nation = _parse_nation_create_event(frame.get("payload") or {})
+                        if nation is not None:
+                            yield nation
+                    elif msg_type == "ping":
+                        await ws.send_str(_json.dumps({"type": "pong"}))
+                    elif msg_type in ("complete", "error"):
+                        log.warning("PnW recruiter subscription: received %s — reconnecting.", msg_type)
+                        return
+                    # ignore keep-alive / other messages
+                elif msg.type in (
+                    aiohttp.WSMsgType.CLOSED,
+                    aiohttp.WSMsgType.ERROR,
+                    aiohttp.WSMsgType.CLOSING,
+                ):
+                    log.info("PnW recruiter subscription: WebSocket closed (type=%s).", msg.type)
                     return

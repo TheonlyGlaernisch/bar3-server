@@ -7,7 +7,7 @@ import pytest
 from pymongo.errors import DuplicateKeyError
 
 from database import Database
-from pnw_api import PnWClient, _parse_resource_loot
+from pnw_api import PnWClient, _parse_resource_loot, _parse_nation_create_event
 
 
 # ---------------------------------------------------------------------------
@@ -1821,3 +1821,200 @@ class TestGetAllianceDamage:
         assert entry["def_tanks_killed"] == 10.0
         assert entry["def_aircraft_killed"] == 5.0  # 2 by tanks + 3 in AIRVAIR
         assert entry["def_ships_sunk"] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# _parse_nation_create_event tests
+# ---------------------------------------------------------------------------
+
+_NATION_CREATE_PAYLOAD = {
+    "data": {
+        "nationCreate": {
+            "id": "99001",
+            "nation_name": "New Lands",
+            "leader_name": "Alice",
+            "date": "2025-01-15T10:00:00+00:00",
+            "alliance_id": "42",
+            "num_cities": 1,
+            "score": 25.0,
+        }
+    }
+}
+
+
+class TestParseNationCreateEvent:
+    def test_valid_payload_returns_dataclass(self):
+        result = _parse_nation_create_event(_NATION_CREATE_PAYLOAD)
+        assert result is not None
+        assert result.nation_id == 99001
+        assert result.nation_name == "New Lands"
+        assert result.leader_name == "Alice"
+        assert result.alliance_id == 42
+        assert result.cities == 1
+        assert result.score == 25.0
+        assert result.founded == datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+
+    def test_missing_id_returns_none(self):
+        payload = {
+            "data": {
+                "nationCreate": {
+                    "nation_name": "Ghost",
+                    "leader_name": "Nobody",
+                    "date": "2025-01-15T10:00:00+00:00",
+                }
+            }
+        }
+        assert _parse_nation_create_event(payload) is None
+
+    def test_zero_id_returns_none(self):
+        payload = {
+            "data": {
+                "nationCreate": {
+                    "id": "0",
+                    "nation_name": "Ghost",
+                }
+            }
+        }
+        assert _parse_nation_create_event(payload) is None
+
+    def test_empty_payload_returns_none(self):
+        assert _parse_nation_create_event({}) is None
+
+    def test_missing_nation_create_key_returns_none(self):
+        assert _parse_nation_create_event({"data": {}}) is None
+
+    def test_missing_date_falls_back_to_utc_now(self):
+        payload = {
+            "data": {
+                "nationCreate": {
+                    "id": "12345",
+                    "nation_name": "No Date",
+                }
+            }
+        }
+        before = datetime.now(tz=timezone.utc)
+        result = _parse_nation_create_event(payload)
+        after = datetime.now(tz=timezone.utc)
+        assert result is not None
+        assert before <= result.founded <= after
+
+    def test_invalid_date_falls_back_to_utc_now(self):
+        payload = {
+            "data": {
+                "nationCreate": {
+                    "id": "12345",
+                    "nation_name": "Bad Date",
+                    "date": "not-a-date",
+                }
+            }
+        }
+        before = datetime.now(tz=timezone.utc)
+        result = _parse_nation_create_event(payload)
+        after = datetime.now(tz=timezone.utc)
+        assert result is not None
+        assert before <= result.founded <= after
+
+    def test_naive_date_gets_utc_timezone(self):
+        payload = {
+            "data": {
+                "nationCreate": {
+                    "id": "55555",
+                    "nation_name": "Naive Date Nation",
+                    "date": "2025-06-01T08:00:00",  # no tz info
+                }
+            }
+        }
+        result = _parse_nation_create_event(payload)
+        assert result is not None
+        assert result.founded.tzinfo is not None
+        assert result.founded.tzinfo == timezone.utc
+
+    def test_missing_optional_fields_default_to_zero(self):
+        payload = {
+            "data": {
+                "nationCreate": {
+                    "id": "77777",
+                    "nation_name": "Minimal Nation",
+                }
+            }
+        }
+        result = _parse_nation_create_event(payload)
+        assert result is not None
+        assert result.alliance_id == 0
+        assert result.cities == 0
+        assert result.score == 0.0
+        assert result.leader_name == ""
+
+
+# ---------------------------------------------------------------------------
+# Database recruiter subscription tests
+# ---------------------------------------------------------------------------
+
+
+class TestRecruiterSubscriptions:
+    def test_add_and_get_subscription(self):
+        db = _make_db()
+        db.add_recruiter_subscription(guild_id=1, channel_id=100)
+        subs = db.get_recruiter_subscriptions(1)
+        assert len(subs) == 1
+        assert subs[0]["guild_id"] == "1"
+        assert subs[0]["channel_id"] == "100"
+
+    def test_get_returns_empty_by_default(self):
+        db = _make_db()
+        assert db.get_recruiter_subscriptions(1) == []
+
+    def test_add_multiple_channels(self):
+        db = _make_db()
+        db.add_recruiter_subscription(1, 100)
+        db.add_recruiter_subscription(1, 200)
+        subs = db.get_recruiter_subscriptions(1)
+        channel_ids = {s["channel_id"] for s in subs}
+        assert channel_ids == {"100", "200"}
+
+    def test_add_is_idempotent(self):
+        db = _make_db()
+        db.add_recruiter_subscription(1, 100)
+        db.add_recruiter_subscription(1, 100)
+        assert len(db.get_recruiter_subscriptions(1)) == 1
+
+    def test_remove_returns_true_when_deleted(self):
+        db = _make_db()
+        db.add_recruiter_subscription(1, 100)
+        assert db.remove_recruiter_subscription(1, 100) is True
+        assert db.get_recruiter_subscriptions(1) == []
+
+    def test_remove_returns_false_when_not_found(self):
+        db = _make_db()
+        assert db.remove_recruiter_subscription(1, 999) is False
+
+    def test_subscriptions_isolated_per_guild(self):
+        db = _make_db()
+        db.add_recruiter_subscription(1, 100)
+        db.add_recruiter_subscription(2, 200)
+        assert len(db.get_recruiter_subscriptions(1)) == 1
+        assert db.get_recruiter_subscriptions(1)[0]["channel_id"] == "100"
+        assert len(db.get_recruiter_subscriptions(2)) == 1
+        assert db.get_recruiter_subscriptions(2)[0]["channel_id"] == "200"
+
+    def test_get_all_recruiter_subscriptions(self):
+        db = _make_db()
+        db.add_recruiter_subscription(1, 100)
+        db.add_recruiter_subscription(2, 200)
+        all_subs = db.get_all_recruiter_subscriptions()
+        assert len(all_subs) == 2
+        guild_ids = {s["guild_id"] for s in all_subs}
+        assert guild_ids == {"1", "2"}
+
+    def test_get_all_returns_empty_when_no_subscriptions(self):
+        db = _make_db()
+        assert db.get_all_recruiter_subscriptions() == []
+
+    def test_remove_only_targets_channel(self):
+        db = _make_db()
+        db.add_recruiter_subscription(1, 100)
+        db.add_recruiter_subscription(1, 200)
+        db.remove_recruiter_subscription(1, 100)
+        subs = db.get_recruiter_subscriptions(1)
+        assert len(subs) == 1
+        assert subs[0]["channel_id"] == "200"
