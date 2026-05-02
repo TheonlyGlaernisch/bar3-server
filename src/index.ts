@@ -10,6 +10,7 @@ import v2AutomationRouter from './api/routers/v2/automation';
 import v2AnalyticsRouter from './api/routers/v2/analytics';
 import v2SendTestRouter from './api/routers/v2/sendTest';
 import discordAuthRouter from './api/routers/discord/auth';
+import adminRouter from './api/routers/admin';
 import { requireDiscordAuth } from './api/middleware/discordAuth';
 import { startAutomationLoop } from './services/v2AutomationRunner';
 // Extend express-session SessionData with Discord fields
@@ -115,6 +116,11 @@ app.get('/health', (_req: Request, res: Response) => {
 // Discord OAuth routes — must be mounted BEFORE the auth guard so the login
 // page and callback are reachable without an existing session.
 app.use('/auth', discordAuthRouter);
+
+// Admin panel — mounted before the Discord auth guard so the admin login page
+// is reachable without a Discord session.  The admin router enforces its own
+// ADMIN_PASSWORD check for all routes except /admin/login.
+app.use('/admin', adminRouter);
 
 // Discord authentication guard — protects every subsequent route and static file.
 app.use(requireDiscordAuth);

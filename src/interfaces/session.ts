@@ -16,5 +16,7 @@ declare module 'express-session' {
     };
     /** URL the user was trying to reach before being redirected to login. */
     discordReturnTo?: string;
+    /** Set to true once the admin has authenticated with ADMIN_PASSWORD. */
+    adminAuthenticated?: boolean;
   }
 }
