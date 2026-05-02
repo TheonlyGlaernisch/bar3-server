@@ -152,6 +152,7 @@ from pnw_api import (
     Nation,
     NationRevenue,
     PnWClient,
+    PnWSubscriptionClient,
     TradePrice,
     WarDetail,
     calculate_city_cost,
@@ -509,8 +510,6 @@ class FlameBot(discord.Client):
         self._invite_refresh_task: asyncio.Task[None] | None = None
         self._war_alert_task: asyncio.Task[None] | None = None
         self._command_cooldowns: dict[int, float] = {}
-        # In-memory set of war IDs already alerted; avoids duplicate notifications.
-        self._alerted_war_ids: set[int] = set()
 
     async def setup_hook(self) -> None:
         # Sync to the configured guild immediately so commands appear without
@@ -621,7 +620,7 @@ class FlameBot(discord.Client):
             await self._start_api()
         if self._war_alert_task is None or self._war_alert_task.done():
             self._war_alert_task = asyncio.create_task(self._war_alert_loop())
-            log.info("Started war alert polling loop.")
+            log.info("Started war alert subscription loop.")
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
         await self._persist_guild(guild)
@@ -678,98 +677,48 @@ class FlameBot(discord.Client):
         log.info("bar3 API listening on port %d.", config.API_PORT)
 
     # ------------------------------------------------------------------
-    # War alert polling loop
+    # War alert subscription loop
     # ------------------------------------------------------------------
 
-    _WAR_ALERT_POLL_SECONDS = 300  # poll every 5 minutes
-
     async def _war_alert_loop(self) -> None:
-        """Background task: poll for new wars and post alerts to subscribed channels."""
+        """Background task: subscribe to PnW war-create events and dispatch alerts."""
         await self.wait_until_ready()
+        log.info("War alert: starting PnW subscription listener.")
+        async with PnWSubscriptionClient(self.pnw._api_key) as sub:
+            async for war in sub.iter_war_creates():
+                if self.is_closed():
+                    break
+                try:
+                    await self._dispatch_war_to_all_guilds(war)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.exception("War alert: error dispatching war %d.", war.war_id)
 
-        # Seed seen IDs with any wars already active so the bot doesn't flood
-        # channels with old wars when it (re-)starts.
-        try:
-            await self._seed_seen_war_ids()
-        except Exception:
-            log.exception("War alert: failed to seed seen war IDs on startup.")
+    async def _dispatch_war_to_all_guilds(self, war: WarDetail) -> None:
+        """Fan the war event out to every matching subscription across all guilds.
 
-        while not self.is_closed():
-            try:
-                await self._process_war_alerts()
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                log.exception("War alert: unhandled error in polling loop.")
-            await asyncio.sleep(self._WAR_ALERT_POLL_SECONDS)
-
-    async def _seed_seen_war_ids(self) -> None:
-        """Mark all wars from the past 24 h as seen so they aren't re-alerted."""
-        subscriptions = self.db.get_all_war_alert_subscriptions()
-        if not subscriptions:
-            return
-
-        # Collect all unique alliance IDs across subscriptions.
-        alliance_ids: set[int] = set()
-        for sub in subscriptions:
-            guild_id_raw = sub.get("guild_id")
-            if guild_id_raw:
-                aid = self.db.get_alliance_id(int(guild_id_raw))
-                if aid:
-                    alliance_ids.add(aid)
-        if not alliance_ids:
-            return
-
-        since = datetime.now(tz=timezone.utc) - timedelta(hours=24)
-        wars = await self.pnw.get_new_wars_for_alliance(list(alliance_ids), since)
-        for war in wars:
-            self._alerted_war_ids.add(war.war_id)
-        log.info("War alert: seeded %d war IDs as already seen.", len(self._alerted_war_ids))
-
-    async def _process_war_alerts(self) -> None:
-        """Fetch new wars for all subscribed alliances and dispatch alerts.
-
-        Optimised so that each unique alliance is queried at most once per poll
-        cycle, even when multiple channels on the same or different guilds
-        monitor the same alliance.
+        Each unique alliance is resolved at most once from the DB; the war is
+        sent to a channel only if the war involves that guild's alliance and
+        the member's city count passes any configured filter.
         """
         subscriptions = self.db.get_all_war_alert_subscriptions()
         if not subscriptions:
             return
 
-        # Build a mapping of alliance_id -> list of (channel_id, sub_doc).
-        alliance_to_subs: dict[int, list[dict]] = {}
         for sub in subscriptions:
             guild_id_raw = sub.get("guild_id")
             if not guild_id_raw:
                 continue
-            aid = self.db.get_alliance_id(int(guild_id_raw))
-            if not aid:
-                continue
-            # Attach the resolved alliance_id to the sub dict for later use.
-            sub["_alliance_id"] = aid
-            alliance_to_subs.setdefault(aid, []).append(sub)
-
-        if not alliance_to_subs:
-            return
-
-        since = datetime.now(tz=timezone.utc) - timedelta(seconds=self._WAR_ALERT_POLL_SECONDS + 30)
-
-        for alliance_id, subs in alliance_to_subs.items():
-            try:
-                wars = await self.pnw.get_new_wars_for_alliance([alliance_id], since)
-            except Exception:
-                log.exception("War alert: PnW API error for alliance %d.", alliance_id)
+            alliance_id = self.db.get_alliance_id(int(guild_id_raw))
+            if alliance_id is None:
                 continue
 
-            new_wars = [w for w in wars if w.war_id not in self._alerted_war_ids]
-            if not new_wars:
+            # Only alert if this guild's alliance is involved.
+            if war.attacker_alliance_id != alliance_id and war.defender_alliance_id != alliance_id:
                 continue
 
-            for war in new_wars:
-                self._alerted_war_ids.add(war.war_id)
-                for sub in subs:
-                    await self._dispatch_war_alert(war, alliance_id, sub)
+            await self._dispatch_war_alert(war, alliance_id, sub)
 
     async def _dispatch_war_alert(
         self, war: WarDetail, alliance_id: int, sub: dict
@@ -785,13 +734,12 @@ class FlameBot(discord.Client):
         min_cities: int | None = sub.get("min_cities")
         max_cities: int | None = sub.get("max_cities")
 
-        # Determine which side is "our" member.
+        # Determine which side is "our" member and filter by city count.
         if war.attacker_alliance_id == alliance_id:
             our_cities = war.attacker_cities
         else:
             our_cities = war.defender_cities
 
-        # City-range filter (applied to the alliance member's city count).
         if min_cities is not None and our_cities < min_cities:
             return
         if max_cities is not None and our_cities > max_cities:
@@ -844,29 +792,36 @@ def _build_war_alert_embed(war: WarDetail, alliance_id: int) -> discord.Embed:
         title = "🛡️ Defensive War Declared"
         color = discord.Color.orange()
 
+    def _mil(soldiers: int, tanks: int, aircraft: int, ships: int) -> str:
+        return (
+            f"👥 {soldiers:,}  🪖 {tanks:,}  ✈️ {aircraft:,}  🚢 {ships:,}"
+        )
+
     embed = discord.Embed(title=title, color=color)
     embed.add_field(
-        name="Attacker",
+        name=f"⚔️ Attacker — [{war.attacker_name}]({att_url})",
         value=(
-            f"[{war.attacker_name}]({att_url})\n"
-            f"{war.attacker_alliance_name or 'No AA'} · 🏙️ {war.attacker_cities}"
+            f"**Alliance:** {war.attacker_alliance_name or 'None'}\n"
+            f"**Cities:** 🏙️ {war.attacker_cities}\n"
+            f"**Military:** {_mil(war.attacker_soldiers, war.attacker_tanks, war.attacker_aircraft, war.attacker_ships)}"
         ),
-        inline=True,
+        inline=False,
     )
     embed.add_field(
-        name="Defender",
+        name=f"🛡️ Defender — [{war.defender_name}]({def_url})",
         value=(
-            f"[{war.defender_name}]({def_url})\n"
-            f"{war.defender_alliance_name or 'No AA'} · 🏙️ {war.defender_cities}"
+            f"**Alliance:** {war.defender_alliance_name or 'None'}\n"
+            f"**Cities:** 🏙️ {war.defender_cities}\n"
+            f"**Military:** {_mil(war.defender_soldiers, war.defender_tanks, war.defender_aircraft, war.defender_ships)}"
         ),
-        inline=True,
+        inline=False,
     )
     embed.add_field(
         name="War link",
         value=f"[View war]({_PNW_WAR_BASE_URL}{war.war_id})",
         inline=False,
     )
-    embed.set_footer(text=f"War ID {war.war_id} · {war.date.strftime('%Y-%m-%d %H:%M UTC')}")
+    embed.set_footer(text=f"War ID {war.war_id} · {war.date.strftime('%Y-%m-%d %H:%M UTC')}  ·  👥 soldiers  🪖 tanks  ✈️ aircraft  🚢 ships")
     return embed
 
 

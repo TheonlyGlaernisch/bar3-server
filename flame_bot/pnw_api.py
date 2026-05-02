@@ -290,11 +290,19 @@ class WarDetail:
     attacker_alliance_id: int
     attacker_alliance_name: str
     attacker_cities: int
+    attacker_soldiers: int
+    attacker_tanks: int
+    attacker_aircraft: int
+    attacker_ships: int
     defender_id: int
     defender_name: str
     defender_alliance_id: int
     defender_alliance_name: str
     defender_cities: int
+    defender_soldiers: int
+    defender_tanks: int
+    defender_aircraft: int
+    defender_ships: int
 
 
 _NATION_FIELDS = """
@@ -1478,10 +1486,18 @@ class PnWClient:
                         attacker {
                             nation_name
                             num_cities
+                            soldiers
+                            tanks
+                            aircraft
+                            ships
                         }
                         defender {
                             nation_name
                             num_cities
+                            soldiers
+                            tanks
+                            aircraft
+                            ships
                         }
                         att_alliance {
                             name
@@ -1530,11 +1546,19 @@ class PnWClient:
                         attacker_alliance_id=int(war.get("att_alliance_id") or 0),
                         attacker_alliance_name=att_alliance.get("name") or "",
                         attacker_cities=int(attacker.get("num_cities") or 0),
+                        attacker_soldiers=int(attacker.get("soldiers") or 0),
+                        attacker_tanks=int(attacker.get("tanks") or 0),
+                        attacker_aircraft=int(attacker.get("aircraft") or 0),
+                        attacker_ships=int(attacker.get("ships") or 0),
                         defender_id=int(war.get("def_id") or 0),
                         defender_name=defender.get("nation_name") or str(war.get("def_id") or "?"),
                         defender_alliance_id=int(war.get("def_alliance_id") or 0),
                         defender_alliance_name=def_alliance.get("name") or "",
                         defender_cities=int(defender.get("num_cities") or 0),
+                        defender_soldiers=int(defender.get("soldiers") or 0),
+                        defender_tanks=int(defender.get("tanks") or 0),
+                        defender_aircraft=int(defender.get("aircraft") or 0),
+                        defender_ships=int(defender.get("ships") or 0),
                     ))
 
             if all_before_since or not has_more:
@@ -1544,7 +1568,7 @@ class PnWClient:
         results.sort(key=lambda w: w.date)
         return results
 
-
+    async def get_nations_in_alliance_by_score_range(
         self,
         alliance_ids: list[int],
         min_score: float,
@@ -2104,3 +2128,215 @@ def compute_nation_revenue(
         rev.avg_commerce = total_commerce / len(cities)
 
     return rev
+
+
+# ---------------------------------------------------------------------------
+# PnW WebSocket subscription client
+# ---------------------------------------------------------------------------
+
+# PnW uses the graphql-transport-ws subprotocol for subscriptions.
+# See: https://github.com/enisdenjo/graphql-ws/blob/master/PROTOCOL.md
+PNW_WS_URL = "wss://api.politicsandwar.com/graphql-ws"
+
+_WAR_SUBSCRIPTION_QUERY = """
+subscription {
+    warCreate {
+        id
+        date
+        att_id
+        def_id
+        att_alliance_id
+        def_alliance_id
+        attacker {
+            nation_name
+            num_cities
+            soldiers
+            tanks
+            aircraft
+            ships
+        }
+        defender {
+            nation_name
+            num_cities
+            soldiers
+            tanks
+            aircraft
+            ships
+        }
+        att_alliance {
+            name
+        }
+        def_alliance {
+            name
+        }
+    }
+}
+"""
+
+
+def _parse_war_event(payload: dict) -> Optional[WarDetail]:
+    """Parse a ``warCreate`` subscription event into a :class:`WarDetail`.
+
+    Returns ``None`` if the payload is missing required data.
+    """
+    war = (payload.get("data") or {}).get("warCreate") or {}
+    if not war:
+        return None
+    war_id = int(war.get("id") or 0)
+    if not war_id:
+        return None
+
+    date_str = war.get("date", "") or ""
+    war_date: datetime | None = None
+    if date_str:
+        try:
+            war_date = datetime.fromisoformat(date_str)
+            if war_date.tzinfo is None:
+                war_date = war_date.replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+    if war_date is None:
+        war_date = datetime.now(tz=timezone.utc)
+
+    attacker = war.get("attacker") or {}
+    defender = war.get("defender") or {}
+    att_alliance = war.get("att_alliance") or {}
+    def_alliance = war.get("def_alliance") or {}
+
+    return WarDetail(
+        war_id=war_id,
+        date=war_date,
+        attacker_id=int(war.get("att_id") or 0),
+        attacker_name=attacker.get("nation_name") or str(war.get("att_id") or "?"),
+        attacker_alliance_id=int(war.get("att_alliance_id") or 0),
+        attacker_alliance_name=att_alliance.get("name") or "",
+        attacker_cities=int(attacker.get("num_cities") or 0),
+        attacker_soldiers=int(attacker.get("soldiers") or 0),
+        attacker_tanks=int(attacker.get("tanks") or 0),
+        attacker_aircraft=int(attacker.get("aircraft") or 0),
+        attacker_ships=int(attacker.get("ships") or 0),
+        defender_id=int(war.get("def_id") or 0),
+        defender_name=defender.get("nation_name") or str(war.get("def_id") or "?"),
+        defender_alliance_id=int(war.get("def_alliance_id") or 0),
+        defender_alliance_name=def_alliance.get("name") or "",
+        defender_cities=int(defender.get("num_cities") or 0),
+        defender_soldiers=int(defender.get("soldiers") or 0),
+        defender_tanks=int(defender.get("tanks") or 0),
+        defender_aircraft=int(defender.get("aircraft") or 0),
+        defender_ships=int(defender.get("ships") or 0),
+    )
+
+
+import json as _json
+
+
+class PnWSubscriptionClient:
+    """WebSocket subscription client for the PnW ``graphql-transport-ws`` endpoint.
+
+    Usage::
+
+        async with PnWSubscriptionClient(api_key="…") as sub:
+            async for war in sub.iter_war_creates():
+                ...  # WarDetail events arrive in real time
+
+    The client automatically reconnects with exponential back-off on
+    connection drops.
+    """
+
+    _SUBPROTOCOL = "graphql-transport-ws"
+    _RECONNECT_BASE = 5      # seconds before first reconnect
+    _RECONNECT_MAX = 300     # cap at 5 minutes
+
+    def __init__(self, api_key: str) -> None:
+        self._api_key = api_key
+        self._session: Optional[aiohttp.ClientSession] = None
+
+    async def __aenter__(self) -> "PnWSubscriptionClient":
+        self._session = aiohttp.ClientSession()
+        return self
+
+    async def __aexit__(self, *_: Any) -> None:
+        if self._session is not None:
+            await self._session.close()
+            self._session = None
+
+    async def iter_war_creates(self):  # type: ignore[return]
+        """Async-iterate over :class:`WarDetail` events as they arrive.
+
+        Reconnects automatically on connection failure with exponential back-off.
+        Raises :exc:`asyncio.CancelledError` when the surrounding task is cancelled.
+        """
+        delay = self._RECONNECT_BASE
+        while True:
+            try:
+                async for war in self._subscribe_once():
+                    delay = self._RECONNECT_BASE  # reset delay on successful event
+                    yield war
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception(
+                    "PnW subscription: connection lost, reconnecting in %ds.", delay
+                )
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, self._RECONNECT_MAX)
+
+    async def _subscribe_once(self):  # type: ignore[return]
+        """Open one WebSocket connection and yield WarDetail events until it closes."""
+        if self._session is None:
+            raise RuntimeError("PnWSubscriptionClient used outside async context manager.")
+
+        url = f"{PNW_WS_URL}?api_key={self._api_key}"
+        headers = {"Sec-WebSocket-Protocol": self._SUBPROTOCOL}
+
+        async with self._session.ws_connect(
+            url,
+            protocols=[self._SUBPROTOCOL],
+            headers=headers,
+            heartbeat=30,
+        ) as ws:
+            log.info("PnW subscription: WebSocket connected.")
+
+            # graphql-transport-ws handshake
+            await ws.send_str(_json.dumps({"type": "connection_init", "payload": {}}))
+
+            # Wait for connection_ack
+            msg = await ws.receive()
+            if msg.type != aiohttp.WSMsgType.TEXT:
+                log.warning("PnW subscription: unexpected message type during handshake: %s", msg.type)
+                return
+            frame = _json.loads(msg.data)
+            if frame.get("type") != "connection_ack":
+                log.warning("PnW subscription: expected connection_ack, got: %s", frame.get("type"))
+                return
+
+            log.info("PnW subscription: connection_ack received, subscribing to warCreate.")
+
+            # Send the subscription
+            await ws.send_str(_json.dumps({
+                "type": "subscribe",
+                "id": "war_create",
+                "payload": {"query": _WAR_SUBSCRIPTION_QUERY},
+            }))
+
+            async for msg in ws:
+                if msg.type == aiohttp.WSMsgType.TEXT:
+                    frame = _json.loads(msg.data)
+                    msg_type = frame.get("type", "")
+                    if msg_type == "next":
+                        war = _parse_war_event(frame.get("payload") or {})
+                        if war is not None:
+                            yield war
+                    elif msg_type == "ping":
+                        await ws.send_str(_json.dumps({"type": "pong"}))
+                    elif msg_type in ("complete", "error"):
+                        log.warning("PnW subscription: received %s — reconnecting.", msg_type)
+                        return
+                    # ignore keep-alive / other messages
+                elif msg.type in (
+                    aiohttp.WSMsgType.CLOSED,
+                    aiohttp.WSMsgType.ERROR,
+                    aiohttp.WSMsgType.CLOSING,
+                ):
+                    log.info("PnW subscription: WebSocket closed (type=%s).", msg.type)
+                    return
