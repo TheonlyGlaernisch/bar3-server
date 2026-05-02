@@ -1,9 +1,11 @@
 """Thin async wrapper around the Politics and War GraphQL and REST APIs."""
 from __future__ import annotations
 
+import json as _json
 import logging
 import math
 import re
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -2225,9 +2227,6 @@ def _parse_war_event(payload: dict) -> Optional[WarDetail]:
         defender_aircraft=int(defender.get("aircraft") or 0),
         defender_ships=int(defender.get("ships") or 0),
     )
-
-
-import json as _json
 
 
 class PnWSubscriptionClient:
