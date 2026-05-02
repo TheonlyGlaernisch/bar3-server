@@ -287,24 +287,37 @@ class WarDetail:
 
     war_id: int
     date: datetime
+    war_type: str  # ORDINARY, RAID, or ATTRITION
     attacker_id: int
     attacker_name: str
+    attacker_leader: str
     attacker_alliance_id: int
     attacker_alliance_name: str
     attacker_cities: int
+    attacker_score: float
     attacker_soldiers: int
     attacker_tanks: int
     attacker_aircraft: int
     attacker_ships: int
+    attacker_missiles: int
+    attacker_nukes: int
+    attacker_wars_won: int
+    attacker_wars_lost: int
     defender_id: int
     defender_name: str
+    defender_leader: str
     defender_alliance_id: int
     defender_alliance_name: str
     defender_cities: int
+    defender_score: float
     defender_soldiers: int
     defender_tanks: int
     defender_aircraft: int
     defender_ships: int
+    defender_missiles: int
+    defender_nukes: int
+    defender_wars_won: int
+    defender_wars_lost: int
 
 
 _NATION_FIELDS = """
@@ -1481,25 +1494,38 @@ class PnWClient:
                     data {
                         id
                         date
+                        war_type
                         att_id
                         def_id
                         att_alliance_id
                         def_alliance_id
                         attacker {
                             nation_name
+                            leader_name
                             num_cities
+                            score
                             soldiers
                             tanks
                             aircraft
                             ships
+                            missiles
+                            nukes
+                            wars_won
+                            wars_lost
                         }
                         defender {
                             nation_name
+                            leader_name
                             num_cities
+                            score
                             soldiers
                             tanks
                             aircraft
                             ships
+                            missiles
+                            nukes
+                            wars_won
+                            wars_lost
                         }
                         att_alliance {
                             name
@@ -1543,24 +1569,37 @@ class PnWClient:
                     results.append(WarDetail(
                         war_id=war_id,
                         date=war_date,
+                        war_type=(war.get("war_type") or "ORDINARY").upper(),
                         attacker_id=int(war.get("att_id") or 0),
                         attacker_name=attacker.get("nation_name") or str(war.get("att_id") or "?"),
+                        attacker_leader=attacker.get("leader_name") or "",
                         attacker_alliance_id=int(war.get("att_alliance_id") or 0),
                         attacker_alliance_name=att_alliance.get("name") or "",
                         attacker_cities=int(attacker.get("num_cities") or 0),
+                        attacker_score=float(attacker.get("score") or 0),
                         attacker_soldiers=int(attacker.get("soldiers") or 0),
                         attacker_tanks=int(attacker.get("tanks") or 0),
                         attacker_aircraft=int(attacker.get("aircraft") or 0),
                         attacker_ships=int(attacker.get("ships") or 0),
+                        attacker_missiles=int(attacker.get("missiles") or 0),
+                        attacker_nukes=int(attacker.get("nukes") or 0),
+                        attacker_wars_won=int(attacker.get("wars_won") or 0),
+                        attacker_wars_lost=int(attacker.get("wars_lost") or 0),
                         defender_id=int(war.get("def_id") or 0),
                         defender_name=defender.get("nation_name") or str(war.get("def_id") or "?"),
+                        defender_leader=defender.get("leader_name") or "",
                         defender_alliance_id=int(war.get("def_alliance_id") or 0),
                         defender_alliance_name=def_alliance.get("name") or "",
                         defender_cities=int(defender.get("num_cities") or 0),
+                        defender_score=float(defender.get("score") or 0),
                         defender_soldiers=int(defender.get("soldiers") or 0),
                         defender_tanks=int(defender.get("tanks") or 0),
                         defender_aircraft=int(defender.get("aircraft") or 0),
                         defender_ships=int(defender.get("ships") or 0),
+                        defender_missiles=int(defender.get("missiles") or 0),
+                        defender_nukes=int(defender.get("nukes") or 0),
+                        defender_wars_won=int(defender.get("wars_won") or 0),
+                        defender_wars_lost=int(defender.get("wars_lost") or 0),
                     ))
 
             if all_before_since or not has_more:
@@ -2145,25 +2184,38 @@ subscription {
     warCreate {
         id
         date
+        war_type
         att_id
         def_id
         att_alliance_id
         def_alliance_id
         attacker {
             nation_name
+            leader_name
             num_cities
+            score
             soldiers
             tanks
             aircraft
             ships
+            missiles
+            nukes
+            wars_won
+            wars_lost
         }
         defender {
             nation_name
+            leader_name
             num_cities
+            score
             soldiers
             tanks
             aircraft
             ships
+            missiles
+            nukes
+            wars_won
+            wars_lost
         }
         att_alliance {
             name
@@ -2208,24 +2260,37 @@ def _parse_war_event(payload: dict) -> Optional[WarDetail]:
     return WarDetail(
         war_id=war_id,
         date=war_date,
+        war_type=(war.get("war_type") or "ORDINARY").upper(),
         attacker_id=int(war.get("att_id") or 0),
         attacker_name=attacker.get("nation_name") or str(war.get("att_id") or "?"),
+        attacker_leader=attacker.get("leader_name") or "",
         attacker_alliance_id=int(war.get("att_alliance_id") or 0),
         attacker_alliance_name=att_alliance.get("name") or "",
         attacker_cities=int(attacker.get("num_cities") or 0),
+        attacker_score=float(attacker.get("score") or 0),
         attacker_soldiers=int(attacker.get("soldiers") or 0),
         attacker_tanks=int(attacker.get("tanks") or 0),
         attacker_aircraft=int(attacker.get("aircraft") or 0),
         attacker_ships=int(attacker.get("ships") or 0),
+        attacker_missiles=int(attacker.get("missiles") or 0),
+        attacker_nukes=int(attacker.get("nukes") or 0),
+        attacker_wars_won=int(attacker.get("wars_won") or 0),
+        attacker_wars_lost=int(attacker.get("wars_lost") or 0),
         defender_id=int(war.get("def_id") or 0),
         defender_name=defender.get("nation_name") or str(war.get("def_id") or "?"),
+        defender_leader=defender.get("leader_name") or "",
         defender_alliance_id=int(war.get("def_alliance_id") or 0),
         defender_alliance_name=def_alliance.get("name") or "",
         defender_cities=int(defender.get("num_cities") or 0),
+        defender_score=float(defender.get("score") or 0),
         defender_soldiers=int(defender.get("soldiers") or 0),
         defender_tanks=int(defender.get("tanks") or 0),
         defender_aircraft=int(defender.get("aircraft") or 0),
         defender_ships=int(defender.get("ships") or 0),
+        defender_missiles=int(defender.get("missiles") or 0),
+        defender_nukes=int(defender.get("nukes") or 0),
+        defender_wars_won=int(defender.get("wars_won") or 0),
+        defender_wars_lost=int(defender.get("wars_lost") or 0),
     )
 
 

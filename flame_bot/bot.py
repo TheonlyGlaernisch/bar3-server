@@ -785,34 +785,57 @@ def _build_war_alert_embed(war: WarDetail, alliance_id: int) -> discord.Embed:
     def_url = _nation_url(war.defender_id)
 
     is_offensive = war.attacker_alliance_id == alliance_id
+
+    _WAR_TYPE_LABELS = {
+        "ORDINARY": "Standard War",
+        "RAID": "Raid",
+        "ATTRITION": "Attrition War",
+    }
+    war_type_label = _WAR_TYPE_LABELS.get(war.war_type, war.war_type.title())
+
     if is_offensive:
-        title = "⚔️ Offensive War Declared"
+        title = f"⚔️ Offensive {war_type_label} Declared"
         color = discord.Color.red()
     else:
-        title = "🛡️ Defensive War Declared"
+        title = f"🛡️ Defensive {war_type_label} Declared"
         color = discord.Color.orange()
 
-    def _mil(soldiers: int, tanks: int, aircraft: int, ships: int) -> str:
-        return (
-            f"👥 {soldiers:,}  🪖 {tanks:,}  ✈️ {aircraft:,}  🚢 {ships:,}"
-        )
+    def _mil(soldiers: int, tanks: int, aircraft: int, ships: int, missiles: int, nukes: int) -> str:
+        parts = [
+            f"👥 {soldiers:,}",
+            f"🪖 {tanks:,}",
+            f"✈️ {aircraft:,}",
+            f"🚢 {ships:,}",
+        ]
+        if missiles:
+            parts.append(f"🚀 {missiles:,}")
+        if nukes:
+            parts.append(f"☢️ {nukes:,}")
+        return "  ".join(parts)
+
+    def _record(won: int, lost: int) -> str:
+        return f"W {won} / L {lost}"
 
     embed = discord.Embed(title=title, color=color)
     embed.add_field(
         name=f"⚔️ Attacker — [{war.attacker_name}]({att_url})",
         value=(
+            f"**Leader:** {war.attacker_leader or '—'}\n"
             f"**Alliance:** {war.attacker_alliance_name or 'None'}\n"
-            f"**Cities:** 🏙️ {war.attacker_cities}\n"
-            f"**Military:** {_mil(war.attacker_soldiers, war.attacker_tanks, war.attacker_aircraft, war.attacker_ships)}"
+            f"**Cities:** 🏙️ {war.attacker_cities}  **Score:** {war.attacker_score:,.2f}\n"
+            f"**Military:** {_mil(war.attacker_soldiers, war.attacker_tanks, war.attacker_aircraft, war.attacker_ships, war.attacker_missiles, war.attacker_nukes)}\n"
+            f"**War record:** {_record(war.attacker_wars_won, war.attacker_wars_lost)}"
         ),
         inline=False,
     )
     embed.add_field(
         name=f"🛡️ Defender — [{war.defender_name}]({def_url})",
         value=(
+            f"**Leader:** {war.defender_leader or '—'}\n"
             f"**Alliance:** {war.defender_alliance_name or 'None'}\n"
-            f"**Cities:** 🏙️ {war.defender_cities}\n"
-            f"**Military:** {_mil(war.defender_soldiers, war.defender_tanks, war.defender_aircraft, war.defender_ships)}"
+            f"**Cities:** 🏙️ {war.defender_cities}  **Score:** {war.defender_score:,.2f}\n"
+            f"**Military:** {_mil(war.defender_soldiers, war.defender_tanks, war.defender_aircraft, war.defender_ships, war.defender_missiles, war.defender_nukes)}\n"
+            f"**War record:** {_record(war.defender_wars_won, war.defender_wars_lost)}"
         ),
         inline=False,
     )
@@ -821,7 +844,8 @@ def _build_war_alert_embed(war: WarDetail, alliance_id: int) -> discord.Embed:
         value=f"[View war]({_PNW_WAR_BASE_URL}{war.war_id})",
         inline=False,
     )
-    embed.set_footer(text=f"War ID {war.war_id} · {war.date.strftime('%Y-%m-%d %H:%M UTC')}  ·  👥 soldiers  🪖 tanks  ✈️ aircraft  🚢 ships")
+    legend = "👥 soldiers  🪖 tanks  ✈️ aircraft  🚢 ships  🚀 missiles  ☢️ nukes"
+    embed.set_footer(text=f"War ID {war.war_id} · {war.date.strftime('%Y-%m-%d %H:%M UTC')}  ·  {legend}")
     return embed
 
 

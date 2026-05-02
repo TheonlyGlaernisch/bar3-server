@@ -1213,7 +1213,11 @@ class TestGovRoles:
     def test_returns_all_none_by_default(self):
         db = _make_db()
         roles = db.get_gov_roles(1)
-        assert roles == {"econ": None, "milcom": None, "ia": None, "gov": None}
+        assert roles == {
+            "leader": None, "2ic": None, "econ": None, "econ_gov": None,
+            "milcom": None, "milcom_gov": None, "ia": None, "ia_asst": None,
+            "gov": None, "member": None,
+        }
 
     def test_set_and_get_all_roles(self):
         db = _make_db()
