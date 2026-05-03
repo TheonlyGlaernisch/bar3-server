@@ -413,7 +413,7 @@ router.get('/session', (req: Request, res: Response) => {
         username: req.session.discordUsername,
       },
       roles: req.session.discordRoles,
-      isAdmin: COMMAND_BYPASS_DISCORD_IDS.size > 0 && COMMAND_BYPASS_DISCORD_IDS.has(userId),
+      isAdmin: COMMAND_BYPASS_DISCORD_IDS.has(userId),
     });
   }
   return res.status(401).json({ authenticated: false });
@@ -443,7 +443,7 @@ router.get('/mobile-session', (req: Request, res: Response) => {
     authenticated: true,
     user: { id: session.discordUserId, username: session.discordUsername },
     roles: session.discordRoles,
-    isAdmin: COMMAND_BYPASS_DISCORD_IDS.size > 0 && COMMAND_BYPASS_DISCORD_IDS.has(session.discordUserId),
+    isAdmin: COMMAND_BYPASS_DISCORD_IDS.has(session.discordUserId),
   });
 });
 
