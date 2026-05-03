@@ -170,6 +170,7 @@ router.get('/discord', (req: Request, res: Response) => {
   if (returnTo && isSafeReturnTo(returnTo)) {
     req.session.discordReturnTo = returnTo;
   }
+  const mobile = req.query.mobile === '1';
   const params = new URLSearchParams({
     client_id: DISCORD_CLIENT_ID,
     redirect_uri: DISCORD_REDIRECT_URI,
@@ -177,6 +178,7 @@ router.get('/discord', (req: Request, res: Response) => {
     // Only 'identify' is needed — role verification is delegated to flame_bot.
     scope: 'identify',
   });
+  if (mobile) params.set('state', 'mobile');
   return res.redirect(`https://discord.com/oauth2/authorize?${params.toString()}`);
 });
 
@@ -240,6 +242,23 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
 
     if (!hasAccess) {
       return res.send(ACCESS_DENIED_HTML);
+    }
+
+    const isMobileFlow = req.query.state === 'mobile';
+    if (isMobileFlow) {
+      if (!CLIENT_APP_URL) {
+        return res.redirect('/auth/login?error=auth_failed');
+      }
+      const mobileToken = issueMobileToken({
+        discordUserId: discordId,
+        discordUsername,
+        discordRoles: {
+          verified: flameBotRoles.verified === true,
+          bar3_client: flameBotRoles.bar3_client === true,
+          bar3_server: flameBotRoles.bar3_server === true,
+        },
+      });
+      return res.redirect(`${CLIENT_APP_URL}?mobileToken=${encodeURIComponent(mobileToken)}`);
     }
 
     // Determine where to send the browser after a successful login.
@@ -327,6 +346,19 @@ router.post('/logout', (req: Request, res: Response) => {
     // If you set the `name` option in the session middleware, change this to match.
     res.clearCookie('connect.sid');
     return res.json({ ok: true });
+  });
+});
+
+
+router.get('/mobile-session', (req: Request, res: Response) => {
+  const token = typeof req.query.token === 'string' ? req.query.token : '';
+  if (!token) return res.status(400).json({ error: 'Missing token' });
+  const session = getMobileSession(token);
+  if (!session) return res.status(401).json({ authenticated: false });
+  return res.json({
+    authenticated: true,
+    user: { id: session.discordUserId, username: session.discordUsername },
+    roles: session.discordRoles,
   });
 });
 
