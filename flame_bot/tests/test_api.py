@@ -284,3 +284,204 @@ class TestRolesEndpoint:
                 "bar3_client": False,
                 "bar3_server": False,
             }
+
+
+# ---------------------------------------------------------------------------
+# Bot panel endpoints
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_guild(*, guild_id: int = 1, name: str = "Test Guild", member_count: int = 10) -> MagicMock:
+    guild = MagicMock()
+    guild.id = guild_id
+    guild.name = name
+    guild.member_count = member_count
+    guild.icon = None
+    return guild
+
+
+class TestBotServersEndpoint:
+    @pytest.mark.asyncio
+    async def test_missing_api_key_returns_401(self):
+        app = create_app(lambda: None, API_KEY, guilds_getter=lambda: [])
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/api/bot/servers")
+            assert resp.status == 401
+
+    @pytest.mark.asyncio
+    async def test_no_guilds_getter_returns_503(self):
+        app = create_app(lambda: None, API_KEY)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/api/bot/servers", headers={"X-API-Key": API_KEY})
+            assert resp.status == 503
+
+    @pytest.mark.asyncio
+    async def test_returns_guild_list(self):
+        guild = _make_mock_guild(guild_id=111, name="Alpha", member_count=5)
+        app = create_app(lambda: None, API_KEY, guilds_getter=lambda: [guild])
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/api/bot/servers", headers={"X-API-Key": API_KEY})
+            assert resp.status == 200
+            data = await resp.json()
+            assert len(data) == 1
+            assert data[0]["id"] == "111"
+            assert data[0]["name"] == "Alpha"
+            assert data[0]["member_count"] == 5
+            assert data[0]["icon"] is None
+
+    @pytest.mark.asyncio
+    async def test_guild_with_icon(self):
+        guild = _make_mock_guild()
+        icon = MagicMock()
+        icon.url = "https://cdn.discordapp.com/icons/1/abc.png"
+        guild.icon = icon
+        app = create_app(lambda: None, API_KEY, guilds_getter=lambda: [guild])
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/api/bot/servers", headers={"X-API-Key": API_KEY})
+            assert resp.status == 200
+            data = await resp.json()
+            assert data[0]["icon"] == "https://cdn.discordapp.com/icons/1/abc.png"
+
+    @pytest.mark.asyncio
+    async def test_empty_guild_list(self):
+        app = create_app(lambda: None, API_KEY, guilds_getter=lambda: [])
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/api/bot/servers", headers={"X-API-Key": API_KEY})
+            assert resp.status == 200
+            data = await resp.json()
+            assert data == []
+
+
+class TestCommandUsageEndpoint:
+    @pytest.mark.asyncio
+    async def test_missing_api_key_returns_401(self):
+        app = create_app(lambda: None, API_KEY)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/api/bot/commands/usage")
+            assert resp.status == 401
+
+    @pytest.mark.asyncio
+    async def test_no_usage_getter_returns_empty_list(self):
+        app = create_app(lambda: None, API_KEY)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/api/bot/commands/usage", headers={"X-API-Key": API_KEY})
+            assert resp.status == 200
+            data = await resp.json()
+            assert data == []
+
+    @pytest.mark.asyncio
+    async def test_returns_ranked_usage(self):
+        usage = {"whois": 50, "register": 100, "slots": 20}
+        app = create_app(lambda: None, API_KEY, command_usage_getter=lambda: usage)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/api/bot/commands/usage", headers={"X-API-Key": API_KEY})
+            assert resp.status == 200
+            data = await resp.json()
+            assert data[0] == {"command": "register", "count": 100}
+            assert data[1] == {"command": "whois", "count": 50}
+            assert data[2] == {"command": "slots", "count": 20}
+
+    @pytest.mark.asyncio
+    async def test_empty_usage_returns_empty_list(self):
+        app = create_app(lambda: None, API_KEY, command_usage_getter=lambda: {})
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/api/bot/commands/usage", headers={"X-API-Key": API_KEY})
+            assert resp.status == 200
+            data = await resp.json()
+            assert data == []
+
+
+class TestBotSendEndpoint:
+    ADMIN_IDS: frozenset = frozenset([999888777])
+
+    @pytest.mark.asyncio
+    async def test_missing_api_key_returns_401(self):
+        app = create_app(lambda: None, API_KEY, admin_ids=self.ADMIN_IDS)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post("/api/bot/send", json={"discord_id": "999888777", "message": "hi"})
+            assert resp.status == 401
+
+    @pytest.mark.asyncio
+    async def test_non_admin_discord_id_returns_403(self):
+        async def _send(msg):
+            return {"sent": 1, "skipped": 0}
+
+        app = create_app(
+            lambda: None, API_KEY,
+            send_to_welcome_fn=_send,
+            admin_ids=self.ADMIN_IDS,
+        )
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/api/bot/send",
+                json={"discord_id": "111222333", "message": "hi"},
+                headers={"X-API-Key": API_KEY},
+            )
+            assert resp.status == 403
+            data = await resp.json()
+            assert data["error"] == "Forbidden"
+
+    @pytest.mark.asyncio
+    async def test_missing_message_returns_400(self):
+        app = create_app(lambda: None, API_KEY, admin_ids=self.ADMIN_IDS)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/api/bot/send",
+                json={"discord_id": "999888777"},
+                headers={"X-API-Key": API_KEY},
+            )
+            assert resp.status == 400
+
+    @pytest.mark.asyncio
+    async def test_missing_discord_id_returns_400(self):
+        app = create_app(lambda: None, API_KEY, admin_ids=self.ADMIN_IDS)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/api/bot/send",
+                json={"message": "hello"},
+                headers={"X-API-Key": API_KEY},
+            )
+            assert resp.status == 400
+
+    @pytest.mark.asyncio
+    async def test_no_send_fn_returns_503(self):
+        app = create_app(lambda: None, API_KEY, admin_ids=self.ADMIN_IDS)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/api/bot/send",
+                json={"discord_id": "999888777", "message": "hello"},
+                headers={"X-API-Key": API_KEY},
+            )
+            assert resp.status == 503
+
+    @pytest.mark.asyncio
+    async def test_successful_send_returns_counts(self):
+        async def _send(msg):
+            assert msg == "Hello!"
+            return {"sent": 3, "skipped": 1}
+
+        app = create_app(
+            lambda: None, API_KEY,
+            send_to_welcome_fn=_send,
+            admin_ids=self.ADMIN_IDS,
+        )
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/api/bot/send",
+                json={"discord_id": "999888777", "message": "Hello!"},
+                headers={"X-API-Key": API_KEY},
+            )
+            assert resp.status == 200
+            data = await resp.json()
+            assert data == {"sent": 3, "skipped": 1}
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_body_returns_400(self):
+        app = create_app(lambda: None, API_KEY, admin_ids=self.ADMIN_IDS)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/api/bot/send",
+                data="not-json",
+                headers={"X-API-Key": API_KEY, "Content-Type": "application/json"},
+            )
+            assert resp.status == 400
