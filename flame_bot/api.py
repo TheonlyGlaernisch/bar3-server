@@ -45,11 +45,69 @@ GET /api/roles/{discord_id}
     • 400  { "error": "Invalid discord_id" }
     • 503  { "error": "Bot not ready" }  — guild cache not populated yet
                                             (safe to retry after a short delay)
+
+GET /api/bot/servers
+    Returns the list of Discord servers the bot is currently in.
+
+    Requires the ``X-API-Key`` request header.
+
+    Response (200 OK):
+    [
+        {
+            "id": "123456789",
+            "name": "My Server",
+            "icon": "https://cdn.discordapp.com/icons/…/….png",
+            "member_count": 42
+        },
+        …
+    ]
+
+    Error responses:
+    • 401  { "error": "Unauthorized" }
+    • 503  { "error": "Bot not ready" }
+
+GET /api/bot/commands/usage
+    Returns a ranked list of slash-command usage counts (highest first).
+
+    Requires the ``X-API-Key`` request header.
+
+    Response (200 OK):
+    [
+        { "command": "whois", "count": 150 },
+        { "command": "register", "count": 80 },
+        …
+    ]
+
+    Error responses:
+    • 401  { "error": "Unauthorized" }
+
+POST /api/bot/send
+    Send a message to the configured welcome channel of every server the bot
+    is in.  The caller's Discord user ID must appear in the ``ADMIN_DISCORD_IDS``
+    environment variable (the same bypass list used for command permissions).
+
+    Requires the ``X-API-Key`` request header.
+
+    Request body (JSON):
+    {
+        "discord_id": "123456789012345678",
+        "message": "Hello everyone!"
+    }
+
+    Response (200 OK):
+    { "sent": 3, "skipped": 2 }
+
+    Error responses:
+    • 401  { "error": "Unauthorized" }         — missing/wrong API key
+    • 403  { "error": "Forbidden" }            — discord_id not in admin bypass list
+    • 400  { "error": "…" }                    — malformed request body
+    • 503  { "error": "Bot not ready" }        — bot not yet initialised
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Awaitable, Callable
 
 import discord
 from aiohttp import web
@@ -74,6 +132,11 @@ def create_app(
     guild_getter,         # callable() -> discord.Guild | None
     api_key: str,
     role_config: RoleConfig | None = None,
+    *,
+    guilds_getter: Callable[[], list] | None = None,
+    send_to_welcome_fn: Callable[[str], Awaitable[dict]] | None = None,
+    command_usage_getter: Callable[[], dict[str, int]] | None = None,
+    admin_ids: frozenset[int] | None = None,
 ) -> web.Application:
     """Return an aiohttp Application.
 
@@ -89,9 +152,22 @@ def create_app(
     role_config:
         The Discord role IDs to check.  Defaults to an empty ``RoleConfig``
         (all role checks will return ``False``).
+    guilds_getter:
+        Zero-argument callable returning all guilds the bot is in.
+        Required for ``GET /api/bot/servers``.
+    send_to_welcome_fn:
+        Async callable ``(message: str) -> {"sent": int, "skipped": int}``.
+        Required for ``POST /api/bot/send``.
+    command_usage_getter:
+        Zero-argument callable returning a ``{command_name: count}`` dict.
+        Required for ``GET /api/bot/commands/usage``.
+    admin_ids:
+        Set of Discord user IDs allowed to call ``POST /api/bot/send``.
     """
     if role_config is None:
         role_config = RoleConfig()
+    if admin_ids is None:
+        admin_ids = frozenset()
 
     async def glaernisch(request: web.Request) -> web.Response:
         return web.json_response({"touch": "grass"})
@@ -172,6 +248,51 @@ def create_app(
     async def ping(request: web.Request) -> web.Response:
         return web.json_response({"ping": "pong", "sigma": True, "skibidi": "toilet"})
 
+    async def get_bot_servers(request: web.Request) -> web.Response:
+        if not _check_api_key(request, api_key):
+            return web.json_response({"error": "Unauthorized"}, status=401)
+        if guilds_getter is None:
+            return web.json_response({"error": "Bot not ready"}, status=503)
+        guilds = guilds_getter()
+        result = []
+        for guild in guilds:
+            icon_url = str(guild.icon.url) if guild.icon else None
+            result.append({
+                "id": str(guild.id),
+                "name": guild.name,
+                "icon": icon_url,
+                "member_count": guild.member_count,
+            })
+        return web.json_response(result)
+
+    async def get_command_usage(request: web.Request) -> web.Response:
+        if not _check_api_key(request, api_key):
+            return web.json_response({"error": "Unauthorized"}, status=401)
+        usage: dict[str, int] = command_usage_getter() if command_usage_getter is not None else {}
+        ranked = sorted(usage.items(), key=lambda kv: kv[1], reverse=True)
+        return web.json_response([{"command": name, "count": count} for name, count in ranked])
+
+    async def bot_send(request: web.Request) -> web.Response:
+        if not _check_api_key(request, api_key):
+            return web.json_response({"error": "Unauthorized"}, status=401)
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+        discord_id_str = str(body.get("discord_id", "")).strip()
+        if not discord_id_str.isdigit():
+            return web.json_response({"error": "Missing or invalid discord_id"}, status=400)
+        discord_id = int(discord_id_str)
+        message = str(body.get("message", "")).strip()
+        if not message:
+            return web.json_response({"error": "Missing message"}, status=400)
+        if discord_id not in admin_ids:
+            return web.json_response({"error": "Forbidden"}, status=403)
+        if send_to_welcome_fn is None:
+            return web.json_response({"error": "Bot not ready"}, status=503)
+        result = await send_to_welcome_fn(message)
+        return web.json_response(result)
+
     app = web.Application()
     app.router.add_get("/", index)
     app.router.add_get("/health", health)
@@ -179,4 +300,7 @@ def create_app(
     app.router.add_get("/glaernisch", glaernisch)
     app.router.add_get("/egg", egg)
     app.router.add_get("/api/roles/{discord_id}", get_roles)
+    app.router.add_get("/api/bot/servers", get_bot_servers)
+    app.router.add_get("/api/bot/commands/usage", get_command_usage)
+    app.router.add_post("/api/bot/send", bot_send)
     return app
