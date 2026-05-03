@@ -20,6 +20,36 @@ const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || '';
 // to the relative path saved in the session (discordReturnTo) or '/' as a fallback.
 const CLIENT_APP_URL = (process.env.CLIENT_APP_URL || '').replace(/\/$/, '');
 
+type MobileSession = {
+  expiresAt: number;
+  discordUserId: string;
+  discordUsername: string;
+  discordRoles: {
+    verified: boolean;
+    bar3_client: boolean;
+    bar3_server: boolean;
+  };
+};
+
+const MOBILE_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+const mobileSessions = new Map<string, MobileSession>();
+
+function issueMobileToken(session: Omit<MobileSession, 'expiresAt'>): string {
+  const token = `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  mobileSessions.set(token, { ...session, expiresAt: Date.now() + MOBILE_TOKEN_TTL_MS });
+  return token;
+}
+
+export function getMobileSession(token: string): MobileSession | null {
+  const session = mobileSessions.get(token);
+  if (!session) return null;
+  if (session.expiresAt < Date.now()) {
+    mobileSessions.delete(token);
+    return null;
+  }
+  return session;
+}
+
 /**
  * Return true only for safe relative-path redirects (no protocol or host).
  * Rejects protocol-relative URLs (//evil.com) and absolute URLs.
