@@ -282,10 +282,11 @@ def create_app(
         discord_id_str = str(body.get("discord_id", "")).strip()
         if not discord_id_str.isdigit():
             return web.json_response({"error": "Missing or invalid discord_id"}, status=400)
+        discord_id = int(discord_id_str)
         message = str(body.get("message", "")).strip()
         if not message:
             return web.json_response({"error": "Missing message"}, status=400)
-        if int(discord_id_str) not in admin_ids:
+        if discord_id not in admin_ids:
             return web.json_response({"error": "Forbidden"}, status=403)
         if send_to_welcome_fn is None:
             return web.json_response({"error": "Bot not ready"}, status=503)
