@@ -340,11 +340,10 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
 
     let destination: string;
     if (CLIENT_APP_URL) {
-      // When redirecting to the client SPA, append the saved returnTo path as a
-      // query param so the SPA can navigate the user back to their original route.
-      // The SPA should read window.location.search for ?returnTo= on startup.
+      // Keep post-auth redirect simple: go straight to the client target path
+      // instead of passing a nested/encoded returnTo query.
       destination = savedReturnTo
-        ? `${CLIENT_APP_URL}?returnTo=${encodeURIComponent(savedReturnTo)}`
+        ? `${CLIENT_APP_URL}${savedReturnTo}`
         : CLIENT_APP_URL;
     } else if (savedReturnTo) {
       destination = savedReturnTo;
