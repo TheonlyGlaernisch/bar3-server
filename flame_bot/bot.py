@@ -515,7 +515,11 @@ class FlameCommandTree(app_commands.CommandTree):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         client = self.client
         if isinstance(client, FlameBot):
-            return await client._global_command_cooldown_check(interaction)
+            result = await client._global_command_cooldown_check(interaction)
+            if result and interaction.command is not None:
+                name = interaction.command.qualified_name
+                client._command_usage[name] = client._command_usage.get(name, 0) + 1
+            return result
         return True
 
 
@@ -533,6 +537,7 @@ class FlameBot(discord.Client):
         self._war_alert_task: asyncio.Task[None] | None = None
         self._nation_create_task: asyncio.Task[None] | None = None
         self._command_cooldowns: dict[int, float] = {}
+        self._command_usage: dict[str, int] = {}
 
     async def setup_hook(self) -> None:
         # Sync to the configured guild immediately so commands appear without
@@ -686,6 +691,37 @@ class FlameBot(discord.Client):
         except (discord.Forbidden, discord.HTTPException):
             log.exception("Failed to send welcome message in guild %d channel %d.", guild_id, channel.id)
 
+    async def _send_to_all_welcome_channels(self, message: str) -> dict:
+        """Send *message* to the configured welcome channel of every guild.
+
+        Returns ``{"sent": n, "skipped": m}`` where *sent* is the number of
+        guilds where the message was delivered and *skipped* is the number of
+        guilds whose welcome channel was missing or unconfigured.
+        """
+        sent = 0
+        skipped = 0
+        for guild in self.guilds:
+            cfg = self.db.get_welcome_config(guild.id)
+            channel_id = cfg.get("channel_id")
+            if channel_id is None:
+                skipped += 1
+                continue
+            channel = guild.get_channel(channel_id)
+            if not isinstance(channel, discord.TextChannel):
+                skipped += 1
+                continue
+            try:
+                await channel.send(message)
+                sent += 1
+            except (discord.Forbidden, discord.HTTPException):
+                log.warning(
+                    "Failed to send bot-panel message in guild %d channel %d.",
+                    guild.id,
+                    channel_id,
+                )
+                skipped += 1
+        return {"sent": sent, "skipped": skipped}
+
     async def _start_api(self) -> None:
         app = create_app(
             guild_getter=lambda: self.get_guild(config.GUILD_ID) if config.GUILD_ID else None,
@@ -695,6 +731,10 @@ class FlameBot(discord.Client):
                 bar3_client_role_id=config.BAR3_CLIENT_ROLE_ID,
                 bar3_server_role_id=config.BAR3_SERVER_ROLE_ID,
             ),
+            guilds_getter=lambda: list(self.guilds),
+            send_to_welcome_fn=self._send_to_all_welcome_channels,
+            command_usage_getter=lambda: dict(self._command_usage),
+            admin_ids=config.ADMIN_DISCORD_IDS,
         )
         self._api_runner = web.AppRunner(app)
         await self._api_runner.setup()
