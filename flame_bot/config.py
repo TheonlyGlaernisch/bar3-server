@@ -78,3 +78,9 @@ if API_KEY and GUILD_ID is None:
 # Comma-separated list of Discord user IDs that bypass all command role checks.
 # Example: ADMIN_DISCORD_IDS=123456789012345678,987654321098765432
 ADMIN_DISCORD_IDS: frozenset[int] = _optional_int_list("ADMIN_DISCORD_IDS")
+
+# PnW API key used exclusively for scanning new nations (nationCreate subscription).
+# Must be the same key set as PW_SCAN_API_KEY in the bar3-server .env so both
+# services subscribe to the same PnW nation-create feed.
+# Falls back to PNW_API_KEY when not set.
+PW_SCAN_API_KEY: str = os.getenv("PW_SCAN_API_KEY") or ""

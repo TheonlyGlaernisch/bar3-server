@@ -21,12 +21,13 @@ const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || '';
 const CLIENT_APP_URL = (process.env.CLIENT_APP_URL || '').replace(/\/$/, '');
 
 // Comma-separated Discord user IDs that bypass all command role requirements in
-// flame_bot.  When a logged-in user's Discord ID appears in this list, the
-// /auth/session response includes isAdmin:true so the bar3-client can show
-// admin-only UI (e.g. the bot management tab).
-// Example: COMMAND_BYPASS_DISCORD_IDS=123456789012345678,987654321098765432
-const COMMAND_BYPASS_DISCORD_IDS: ReadonlySet<string> = new Set(
-  (process.env.COMMAND_BYPASS_DISCORD_IDS || '')
+// flame_bot (ADMIN_DISCORD_IDS).  When a logged-in user's Discord ID appears in
+// this list, the /auth/session response includes isAdmin:true so the bar3-client
+// can show admin-only UI (e.g. the bot management tab).
+// Set to the same value as ADMIN_DISCORD_IDS in the flame_bot .env.
+// Example: ADMIN_DISCORD_IDS=123456789012345678,987654321098765432
+const ADMIN_DISCORD_IDS: ReadonlySet<string> = new Set(
+  (process.env.ADMIN_DISCORD_IDS || '')
     .split(',')
     .map((id) => id.trim())
     .filter(Boolean),
@@ -413,7 +414,7 @@ router.get('/session', (req: Request, res: Response) => {
         username: req.session.discordUsername,
       },
       roles: req.session.discordRoles,
-      isAdmin: COMMAND_BYPASS_DISCORD_IDS.has(userId),
+      isAdmin: ADMIN_DISCORD_IDS.has(userId),
     });
   }
   return res.status(401).json({ authenticated: false });
@@ -443,7 +444,7 @@ router.get('/mobile-session', (req: Request, res: Response) => {
     authenticated: true,
     user: { id: session.discordUserId, username: session.discordUsername },
     roles: session.discordRoles,
-    isAdmin: COMMAND_BYPASS_DISCORD_IDS.has(session.discordUserId),
+    isAdmin: ADMIN_DISCORD_IDS.has(session.discordUserId),
   });
 });
 
