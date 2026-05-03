@@ -873,7 +873,11 @@ class FlameBot(discord.Client):
         """Background task: subscribe to PnW nationCreate events and schedule recruit alerts."""
         await self.wait_until_ready()
         log.info("Recruiter: starting PnW nationCreate subscription listener.")
-        async with PnWSubscriptionClient(self.pnw._api_key) as sub:
+        # Use PW_SCAN_API_KEY when set — the same key bar3-server uses to scan for
+        # new nations — so both services share the same PnW subscription feed.
+        # Falls back to the bot's primary PNW_API_KEY when PW_SCAN_API_KEY is unset.
+        scan_api_key = config.PW_SCAN_API_KEY or self.pnw._api_key
+        async with PnWSubscriptionClient(scan_api_key) as sub:
             async for nation in sub.iter_nation_creates():
                 if self.is_closed():
                     break
