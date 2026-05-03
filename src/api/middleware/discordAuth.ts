@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { getMobileSession } from '../routers/discord/auth';
 
 /** Paths that are always accessible without Discord authentication. */
 const PUBLIC_PREFIXES = [
@@ -9,6 +10,15 @@ const PUBLIC_PREFIXES = [
   '/health',
   '/favicon.ico',
 ];
+
+
+function getBearerToken(req: Request): string | null {
+  const auth = req.headers.authorization;
+  if (!auth) return null;
+  const [scheme, token] = auth.split(' ');
+  if (scheme?.toLowerCase() !== 'bearer' || !token) return null;
+  return token;
+}
 
 /**
  * Express middleware that enforces Discord authentication for all routes.
@@ -28,6 +38,14 @@ export function requireDiscordAuth(req: Request, res: Response, next: NextFuncti
 
   if (req.session?.discordAuthenticated === true) {
     return next();
+  }
+
+  const mobileToken = getBearerToken(req);
+  if (mobileToken) {
+    const mobileSession = getMobileSession(mobileToken);
+    if (mobileSession) {
+      return next();
+    }
   }
 
   // Non-browser / API callers get a JSON 401 so they can handle it programmatically
