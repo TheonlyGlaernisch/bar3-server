@@ -20,6 +20,36 @@ const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || '';
 // to the relative path saved in the session (discordReturnTo) or '/' as a fallback.
 const CLIENT_APP_URL = (process.env.CLIENT_APP_URL || '').replace(/\/$/, '');
 
+type MobileSession = {
+  expiresAt: number;
+  discordUserId: string;
+  discordUsername: string;
+  discordRoles: {
+    verified: boolean;
+    bar3_client: boolean;
+    bar3_server: boolean;
+  };
+};
+
+const MOBILE_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+const mobileSessions = new Map<string, MobileSession>();
+
+function issueMobileToken(session: Omit<MobileSession, 'expiresAt'>): string {
+  const token = `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  mobileSessions.set(token, { ...session, expiresAt: Date.now() + MOBILE_TOKEN_TTL_MS });
+  return token;
+}
+
+export function getMobileSession(token: string): MobileSession | null {
+  const session = mobileSessions.get(token);
+  if (!session) return null;
+  if (session.expiresAt < Date.now()) {
+    mobileSessions.delete(token);
+    return null;
+  }
+  return session;
+}
+
 /**
  * Return true only for safe relative-path redirects (no protocol or host).
  * Rejects protocol-relative URLs (//evil.com) and absolute URLs.
@@ -170,6 +200,7 @@ router.get('/discord', (req: Request, res: Response) => {
   if (returnTo && isSafeReturnTo(returnTo)) {
     req.session.discordReturnTo = returnTo;
   }
+  const mobile = req.query.mobile === '1';
   const params = new URLSearchParams({
     client_id: DISCORD_CLIENT_ID,
     redirect_uri: DISCORD_REDIRECT_URI,
@@ -177,6 +208,7 @@ router.get('/discord', (req: Request, res: Response) => {
     // Only 'identify' is needed — role verification is delegated to flame_bot.
     scope: 'identify',
   });
+  if (mobile) params.set('state', 'mobile');
   return res.redirect(`https://discord.com/oauth2/authorize?${params.toString()}`);
 });
 
@@ -240,6 +272,23 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
 
     if (!hasAccess) {
       return res.send(ACCESS_DENIED_HTML);
+    }
+
+    const isMobileFlow = req.query.state === 'mobile';
+    if (isMobileFlow) {
+      if (!CLIENT_APP_URL) {
+        return res.redirect('/auth/login?error=auth_failed');
+      }
+      const mobileToken = issueMobileToken({
+        discordUserId: discordId,
+        discordUsername,
+        discordRoles: {
+          verified: flameBotRoles.verified === true,
+          bar3_client: flameBotRoles.bar3_client === true,
+          bar3_server: flameBotRoles.bar3_server === true,
+        },
+      });
+      return res.redirect(`${CLIENT_APP_URL}?mobileToken=${encodeURIComponent(mobileToken)}`);
     }
 
     // Determine where to send the browser after a successful login.
@@ -327,6 +376,19 @@ router.post('/logout', (req: Request, res: Response) => {
     // If you set the `name` option in the session middleware, change this to match.
     res.clearCookie('connect.sid');
     return res.json({ ok: true });
+  });
+});
+
+
+router.get('/mobile-session', (req: Request, res: Response) => {
+  const token = typeof req.query.token === 'string' ? req.query.token : '';
+  if (!token) return res.status(400).json({ error: 'Missing token' });
+  const session = getMobileSession(token);
+  if (!session) return res.status(401).json({ authenticated: false });
+  return res.json({
+    authenticated: true,
+    user: { id: session.discordUserId, username: session.discordUsername },
+    roles: session.discordRoles,
   });
 });
 
