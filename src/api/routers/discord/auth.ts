@@ -58,6 +58,36 @@ function isSafeReturnTo(url: unknown): url is string {
   return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
 }
 
+function normalizeReturnTo(input: unknown): string | null {
+  if (typeof input !== 'string' || !input) return null;
+
+  let current = input;
+  // Some clients nest/encode return paths multiple times. Try to decode a few times.
+  for (let i = 0; i < 3; i += 1) {
+    try {
+      const decoded = decodeURIComponent(current);
+      if (decoded === current) break;
+      current = decoded;
+    } catch {
+      break;
+    }
+  }
+
+  // If the incoming path is itself an auth/login URL with redirect/returnTo,
+  // unwrap to the final destination.
+  if (current.startsWith('/auth/login?') || current.startsWith('/login?')) {
+    const query = current.split('?', 2)[1] || '';
+    const params = new URLSearchParams(query);
+    const nested = params.get('redirect') || params.get('returnTo');
+    if (nested) {
+      const normalizedNested = normalizeReturnTo(nested);
+      if (normalizedNested) return normalizedNested;
+    }
+  }
+
+  return isSafeReturnTo(current) ? current : null;
+}
+
 const LOGIN_PAGE_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -196,8 +226,8 @@ router.get('/discord', (req: Request, res: Response) => {
   // If the SPA passes a ?returnTo= param (its current client-side route), save it in
   // the session so the callback can append it to CLIENT_APP_URL after a successful login.
   // This lets the SPA navigate the user back to where they were before the auth wall.
-  const returnTo = typeof req.query.returnTo === 'string' ? req.query.returnTo : null;
-  if (returnTo && isSafeReturnTo(returnTo)) {
+  const returnTo = normalizeReturnTo(req.query.returnTo);
+  if (returnTo) {
     req.session.discordReturnTo = returnTo;
   }
   const mobile = req.query.mobile === '1';
@@ -295,17 +325,17 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
     // Priority: CLIENT_APP_URL env var > validated discordReturnTo > '/'
     // Read discordReturnTo into a local variable now, before session
     // regeneration destroys the old session data.
-    const savedReturnTo = req.session.discordReturnTo;
+    const savedReturnTo = normalizeReturnTo(req.session.discordReturnTo);
 
     let destination: string;
     if (CLIENT_APP_URL) {
       // When redirecting to the client SPA, append the saved returnTo path as a
       // query param so the SPA can navigate the user back to their original route.
       // The SPA should read window.location.search for ?returnTo= on startup.
-      destination = isSafeReturnTo(savedReturnTo)
+      destination = savedReturnTo
         ? `${CLIENT_APP_URL}?returnTo=${encodeURIComponent(savedReturnTo)}`
         : CLIENT_APP_URL;
-    } else if (isSafeReturnTo(savedReturnTo)) {
+    } else if (savedReturnTo) {
       destination = savedReturnTo;
     } else {
       destination = '/';
