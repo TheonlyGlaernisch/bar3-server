@@ -2430,7 +2430,7 @@ class PnWSubscriptionClient:
             raise RuntimeError("PnWSubscriptionClient used outside async context manager.")
         async with self._session.post(
             PNW_SUBSCRIPTION_AUTH_URL,
-            data={"socket_id": socket_id, "channel_name": channel},
+            data={"socket_id": socket_id, "channel_name": channel, "api_key": self._api_key},
         ) as resp:
             data = await resp.json()
             auth = data.get("auth")
