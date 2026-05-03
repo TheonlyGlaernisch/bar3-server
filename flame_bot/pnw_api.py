@@ -2507,7 +2507,7 @@ class PnWSubscriptionClient:
                         raw_data = frame.get("data") or "{}"
                         if isinstance(raw_data, str):
                             raw_data = _json.loads(raw_data)
-                        items = raw_data if event.startswith("BULK_") else [raw_data]
+                        items = raw_data if event == "BULK_WAR_CREATE" else [raw_data]
                         for item in items:
                             war = _parse_war_from_dict(item)
                             if war is not None:
@@ -2563,7 +2563,7 @@ class PnWSubscriptionClient:
             log.info("PnW recruiter subscription: Pusher WebSocket connected.")
 
             # Step 2: Wait for connection_established and extract socket_id.
-            socket_id = None
+            socket_id: Optional[str] = None
             async for msg in ws:
                 if msg.type != aiohttp.WSMsgType.TEXT:
                     continue
@@ -2595,7 +2595,7 @@ class PnWSubscriptionClient:
                         raw_data = frame.get("data") or "{}"
                         if isinstance(raw_data, str):
                             raw_data = _json.loads(raw_data)
-                        items = raw_data if event.startswith("BULK_") else [raw_data]
+                        items = raw_data if event == "BULK_NATION_CREATE" else [raw_data]
                         for item in items:
                             nation = _parse_nation_from_dict(item)
                             if nation is not None:
