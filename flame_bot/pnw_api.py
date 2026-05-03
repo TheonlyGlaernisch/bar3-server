@@ -2195,63 +2195,51 @@ class NationCreateDetail:
     score: float = 0.0
 
 
-_NATION_CREATE_SUBSCRIPTION_QUERY = """
-subscription {
-    nationCreate {
-        id
-        nation_name
-        leader_name
-        date
-        alliance_id
-        num_cities
-        score
-    }
-}
-"""
-
-_WAR_SUBSCRIPTION_QUERY = """
-subscription {
-    warCreate {
-        id
-        date
-        war_type
-        att_id
-        def_id
-        att_alliance_id
-        def_alliance_id
-        attacker {
-            nation_name
-            leader_name
-            num_cities
-            score
-            soldiers
-            tanks
-            aircraft
-            ships
-            missiles
-            nukes
-            wars_won
-            wars_lost
-        }
-        defender {
-            nation_name
-            leader_name
-            num_cities
-            score
-            soldiers
-            tanks
-            aircraft
-            ships
-            missiles
-            nukes
-            wars_won
-            wars_lost
-        }
-        att_alliance {
-            name
-        }
-        def_alliance {
-            name
+_WAR_DETAIL_QUERY = """
+query GetWarDetail($id: [Int]) {
+    wars(id: $id, first: 1) {
+        data {
+            id
+            date
+            war_type
+            att_id
+            def_id
+            att_alliance_id
+            def_alliance_id
+            attacker {
+                nation_name
+                leader_name
+                num_cities
+                score
+                soldiers
+                tanks
+                aircraft
+                ships
+                missiles
+                nukes
+                wars_won
+                wars_lost
+            }
+            defender {
+                nation_name
+                leader_name
+                num_cities
+                score
+                soldiers
+                tanks
+                aircraft
+                ships
+                missiles
+                nukes
+                wars_won
+                wars_lost
+            }
+            att_alliance {
+                name
+            }
+            def_alliance {
+                name
+            }
         }
     }
 }
@@ -2288,17 +2276,6 @@ def _parse_nation_from_dict(nation: dict) -> Optional[NationCreateDetail]:
         cities=int(nation.get("num_cities") or 0),
         score=float(nation.get("score") or 0),
     )
-
-
-def _parse_nation_create_event(payload: dict) -> Optional[NationCreateDetail]:
-    """Parse a ``nationCreate`` subscription event into a :class:`NationCreateDetail`.
-
-    Returns ``None`` if the payload is missing required data.
-    """
-    nation = (payload.get("data") or {}).get("nationCreate") or {}
-    if not nation:
-        return None
-    return _parse_nation_from_dict(nation)
 
 
 def _parse_war_from_dict(war: dict) -> Optional[WarDetail]:
@@ -2364,17 +2341,6 @@ def _parse_war_from_dict(war: dict) -> Optional[WarDetail]:
     )
 
 
-def _parse_war_event(payload: dict) -> Optional[WarDetail]:
-    """Parse a ``warCreate`` subscription event into a :class:`WarDetail`.
-
-    Returns ``None`` if the payload is missing required data.
-    """
-    war = (payload.get("data") or {}).get("warCreate") or {}
-    if not war:
-        return None
-    return _parse_war_from_dict(war)
-
-
 class PnWSubscriptionClient:
     """Subscription client for the PnW real-time subscription API.
 
@@ -2394,12 +2360,13 @@ class PnWSubscriptionClient:
     connection drops.
     """
 
-    _RECONNECT_BASE = 5      # seconds before first reconnect
+    _RECONNECT_BASE = 15     # seconds before first reconnect
     _RECONNECT_MAX = 300     # cap at 5 minutes
 
     def __init__(self, api_key: str) -> None:
         self._api_key = api_key
         self._session: Optional[aiohttp.ClientSession] = None
+        self._channel_cache: dict[tuple[str, str], str] = {}
 
     async def __aenter__(self) -> "PnWSubscriptionClient":
         self._session = aiohttp.ClientSession()
@@ -2415,7 +2382,11 @@ class PnWSubscriptionClient:
         if self._session is None:
             raise RuntimeError("PnWSubscriptionClient used outside async context manager.")
         url = PNW_SUBSCRIPTION_URL.format(model=model, event=event)
-        async with self._session.get(url, params={"api_key": self._api_key}) as resp:
+        async with self._session.get(
+            url,
+            params={"api_key": self._api_key},
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as resp:
             data = await resp.json()
             if data.get("error"):
                 raise RuntimeError(f"PnW subscription API error: {data['error']}")
@@ -2431,12 +2402,36 @@ class PnWSubscriptionClient:
         async with self._session.post(
             PNW_SUBSCRIPTION_AUTH_URL,
             data={"socket_id": socket_id, "channel_name": channel, "api_key": self._api_key},
+            timeout=aiohttp.ClientTimeout(total=30),
         ) as resp:
             data = await resp.json()
             auth = data.get("auth")
             if not auth:
                 raise RuntimeError(f"PnW subscription auth returned no auth token: {data}")
             return auth
+
+    async def _fetch_war_detail(self, war_id: int) -> Optional[WarDetail]:
+        """Fetch full war details via GraphQL for a war ID from subscription events."""
+        if self._session is None:
+            raise RuntimeError("PnWSubscriptionClient used outside async context manager.")
+        if war_id <= 0:
+            return None
+        url = f"{PNW_GRAPHQL_URL}?api_key={self._api_key}"
+        async with self._session.post(
+            url,
+            json={"query": _WAR_DETAIL_QUERY, "variables": {"id": [war_id]}},
+            headers={"Content-Type": "application/json"},
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+        if "errors" in data:
+            raise RuntimeError(
+                "PnW war detail query returned errors: "
+                + "; ".join(e.get("message", "") for e in data["errors"])
+            )
+        wars = data.get("data", {}).get("wars", {}).get("data", [])
+        return _parse_war_from_dict(wars[0]) if wars else None
 
     async def _stream_subscription(
         self,
@@ -2451,43 +2446,39 @@ class PnWSubscriptionClient:
         if self._session is None:
             raise RuntimeError("PnWSubscriptionClient used outside async context manager.")
 
-        channel = await self._get_channel(model, event)
+        cache_key = (model, event)
+        channel = self._channel_cache.get(cache_key)
+        if channel is None:
+            channel = await self._get_channel(model, event)
+            self._channel_cache[cache_key] = channel
         log.info("%s obtained channel %s.", log_prefix, channel)
 
         async with self._session.ws_connect(
             PNW_PUSHER_URL,
             max_msg_size=0,
             autoclose=False,
+            heartbeat=30,
         ) as ws:
             log.info("%s WebSocket connected.", log_prefix)
 
             socket_id: Optional[str] = None
-            async for msg in ws:
-                if msg.type != aiohttp.WSMsgType.TEXT:
-                    continue
-                frame = _json.loads(msg.data)
-                if frame.get("event") == "pusher:connection_established":
-                    inner = _json.loads(frame.get("data") or "{}")
-                    socket_id = inner.get("socket_id")
-                    break
-
-            if not socket_id:
-                log.warning("%s did not receive connection_established.", log_prefix)
-                return
-
-            log.info("%s connection established (socket_id=%s).", log_prefix, socket_id)
-
-            auth = await self._get_auth(channel, socket_id)
-            await ws.send_json(
-                {"event": "pusher:subscribe", "data": {"auth": auth, "channel": channel}}
-            )
-
             single_event, bulk_event = event_names
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     frame = _json.loads(msg.data)
                     ws_event = frame.get("event", "")
-                    if ws_event == "pusher_internal:subscription_succeeded":
+                    if ws_event == "pusher:connection_established":
+                        inner = _json.loads(frame.get("data") or "{}")
+                        socket_id = inner.get("socket_id")
+                        if not socket_id:
+                            log.warning("%s did not receive a socket_id in connection_established.", log_prefix)
+                            return
+                        log.info("%s connection established (socket_id=%s).", log_prefix, socket_id)
+                        auth = await self._get_auth(channel, socket_id)
+                        await ws.send_json(
+                            {"event": "pusher:subscribe", "data": {"auth": auth, "channel": channel}}
+                        )
+                    elif ws_event == "pusher_internal:subscription_succeeded":
                         log.info("%s subscribed to channel %s.", log_prefix, channel)
                     elif ws_event in (single_event, bulk_event):
                         raw_data = frame.get("data") or "{}"
@@ -2496,12 +2487,15 @@ class PnWSubscriptionClient:
                         items = raw_data if ws_event == bulk_event else [raw_data]
                         for item in items:
                             parsed = parser(item)
+                            if model == "war" and parsed is not None:
+                                parsed = await self._fetch_war_detail(parsed.war_id)  # type: ignore[assignment]
                             if parsed is not None:
                                 yield parsed
                     elif ws_event == "pusher:ping":
-                        await ws.send_json({"event": "pusher:pong", "data": {}})
+                        await ws.send_json({"event": "pusher:pong", "data": "{}"})
                     elif ws_event == "pusher:error":
                         log.warning("%s gateway error — %s.", log_prefix, frame.get("data"))
+                        self._channel_cache.pop(cache_key, None)
                         return
                 elif msg.type in (
                     aiohttp.WSMsgType.CLOSED,
@@ -2509,6 +2503,9 @@ class PnWSubscriptionClient:
                     aiohttp.WSMsgType.CLOSING,
                 ):
                     log.info("%s WebSocket closed (type=%s).", log_prefix, msg.type)
+                    ws_exc = ws.exception()
+                    if ws_exc is not None:
+                        log.warning("%s WebSocket exception: %r.", log_prefix, ws_exc)
                     return
 
     async def iter_war_creates(self):  # type: ignore[return]
