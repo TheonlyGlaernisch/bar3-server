@@ -2175,9 +2175,11 @@ def compute_nation_revenue(
 # PnW WebSocket subscription client
 # ---------------------------------------------------------------------------
 
-# PnW uses the graphql-transport-ws subprotocol for subscriptions.
-# See: https://github.com/enisdenjo/graphql-ws/blob/master/PROTOCOL.md
-PNW_WS_URL = "wss://api.politicsandwar.com/graphql-ws"
+# PnW subscriptions use a Pusher-compatible WebSocket.
+# See: https://mrvillage.gitbook.io/pnwapi/subscriptions/getting-started
+PNW_PUSHER_URL = "wss://socket.politicsandwar.com/app/a22734a47847a64386c8?protocol=7"
+PNW_SUBSCRIPTION_URL = "https://api.politicsandwar.com/subscriptions/v1/subscribe/{model}/{event}"
+PNW_SUBSCRIPTION_AUTH_URL = "https://api.politicsandwar.com/subscriptions/v1/auth"
 
 @dataclass
 class NationCreateDetail:
@@ -2254,14 +2256,11 @@ subscription {
 """
 
 
-def _parse_nation_create_event(payload: dict) -> Optional[NationCreateDetail]:
-    """Parse a ``nationCreate`` subscription event into a :class:`NationCreateDetail`.
+def _parse_nation_from_dict(nation: dict) -> Optional[NationCreateDetail]:
+    """Parse a nation dict from a Pusher ``NATION_CREATE`` event into a :class:`NationCreateDetail`.
 
-    Returns ``None`` if the payload is missing required data.
+    Returns ``None`` if the dict is missing required data.
     """
-    nation = (payload.get("data") or {}).get("nationCreate") or {}
-    if not nation:
-        return None
     nation_id = int(nation.get("id") or 0)
     if not nation_id:
         return None
@@ -2289,14 +2288,22 @@ def _parse_nation_create_event(payload: dict) -> Optional[NationCreateDetail]:
     )
 
 
-def _parse_war_event(payload: dict) -> Optional[WarDetail]:
-    """Parse a ``warCreate`` subscription event into a :class:`WarDetail`.
+def _parse_nation_create_event(payload: dict) -> Optional[NationCreateDetail]:
+    """Parse a ``nationCreate`` subscription event into a :class:`NationCreateDetail`.
 
     Returns ``None`` if the payload is missing required data.
     """
-    war = (payload.get("data") or {}).get("warCreate") or {}
-    if not war:
+    nation = (payload.get("data") or {}).get("nationCreate") or {}
+    if not nation:
         return None
+    return _parse_nation_from_dict(nation)
+
+
+def _parse_war_from_dict(war: dict) -> Optional[WarDetail]:
+    """Parse a war dict (from a Pusher ``WAR_CREATE`` event) into a :class:`WarDetail`.
+
+    Returns ``None`` if the dict is missing required data.
+    """
     war_id = int(war.get("id") or 0)
     if not war_id:
         return None
@@ -2355,8 +2362,25 @@ def _parse_war_event(payload: dict) -> Optional[WarDetail]:
     )
 
 
+def _parse_war_event(payload: dict) -> Optional[WarDetail]:
+    """Parse a ``warCreate`` subscription event into a :class:`WarDetail`.
+
+    Returns ``None`` if the payload is missing required data.
+    """
+    war = (payload.get("data") or {}).get("warCreate") or {}
+    if not war:
+        return None
+    return _parse_war_from_dict(war)
+
+
 class PnWSubscriptionClient:
-    """WebSocket subscription client for the PnW ``graphql-transport-ws`` endpoint.
+    """Subscription client for the PnW Pusher-based subscription API.
+
+    Follows the protocol described at https://mrvillage.gitbook.io/pnwapi/subscriptions/getting-started:
+    1. Fetch a private channel name from the PnW subscription REST API.
+    2. Connect to the Pusher WebSocket and obtain a socket_id.
+    3. Authorise the subscription via the PnW auth endpoint.
+    4. Subscribe to the channel and stream events.
 
     Usage::
 
@@ -2368,7 +2392,6 @@ class PnWSubscriptionClient:
     connection drops.
     """
 
-    _SUBPROTOCOL = "graphql-transport-ws"
     _RECONNECT_BASE = 5      # seconds before first reconnect
     _RECONNECT_MAX = 300     # cap at 5 minutes
 
@@ -2384,6 +2407,34 @@ class PnWSubscriptionClient:
         if self._session is not None:
             await self._session.close()
             self._session = None
+
+    async def _get_channel(self, model: str, event: str) -> str:
+        """Request a Pusher channel name from the PnW subscription REST API."""
+        if self._session is None:
+            raise RuntimeError("PnWSubscriptionClient used outside async context manager.")
+        url = PNW_SUBSCRIPTION_URL.format(model=model, event=event)
+        async with self._session.get(url, params={"api_key": self._api_key}) as resp:
+            data = await resp.json()
+            if data.get("error"):
+                raise RuntimeError(f"PnW subscription API error: {data['error']}")
+            channel = data.get("channel")
+            if not channel:
+                raise RuntimeError(f"PnW subscription API returned no channel: {data}")
+            return channel
+
+    async def _get_auth(self, channel: str, socket_id: str) -> str:
+        """Authorize a Pusher channel subscription via the PnW auth endpoint."""
+        if self._session is None:
+            raise RuntimeError("PnWSubscriptionClient used outside async context manager.")
+        async with self._session.post(
+            PNW_SUBSCRIPTION_AUTH_URL,
+            data={"socket_id": socket_id, "channel_name": channel},
+        ) as resp:
+            data = await resp.json()
+            auth = data.get("auth")
+            if not auth:
+                raise RuntimeError(f"PnW subscription auth returned no auth token: {data}")
+            return auth
 
     async def iter_war_creates(self):  # type: ignore[return]
         """Async-iterate over :class:`WarDetail` events as they arrive.
@@ -2407,57 +2458,65 @@ class PnWSubscriptionClient:
             delay = min(delay * 2, self._RECONNECT_MAX)
 
     async def _subscribe_once(self):  # type: ignore[return]
-        """Open one WebSocket connection and yield WarDetail events until it closes."""
+        """Open one Pusher WebSocket connection and yield WarDetail events until it closes."""
         if self._session is None:
             raise RuntimeError("PnWSubscriptionClient used outside async context manager.")
 
-        url = f"{PNW_WS_URL}?api_key={self._api_key}"
-        headers = {"Sec-WebSocket-Protocol": self._SUBPROTOCOL}
+        # Step 1: Request a channel name from the PnW REST API.
+        channel = await self._get_channel("war", "create")
+        log.info("PnW subscription: obtained channel %s.", channel)
 
         async with self._session.ws_connect(
-            url,
-            protocols=[self._SUBPROTOCOL],
-            headers=headers,
-            heartbeat=30,
+            PNW_PUSHER_URL,
+            max_msg_size=0,
+            autoclose=False,
         ) as ws:
-            log.info("PnW subscription: WebSocket connected.")
+            log.info("PnW subscription: Pusher WebSocket connected.")
 
-            # graphql-transport-ws handshake
-            await ws.send_str(_json.dumps({"type": "connection_init", "payload": {}}))
+            # Step 2: Wait for connection_established and extract socket_id.
+            socket_id: Optional[str] = None
+            async for msg in ws:
+                if msg.type != aiohttp.WSMsgType.TEXT:
+                    continue
+                frame = _json.loads(msg.data)
+                if frame.get("event") == "pusher:connection_established":
+                    inner = _json.loads(frame.get("data") or "{}")
+                    socket_id = inner.get("socket_id")
+                    break
+                # Ignore other initial messages.
 
-            # Wait for connection_ack
-            msg = await ws.receive()
-            if msg.type != aiohttp.WSMsgType.TEXT:
-                log.warning("PnW subscription: unexpected message type during handshake: %s", msg.type)
+            if not socket_id:
+                log.warning("PnW subscription: did not receive connection_established.")
                 return
-            frame = _json.loads(msg.data)
-            if frame.get("type") != "connection_ack":
-                log.warning("PnW subscription: expected connection_ack, got: %s", frame.get("type"))
-                return
 
-            log.info("PnW subscription: connection_ack received, subscribing to warCreate.")
+            log.info("PnW subscription: connection established (socket_id=%s).", socket_id)
 
-            # Send the subscription
-            await ws.send_str(_json.dumps({
-                "type": "subscribe",
-                "id": "war_create",
-                "payload": {"query": _WAR_SUBSCRIPTION_QUERY},
-            }))
+            # Step 3: Authorize and subscribe to the channel.
+            auth = await self._get_auth(channel, socket_id)
+            await ws.send_json(
+                {"event": "pusher:subscribe", "data": {"auth": auth, "channel": channel}}
+            )
 
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     frame = _json.loads(msg.data)
-                    msg_type = frame.get("type", "")
-                    if msg_type == "next":
-                        war = _parse_war_event(frame.get("payload") or {})
-                        if war is not None:
-                            yield war
-                    elif msg_type == "ping":
-                        await ws.send_str(_json.dumps({"type": "pong"}))
-                    elif msg_type in ("complete", "error"):
-                        log.warning("PnW subscription: received %s — reconnecting.", msg_type)
+                    event = frame.get("event", "")
+                    if event == "pusher_internal:subscription_succeeded":
+                        log.info("PnW subscription: subscribed to channel %s.", channel)
+                    elif event in ("WAR_CREATE", "BULK_WAR_CREATE"):
+                        raw_data = frame.get("data") or "{}"
+                        if isinstance(raw_data, str):
+                            raw_data = _json.loads(raw_data)
+                        items = raw_data if event == "BULK_WAR_CREATE" else [raw_data]
+                        for item in items:
+                            war = _parse_war_from_dict(item)
+                            if war is not None:
+                                yield war
+                    elif event == "pusher:ping":
+                        await ws.send_json({"event": "pusher:pong", "data": {}})
+                    elif event == "pusher:error":
+                        log.warning("PnW subscription: pusher error — %s.", frame.get("data"))
                         return
-                    # ignore keep-alive / other messages
                 elif msg.type in (
                     aiohttp.WSMsgType.CLOSED,
                     aiohttp.WSMsgType.ERROR,
@@ -2488,57 +2547,64 @@ class PnWSubscriptionClient:
             delay = min(delay * 2, self._RECONNECT_MAX)
 
     async def _subscribe_once_nations(self):  # type: ignore[return]
-        """Open one WebSocket connection and yield NationCreateDetail events until it closes."""
+        """Open one Pusher WebSocket connection and yield NationCreateDetail events until it closes."""
         if self._session is None:
             raise RuntimeError("PnWSubscriptionClient used outside async context manager.")
 
-        url = f"{PNW_WS_URL}?api_key={self._api_key}"
-        headers = {"Sec-WebSocket-Protocol": self._SUBPROTOCOL}
+        # Step 1: Request a channel name from the PnW REST API.
+        channel = await self._get_channel("nation", "create")
+        log.info("PnW recruiter subscription: obtained channel %s.", channel)
 
         async with self._session.ws_connect(
-            url,
-            protocols=[self._SUBPROTOCOL],
-            headers=headers,
-            heartbeat=30,
+            PNW_PUSHER_URL,
+            max_msg_size=0,
+            autoclose=False,
         ) as ws:
-            log.info("PnW recruiter subscription: WebSocket connected.")
+            log.info("PnW recruiter subscription: Pusher WebSocket connected.")
 
-            # graphql-transport-ws handshake
-            await ws.send_str(_json.dumps({"type": "connection_init", "payload": {}}))
+            # Step 2: Wait for connection_established and extract socket_id.
+            socket_id: Optional[str] = None
+            async for msg in ws:
+                if msg.type != aiohttp.WSMsgType.TEXT:
+                    continue
+                frame = _json.loads(msg.data)
+                if frame.get("event") == "pusher:connection_established":
+                    inner = _json.loads(frame.get("data") or "{}")
+                    socket_id = inner.get("socket_id")
+                    break
 
-            # Wait for connection_ack
-            msg = await ws.receive()
-            if msg.type != aiohttp.WSMsgType.TEXT:
-                log.warning("PnW recruiter subscription: unexpected message type during handshake: %s", msg.type)
+            if not socket_id:
+                log.warning("PnW recruiter subscription: did not receive connection_established.")
                 return
-            frame = _json.loads(msg.data)
-            if frame.get("type") != "connection_ack":
-                log.warning("PnW recruiter subscription: expected connection_ack, got: %s", frame.get("type"))
-                return
 
-            log.info("PnW recruiter subscription: connection_ack received, subscribing to nationCreate.")
+            log.info("PnW recruiter subscription: connection established (socket_id=%s).", socket_id)
 
-            # Send the subscription
-            await ws.send_str(_json.dumps({
-                "type": "subscribe",
-                "id": "nation_create",
-                "payload": {"query": _NATION_CREATE_SUBSCRIPTION_QUERY},
-            }))
+            # Step 3: Authorize and subscribe to the channel.
+            auth = await self._get_auth(channel, socket_id)
+            await ws.send_json(
+                {"event": "pusher:subscribe", "data": {"auth": auth, "channel": channel}}
+            )
 
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     frame = _json.loads(msg.data)
-                    msg_type = frame.get("type", "")
-                    if msg_type == "next":
-                        nation = _parse_nation_create_event(frame.get("payload") or {})
-                        if nation is not None:
-                            yield nation
-                    elif msg_type == "ping":
-                        await ws.send_str(_json.dumps({"type": "pong"}))
-                    elif msg_type in ("complete", "error"):
-                        log.warning("PnW recruiter subscription: received %s — reconnecting.", msg_type)
+                    event = frame.get("event", "")
+                    if event == "pusher_internal:subscription_succeeded":
+                        log.info("PnW recruiter subscription: subscribed to channel %s.", channel)
+                    elif event in ("NATION_CREATE", "BULK_NATION_CREATE"):
+                        raw_data = frame.get("data") or "{}"
+                        if isinstance(raw_data, str):
+                            raw_data = _json.loads(raw_data)
+                        items = raw_data if event == "BULK_NATION_CREATE" else [raw_data]
+                        for item in items:
+                            nation = _parse_nation_from_dict(item)
+                            if nation is not None:
+                                yield nation
+                    elif event == "pusher:ping":
+                        await ws.send_json({"event": "pusher:pong", "data": {}})
+                    elif event == "pusher:error":
+                        log.warning("PnW recruiter subscription: pusher error — %s.", frame.get("data"))
                         return
-                    # ignore keep-alive / other messages
                 elif msg.type in (
                     aiohttp.WSMsgType.CLOSED,
                     aiohttp.WSMsgType.ERROR,
