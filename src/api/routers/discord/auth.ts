@@ -353,11 +353,11 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
 
     let destination: string;
     if (CLIENT_APP_URL) {
-      // Keep post-auth redirect simple: go straight to the client target path
-      // instead of passing a nested/encoded returnTo query.
+      // Prefer an explicit client URL to avoid landing on server-side routes
+      // that may not exist in this service deployment.
       destination = savedReturnTo
         ? `${CLIENT_APP_URL}${savedReturnTo}`
-        : CLIENT_APP_URL;
+        : `${CLIENT_APP_URL}/dashboard`;
     } else if (savedReturnTo) {
       destination = savedReturnTo;
     } else {

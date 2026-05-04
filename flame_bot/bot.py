@@ -708,6 +708,8 @@ class FlameBot(discord.Client):
                 channel = guild.get_channel(channel_id)
             if channel is None:
                 channel = guild.system_channel
+            if channel is None:
+                channel = next((c for c in guild.text_channels if isinstance(c, discord.TextChannel)), None)
             if not isinstance(channel, discord.TextChannel):
                 skipped += 1
                 continue
