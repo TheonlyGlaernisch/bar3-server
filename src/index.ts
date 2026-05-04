@@ -126,7 +126,22 @@ const proxyBotApi = async (req: Request, res: Response, method: 'get' | 'post', 
       : superagent.post(`${FLAME_BOT_INTERNAL_URL}${path}`);
     const apiKey = req.header('X-API-Key') || FLAME_BOT_API_KEY;
     if (apiKey) requestBuilder = requestBuilder.set('X-API-Key', apiKey);
-    if (method === 'post') requestBuilder = requestBuilder.send(req.body ?? {});
+    if (method === 'post') {
+      const payload: Record<string, unknown> = { ...(req.body ?? {}) };
+      if (path === '/api/bot/send') {
+        const sessionDiscordId = req.session?.discordUserId;
+        if (!payload.discord_id && typeof sessionDiscordId === 'string' && sessionDiscordId.trim()) {
+          payload.discord_id = sessionDiscordId.trim();
+        }
+        if (!payload.message) {
+          const fallbackMessage = payload.content ?? payload.text;
+          if (typeof fallbackMessage === 'string') {
+            payload.message = fallbackMessage;
+          }
+        }
+      }
+      requestBuilder = requestBuilder.send(payload);
+    }
     const upstream = await requestBuilder.timeout({ response: 10000, deadline: 15000 });
     res.status(upstream.status).json(upstream.body);
   } catch (err: any) {
