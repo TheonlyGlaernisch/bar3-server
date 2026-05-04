@@ -118,12 +118,13 @@ app.get('/health', (_req: Request, res: Response) => {
 // service, only one public port is exposed. Proxy bot endpoints to the local
 // flame_bot API listener so callers can use the same base URL.
 const FLAME_BOT_INTERNAL_URL = (process.env.FLAME_BOT_API_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
+const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || '';
 const proxyBotApi = async (req: Request, res: Response, method: 'get' | 'post', path: string) => {
   try {
     let requestBuilder = method === 'get'
       ? superagent.get(`${FLAME_BOT_INTERNAL_URL}${path}`)
       : superagent.post(`${FLAME_BOT_INTERNAL_URL}${path}`);
-    const apiKey = req.header('X-API-Key');
+    const apiKey = req.header('X-API-Key') || FLAME_BOT_API_KEY;
     if (apiKey) requestBuilder = requestBuilder.set('X-API-Key', apiKey);
     if (method === 'post') requestBuilder = requestBuilder.send(req.body ?? {});
     const upstream = await requestBuilder.timeout({ response: 10000, deadline: 15000 });
