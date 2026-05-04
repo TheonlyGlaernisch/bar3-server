@@ -703,10 +703,13 @@ class FlameBot(discord.Client):
         for guild in self.guilds:
             cfg = self.db.get_welcome_config(guild.id)
             channel_id = cfg.get("channel_id")
-            if channel_id is None:
-                skipped += 1
-                continue
-            channel = guild.get_channel(channel_id)
+            channel: discord.abc.GuildChannel | None = None
+            if channel_id is not None:
+                channel = guild.get_channel(channel_id)
+            if channel is None:
+                channel = guild.system_channel
+            if channel is None:
+                channel = next((c for c in guild.text_channels if isinstance(c, discord.TextChannel)), None)
             if not isinstance(channel, discord.TextChannel):
                 skipped += 1
                 continue
