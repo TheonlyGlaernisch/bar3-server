@@ -390,7 +390,8 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
           console.error('[Discord Auth] Session save error:', saveErr);
           return res.redirect('/auth/login?error=auth_failed');
         }
-        return res.redirect(destination);
+        sendPostAuthBridge(res, destination);
+        return;
       });
     });
     return;
@@ -449,3 +450,9 @@ router.get('/mobile-session', (req: Request, res: Response) => {
 });
 
 export default router;
+function sendPostAuthBridge(res: Response, destination: string): void {
+  const escaped = destination.replace(/"/g, '&quot;');
+  res.status(200).send(`<!doctype html>
+<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${escaped}"></head>
+<body><script>window.location.replace(${JSON.stringify(destination)});</script></body></html>`);
+}
