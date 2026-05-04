@@ -13,6 +13,7 @@ import discordAuthRouter from './api/routers/discord/auth';
 import adminRouter from './api/routers/admin';
 import { requireDiscordAuth } from './api/middleware/discordAuth';
 import { startAutomationLoop } from './services/v2AutomationRunner';
+import superagent from 'superagent';
 // Extend express-session SessionData with Discord fields
 import './interfaces/session';
 
@@ -112,6 +113,41 @@ app.get('/ping', (_req: Request, res: Response) => {
 app.get('/health', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'Server is running' });
 });
+
+// Bot API fallback proxy: when this service and flame_bot share one Render
+// service, only one public port is exposed. Proxy bot endpoints to the local
+// flame_bot API listener so callers can use the same base URL.
+const FLAME_BOT_INTERNAL_URL = (process.env.FLAME_BOT_API_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
+const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || '';
+const proxyBotApi = async (req: Request, res: Response, method: 'get' | 'post', path: string) => {
+  try {
+    let requestBuilder = method === 'get'
+      ? superagent.get(`${FLAME_BOT_INTERNAL_URL}${path}`)
+      : superagent.post(`${FLAME_BOT_INTERNAL_URL}${path}`);
+    const apiKey = req.header('X-API-Key') || FLAME_BOT_API_KEY;
+    if (apiKey) requestBuilder = requestBuilder.set('X-API-Key', apiKey);
+    if (method === 'post') requestBuilder = requestBuilder.send(req.body ?? {});
+    const upstream = await requestBuilder.timeout({ response: 10000, deadline: 15000 });
+    res.status(upstream.status).json(upstream.body);
+  } catch (err: any) {
+    const status = err?.status;
+    const body = err?.response?.body;
+    if (status && body) {
+      return res.status(status).json(body);
+    }
+    return res.status(503).json({
+      error: 'Bot API unavailable',
+      hint: 'flame_bot may not be reachable on its internal API port',
+    });
+  }
+};
+
+app.get('/api/bot/servers', async (req: Request, res: Response) =>
+  proxyBotApi(req, res, 'get', '/api/bot/servers'));
+app.get('/api/bot/commands/usage', async (req: Request, res: Response) =>
+  proxyBotApi(req, res, 'get', '/api/bot/commands/usage'));
+app.post('/api/bot/send', async (req: Request, res: Response) =>
+  proxyBotApi(req, res, 'post', '/api/bot/send'));
 
 // Discord OAuth routes — must be mounted BEFORE the auth guard so the login
 // page and callback are reachable without an existing session.
