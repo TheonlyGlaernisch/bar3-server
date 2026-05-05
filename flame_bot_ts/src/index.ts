@@ -1528,13 +1528,13 @@ Total: **$${Math.round(total).toLocaleString()}**`)] });
         for (let c = current; c < target; c += 1) {
           const cost = calculateCityCost(c, { cityAverage: cityAvg, manifestDestiny, governmentSupportAgency });
           totalCost += cost;
-          rows.push(`City **${c + 1}→${c + 2}**: $${Math.round(cost).toLocaleString()}`);
+          rows.push(`City **${c}→${c + 1}**: $${Math.round(cost).toLocaleString()}`);
         }
         const embed = new EmbedBuilder().setTitle('🏙️ City Cost Calculator').setColor(0x2ECC71);
         if (rows.length === 1) {
           embed.setDescription(rows[0]!);
         } else {
-          embed.setDescription(rows.length <= 20 ? rows.join('\n') : `*Buying ${rows.length} cities (${current + 1}→${target})*`);
+          embed.setDescription(rows.length <= 20 ? rows.join('\n') : `*Buying ${rows.length} cities (${current}→${target})*`);
           embed.addFields({ name: 'Total Cost', value: `**$${Math.round(totalCost).toLocaleString()}**`, inline: false });
         }
         const discountNotes: string[] = [];
@@ -1573,8 +1573,12 @@ Total: **$${Math.round(total).toLocaleString()}**`)] });
                 return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`ℹ️ <@${targetId}> has no registered nation.`).setColor(0x3498DB)] });
               }
             }
-          } else if (/^-?\d+$/.test(rawQuery)) {
-            nationId = parseInt(rawQuery, 10);
+          } else if (/^\d+$/.test(rawQuery)) {
+            const parsed = parseInt(rawQuery, 10);
+            if (parsed <= 0) {
+              return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Invalid nation ID — must be a positive integer.').setColor(0xE74C3C)] });
+            }
+            nationId = parsed;
           } else {
             try {
               const n = await pnw.getNationByName(rawQuery);
@@ -1590,9 +1594,12 @@ Total: **$${Math.round(total).toLocaleString()}**`)] });
           }
         }
 
+        if (nationId === null) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ Could not resolve a nation from the provided query.').setColor(0x3498DB)] });
+        }
         let loadedRevenue: [Nation, City[]] | null;
         try {
-          loadedRevenue = await pnw.getNationWithCities(nationId!);
+          loadedRevenue = await pnw.getNationWithCities(nationId);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Could not reach the Politics and War API: ${msg}`).setColor(0xE74C3C)] });
