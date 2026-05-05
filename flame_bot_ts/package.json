@@ -1,12 +1,13 @@
 {
   "name": "flame_bot_ts",
   "version": "1.0.0",
-  "description": "flame_bot – Discord bot and bar3 HTTP API (TypeScript port)",
+  "description": "flame_bot \u2013 Discord bot and bar3 HTTP API (TypeScript port)",
   "main": "./build/src/index.js",
   "scripts": {
     "build": "tsc",
     "start": "node ./build/src/index.js",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "npm run build && node --test ./test_api.mjs"
   },
   "author": "bsnk-dev",
   "license": "MIT",
