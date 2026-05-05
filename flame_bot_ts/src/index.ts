@@ -41,6 +41,8 @@ import {
   NationCreateDetail,
   NationWar,
   WarDetail,
+  GameInfo,
+  City,
   MAX_SOLDIERS_PER_CITY,
   MAX_TANKS_PER_CITY,
   MAX_AIRCRAFT_PER_CITY,
@@ -971,8 +973,12 @@ async function main(): Promise<void> {
     new SlashCommandBuilder().setName('admin_api_key_set').setDescription('Set runtime PnW API key').addStringOption(o => o.setName('api_key').setDescription('PnW API key').setRequired(true)),
     new SlashCommandBuilder().setName('help').setDescription('Show bot command help'),
     new SlashCommandBuilder().setName('infra').setDescription('Calculate infra purchase cost').addNumberOption(o => o.setName('from').setDescription('Current infra').setRequired(true)).addNumberOption(o => o.setName('to').setDescription('Target infra').setRequired(true)).addIntegerOption(o => o.setName('cities').setDescription('Number of cities').setRequired(true)),
-    new SlashCommandBuilder().setName('city_cost').setDescription('Calculate city purchase cost').addIntegerOption(o => o.setName('current').setDescription('Current city count').setRequired(true)).addIntegerOption(o => o.setName('target').setDescription('Target city count').setRequired(true)),
-    new SlashCommandBuilder().setName('revenue').setDescription('Estimate nation daily revenue').addIntegerOption(o => o.setName('nation_id').setDescription('Nation ID').setRequired(true)),
+    new SlashCommandBuilder().setName('city_cost').setDescription('Calculate city purchase cost using the live dynamic formula')
+      .addIntegerOption(o => o.setName('current').setDescription('Current number of cities').setRequired(true))
+      .addIntegerOption(o => o.setName('target').setDescription('Target number of cities (defaults to current + 1)'))
+      .addBooleanOption(o => o.setName('manifest_destiny').setDescription('Is the nation\'s domestic policy Manifest Destiny? (−5% cost)'))
+      .addBooleanOption(o => o.setName('government_support_agency').setDescription('Does the nation have Government Support Agency? (additional −2.5%)')),
+    new SlashCommandBuilder().setName('revenue').setDescription('Show estimated gross daily revenue for a nation (or your own if omitted)').addStringOption(o => o.setName('query').setDescription('Optional: a nation ID, @mention, nation name, or Discord username')),
     new SlashCommandBuilder().setName('war_range_targets').setDescription('Show slotter alliance targets and highlight war range'),
     new SlashCommandBuilder().setName('spy_target_find').setDescription('Show slotter alliance targets and highlight spy range'),
     new SlashCommandBuilder().setName('missile_targets_find').setDescription('Show slotter alliance targets and highlight missile range'),
@@ -1491,32 +1497,151 @@ Per city: **$${Math.round(perCity).toLocaleString()}**
 Total: **$${Math.round(total).toLocaleString()}**`)] });
       }
       if (interaction.commandName === 'city_cost') {
+        await interaction.deferReply();
         const current = interaction.options.getInteger('current', true);
-        const target = interaction.options.getInteger('target', true);
-        if (target <= current) return void interaction.reply({ content: 'Target city count must be greater than current.', ephemeral: true });
-        const gameInfo = await pnw.getGameInfo();
-        let total = 0;
-        for (let c = current; c < target; c += 1) total += calculateCityCost(c, { cityAverage: gameInfo.cityAverage });
-        return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('City purchase cost').setDescription(`From ${current} to ${target}
-Estimated total: **$${Math.round(total).toLocaleString()}**
-(Using city_average=${gameInfo.cityAverage.toFixed(2)})`)] });
+        const rawTarget = interaction.options.getInteger('target');
+        const manifestDestiny = interaction.options.getBoolean('manifest_destiny') ?? false;
+        const governmentSupportAgency = interaction.options.getBoolean('government_support_agency') ?? false;
+
+        if (!await hasMemberAccess(interaction, db)) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], ephemeral: true });
+        }
+        if (current < 0) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Current city count must be 0 or greater.').setColor(0xE74C3C)] });
+        }
+        const target = rawTarget ?? current + 1;
+        if (target <= current) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Target city count must be greater than current.').setColor(0xE74C3C)] });
+        }
+        if (target - current > 50) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Range too large — maximum 50 cities at a time.').setColor(0xE74C3C)] });
+        }
+        let gameInfo: GameInfo;
+        try {
+          gameInfo = await pnw.getGameInfo();
+        } catch {
+          gameInfo = GameInfo.create();
+        }
+        const cityAvg = gameInfo.cityAverage;
+        let totalCost = 0;
+        const rows: string[] = [];
+        for (let c = current; c < target; c += 1) {
+          const cost = calculateCityCost(c, { cityAverage: cityAvg, manifestDestiny, governmentSupportAgency });
+          totalCost += cost;
+          rows.push(`City **${c + 1}→${c + 2}**: $${Math.round(cost).toLocaleString()}`);
+        }
+        const embed = new EmbedBuilder().setTitle('🏙️ City Cost Calculator').setColor(0x2ECC71);
+        if (rows.length === 1) {
+          embed.setDescription(rows[0]!);
+        } else {
+          embed.setDescription(rows.length <= 20 ? rows.join('\n') : `*Buying ${rows.length} cities (${current + 1}→${target})*`);
+          embed.addFields({ name: 'Total Cost', value: `**$${Math.round(totalCost).toLocaleString()}**`, inline: false });
+        }
+        const discountNotes: string[] = [];
+        if (manifestDestiny) {
+          const pct = governmentSupportAgency ? 7.5 : 5.0;
+          discountNotes.push(`Manifest Destiny${governmentSupportAgency ? ' + GSA' : ''} (−${pct.toFixed(1)}%)`);
+        }
+        embed.addFields({ name: 'Discounts', value: discountNotes.length ? discountNotes.join('\n') : 'None', inline: true });
+        embed.setFooter({ text: `City average used: ${cityAvg.toFixed(2)}  ·  Formula: Locutus dynamic` });
+        return void interaction.followUp({ embeds: [embed] });
       }
       if (interaction.commandName === 'revenue') {
-        const nationId = interaction.options.getInteger('nation_id', true);
-        const loaded = await pnw.getNationWithCities(nationId);
-        if (!loaded) return void interaction.reply({ content: 'Nation/city data unavailable.', ephemeral: true });
-        const [nation, cities] = loaded;
-        const gameInfo = await pnw.getGameInfo();
-        const rev = computeNationRevenue(nation, cities, gameInfo);
-        const desc = [
-          `Nation: **${nation.nationName}** (${nation.nationId})`,
-          `Money/day: **$${Math.round(rev.money).toLocaleString()}**`,
-          `Food/day net: **${rev.food.toFixed(2)}**`,
-          `Raws/day: coal ${rev.coal.toFixed(2)}, oil ${rev.oil.toFixed(2)}, uranium ${rev.uranium.toFixed(2)}, iron ${rev.iron.toFixed(2)}, bauxite ${rev.bauxite.toFixed(2)}, lead ${rev.lead.toFixed(2)}`,
-          `Manufactured/day: gasoline ${rev.gasoline.toFixed(2)}, munitions ${rev.munitions.toFixed(2)}, steel ${rev.steel.toFixed(2)}, aluminum ${rev.aluminum.toFixed(2)}`,
-          `Avg commerce: ${rev.avgCommerce.toFixed(1)}%`,
-        ].join('\n');
-        return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('Revenue estimate').setDescription(desc)] });
+        await interaction.deferReply();
+        const rawQuery = (interaction.options.getString('query') ?? '').trim();
+        const MENTION_RE = /^<@!?(\d+)>$/;
+        let nationId: number | null = null;
+
+        if (!rawQuery) {
+          const row = await db.getByDiscordId(BigInt(interaction.user.id));
+          if (!row) {
+            return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ You are not registered. Use `/register <nation_id>` or provide a query to `/revenue`.').setColor(0x3498DB)] });
+          }
+          nationId = row.nation_id;
+        } else {
+          const mentionMatch = MENTION_RE.exec(rawQuery);
+          if (mentionMatch) {
+            const targetId = mentionMatch[1]!;
+            const row = await db.getByDiscordId(BigInt(targetId));
+            if (row) {
+              nationId = row.nation_id;
+            } else {
+              const nation = await resolveMentionedNationViaApi(interaction, pnw, targetId);
+              if (nation) {
+                nationId = nation.nationId;
+              } else {
+                return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`ℹ️ <@${targetId}> has no registered nation.`).setColor(0x3498DB)] });
+              }
+            }
+          } else if (/^-?\d+$/.test(rawQuery)) {
+            nationId = parseInt(rawQuery, 10);
+          } else {
+            try {
+              const n = await pnw.getNationByName(rawQuery);
+              if (n) nationId = n.nationId;
+            } catch { /* ignore */ }
+            if (nationId === null) {
+              const row = await db.getByDiscordUsername(rawQuery);
+              if (row) nationId = row.nation_id;
+            }
+            if (nationId === null) {
+              return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`ℹ️ No nation found for \`${rawQuery}\`.`).setColor(0x3498DB)] });
+            }
+          }
+        }
+
+        let loadedRevenue: [Nation, City[]] | null;
+        try {
+          loadedRevenue = await pnw.getNationWithCities(nationId!);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Could not reach the Politics and War API: ${msg}`).setColor(0xE74C3C)] });
+        }
+        if (!loadedRevenue) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`ℹ️ No nation with ID \`${nationId}\` was found.`).setColor(0x3498DB)] });
+        }
+        const [revNation, revCities] = loadedRevenue;
+        let revGameInfo: GameInfo;
+        try {
+          revGameInfo = await pnw.getGameInfo();
+        } catch {
+          revGameInfo = GameInfo.create();
+        }
+        const rev = computeNationRevenue(revNation, revCities, revGameInfo);
+
+        const revEmbed = new EmbedBuilder()
+          .setTitle(`💰 Revenue — ${revNation.nationName}`)
+          .setURL(nationUrl(revNation.nationId))
+          .setColor(0xF1C40F);
+        revEmbed.addFields(
+          { name: '🏙️ Cities', value: String(revNation.numCities), inline: true },
+          { name: '🛒 Avg Commerce', value: `${rev.avgCommerce.toFixed(1)}%`, inline: true },
+          { name: '\u200b', value: '\u200b', inline: true },
+          { name: '💵 Money/day', value: `$${Math.round(rev.money).toLocaleString()}`, inline: true },
+          { name: '🌾 Food/day (net)', value: `${rev.food >= 0 ? '+' : ''}${rev.food.toFixed(2)}`, inline: true },
+          { name: '\u200b', value: '\u200b', inline: true },
+        );
+        const sign = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}`;
+        const rawLines = [
+          `⛏️ **Coal**: ${sign(rev.coal)}/day`,
+          `🛢️ **Oil**: ${sign(rev.oil)}/day`,
+          `☢️ **Uranium**: ${sign(rev.uranium)}/day`,
+          `🔩 **Iron**: ${sign(rev.iron)}/day`,
+          `🪨 **Bauxite**: ${sign(rev.bauxite)}/day`,
+          `🔦 **Lead**: ${sign(rev.lead)}/day`,
+        ];
+        const mfgLines = [
+          `⛽ **Gasoline**: ${sign(rev.gasoline)}/day`,
+          `💣 **Munitions**: ${sign(rev.munitions)}/day`,
+          `🔧 **Steel**: ${sign(rev.steel)}/day`,
+          `🪟 **Aluminum**: ${sign(rev.aluminum)}/day`,
+        ];
+        revEmbed.addFields(
+          { name: 'Raw Resources', value: rawLines.join('\n') || '*none*', inline: true },
+          { name: 'Manufactured', value: mfgLines.join('\n') || '*none*', inline: true },
+        );
+        revEmbed.setFooter({ text: `Food: ${rev.foodProduction.toFixed(2)} prod − ${rev.foodConsumption.toFixed(2)} use  ·  Season month: ${revGameInfo.gameMonth}  ·  Money net of improvement upkeep, before military upkeep & tax` });
+        return void interaction.followUp({ embeds: [revEmbed] });
       }
       if (interaction.commandName === 'war_range_targets' || interaction.commandName === 'spy_target_find' || interaction.commandName === 'missile_targets_find') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
