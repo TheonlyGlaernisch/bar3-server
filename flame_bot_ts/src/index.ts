@@ -974,8 +974,8 @@ async function main(): Promise<void> {
     new SlashCommandBuilder().setName('help').setDescription('Show bot command help'),
     new SlashCommandBuilder().setName('infra').setDescription('Calculate infra purchase cost').addNumberOption(o => o.setName('from').setDescription('Current infra').setRequired(true)).addNumberOption(o => o.setName('to').setDescription('Target infra').setRequired(true)).addIntegerOption(o => o.setName('cities').setDescription('Number of cities').setRequired(true)),
     new SlashCommandBuilder().setName('city_cost').setDescription('Calculate city purchase cost using the live dynamic formula')
-      .addIntegerOption(o => o.setName('current').setDescription('Current number of cities').setRequired(true))
-      .addIntegerOption(o => o.setName('target').setDescription('Target number of cities (defaults to current + 1)'))
+      .addIntegerOption(o => o.setName('current').setDescription('Current number of cities').setRequired(true).setMinValue(0))
+      .addIntegerOption(o => o.setName('target').setDescription('Target number of cities (defaults to current + 1)').setMinValue(1))
       .addBooleanOption(o => o.setName('manifest_destiny').setDescription('Is the nation\'s domestic policy Manifest Destiny? (−5% cost)'))
       .addBooleanOption(o => o.setName('government_support_agency').setDescription('Does the nation have Government Support Agency? (additional −2.5%)')),
     new SlashCommandBuilder().setName('revenue').setDescription('Show estimated gross daily revenue for a nation (or your own if omitted)').addStringOption(o => o.setName('query').setDescription('Optional: a nation ID, @mention, nation name, or Discord username')),
