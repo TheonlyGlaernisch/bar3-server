@@ -336,6 +336,10 @@ export class Database {
   async getAllRecruiterSubscriptions(): Promise<RecruiterSubscriptionDoc[]> {
     return this._recruiterCol.find({}, { projection: { _id: 0 } }).toArray();
   }
+
+  async close(): Promise<void> {
+    await this._client.close();
+  }
 }
 
 function escapeRegex(str: string): string {
