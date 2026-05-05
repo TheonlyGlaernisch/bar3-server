@@ -7,6 +7,7 @@ import {
   ButtonStyle,
   GatewayIntentBits,
   Guild,
+  GuildMember,
   Interaction,
   REST,
   Routes,
@@ -25,11 +26,29 @@ import {
   GUILD_ID,
   MONGODB_URI,
   PNW_API_KEY,
+  PW_SCAN_API_KEY,
   VERIFIED_ROLE_ID,
 } from './config';
 import { createApp } from './api';
 import { Database } from './database';
-import { PNW_TEST_REST_URL, PnWClient, PnWSubscriptionClient, WarDetail, calculateInfraCost, calculateCityCost, computeNationRevenue } from './pnw_api';
+import {
+  PNW_TEST_REST_URL,
+  PnWClient,
+  PnWSubscriptionClient,
+  Nation,
+  AllianceInfo,
+  NationCreateDetail,
+  NationWar,
+  WarDetail,
+  MAX_SOLDIERS_PER_CITY,
+  MAX_TANKS_PER_CITY,
+  MAX_AIRCRAFT_PER_CITY,
+  MAX_SHIPS_PER_CITY,
+  MAX_DEFENSIVE_SLOTS,
+  calculateInfraCost,
+  calculateCityCost,
+  computeNationRevenue,
+} from './pnw_api';
 import { renderCommandHelp } from './commandDocs';
 
 let primaryGuild: Guild | null = null;
@@ -85,6 +104,21 @@ function renderVerticalTierChart(rows: Array<[number, number]>, maxHeight = 8): 
 
 
 
+const PNW_BASE_URL = 'https://politicsandwar.com';
+const PNW_TEST_BASE_URL = 'https://test.politicsandwar.com';
+
+function nationUrl(nationId: number, baseUrl = PNW_BASE_URL): string {
+  return `${baseUrl}/nation/id=${nationId}/`;
+}
+
+function allianceUrl(allianceId: number, baseUrl = PNW_BASE_URL): string {
+  return `${baseUrl}/alliance/id=${allianceId}`;
+}
+
+function warUrl(warId: number, baseUrl = PNW_BASE_URL): string {
+  return `${baseUrl}/nation/war/timeline/war=${warId}`;
+}
+
 function hasRole(i: ChatInputCommandInteraction, roleId: number | null): boolean {
   if (!roleId || !i.inGuild() || !i.member) return false;
   const member = i.member as any;
@@ -98,44 +132,257 @@ function hasBar3ClientAccess(i: ChatInputCommandInteraction): boolean {
   return hasRole(i, BAR3_CLIENT_ROLE_ID);
 }
 
-async function hasGovAccess(i: ChatInputCommandInteraction, db: Database, roleKeys: Array<'milcom'|'econ'|'ia'|'gov'|'leader'|'2ic'> = ['milcom']): Promise<boolean> {
+type GovRoleKey = 'milcom' | 'milcom_gov' | 'econ' | 'econ_gov' | 'ia' | 'ia_asst' | 'gov' | 'leader' | '2ic' | 'member';
+
+async function hasGovAccess(i: ChatInputCommandInteraction, db: Database, roleKeys: GovRoleKey[] = ['milcom']): Promise<boolean> {
   if (!i.inGuild() || !i.guildId || !i.member) return false;
   if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
   const member = i.member;
   if ('permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator')) return true;
   const cfg = await db.getGovRoles(BigInt(i.guildId));
   if (!('roles' in member) || !member.roles) return false;
-  const roleSet = new Set((member.roles as { cache?: Map<string, unknown>; valueOf?: () => unknown }).cache ? Array.from((member.roles as any).cache.keys()) : (member.roles as any));
+  const roleSet = new Set((member.roles as { cache?: Map<string, unknown> }).cache ? Array.from((member.roles as any).cache.keys()) : (member.roles as any));
   for (const key of roleKeys) {
-    const rid = cfg[key as keyof typeof cfg];
+    const rid = (cfg as any)[key];
     if (rid != null && roleSet.has(String(rid))) return true;
   }
   return false;
 }
 
-function nationEmbed(n: Awaited<ReturnType<PnWClient['getNation']>>): EmbedBuilder {
+/** Check whether the caller may use member-gated commands.
+ * Passes if admin, the configured "member" role is unset, caller holds the
+ * "member" role, or caller holds any gov role. */
+async function hasMemberAccess(i: ChatInputCommandInteraction, db: Database): Promise<boolean> {
+  if (!i.inGuild() || !i.guildId || !i.member) return false;
+  if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
+  const member = i.member;
+  if ('permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator')) return true;
+  const cfg = await db.getGovRoles(BigInt(i.guildId));
+  const memberRoleId = (cfg as any)['member'];
+  if (!memberRoleId) return true; // not configured — no restriction
+  const roleSet = new Set(
+    (member.roles as any)?.cache ? Array.from((member.roles as any).cache.keys()) : (member.roles as any) ?? [],
+  );
+  if (roleSet.has(String(memberRoleId))) return true;
+  const govKeys: GovRoleKey[] = ['leader', '2ic', 'econ', 'econ_gov', 'milcom', 'milcom_gov', 'ia', 'ia_asst', 'gov'];
+  for (const key of govKeys) {
+    const rid = (cfg as any)[key];
+    if (rid != null && roleSet.has(String(rid))) return true;
+  }
+  return false;
+}
+
+/** Render a welcome-message template into final message content. */
+function renderWelcomeMessage(
+  template: string,
+  memberMention: string,
+  memberName: string,
+  isRegistered: boolean,
+  welcomeChannelMention: string | null,
+): string {
+  const statusText = isRegistered
+    ? `hmm, we seems to have met before ${memberName}, you have already been registered. GGs and cya`
+    : 'alas, you dont seem registered with me. would you kindly run /register {nation id}?';
+  return template
+    .replace(/!\(user\)/g, memberMention)
+    .replace(/!\(mention\)/g, memberMention)
+    .replace(/!\(status\)/g, statusText)
+    .replace(/!\(channel\)/g, welcomeChannelMention ?? '#unknown-channel');
+}
+
+/** Rich nation embed matching Python's _nation_embed. */
+function nationEmbed(n: Nation, registeredDiscord?: string | null, note?: string | null, baseUrl = PNW_BASE_URL): EmbedBuilder {
+  const embed = new EmbedBuilder()
+    .setTitle(n.nationName)
+    .setURL(nationUrl(n.nationId, baseUrl))
+    .setColor(0x3498DB);
+
+  embed.addFields({ name: 'ID', value: String(n.nationId), inline: true });
+  embed.addFields({ name: 'Leader', value: n.leaderName || '—', inline: true });
+
+  // Alliance — hyperlinked with position and seniority
+  let allianceVal: string;
+  if (n.allianceId) {
+    const label = n.allianceName || String(n.allianceId);
+    allianceVal = `[${label}](${allianceUrl(n.allianceId, baseUrl)})`;
+    const pos = n.alliancePosition;
+    if (pos && pos !== 'NOALLIANCE') {
+      const posTitle = pos.charAt(0).toUpperCase() + pos.slice(1).toLowerCase();
+      let posLine = posTitle;
+      if (n.allianceSeniority > 0) posLine += ` • ${Math.floor(n.allianceSeniority)}d`;
+      allianceVal += `\n${posLine}`;
+    }
+  } else {
+    allianceVal = 'None';
+  }
+  embed.addFields({ name: 'Alliance', value: allianceVal, inline: true });
+
+  embed.addFields({ name: 'Score', value: n.score.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), inline: true });
+  embed.addFields({ name: 'Cities', value: String(n.numCities), inline: true });
+  if (n.rank) embed.addFields({ name: 'Rank', value: `#${n.rank.toLocaleString()}`, inline: true });
+  if (n.continent) embed.addFields({ name: 'Continent', value: n.continent, inline: true });
+  if (n.warPolicy) embed.addFields({ name: 'War Policy', value: n.warPolicy, inline: true });
+  if (n.color) embed.addFields({ name: 'Color', value: n.color.charAt(0).toUpperCase() + n.color.slice(1).toLowerCase(), inline: true });
+
+  if (n.offensiveWars || n.defensiveWars) {
+    embed.addFields({ name: 'Wars', value: `⚔️ ${n.offensiveWars} off / 🛡️ ${n.defensiveWars} def`, inline: true });
+  }
+  embed.addFields({ name: 'War Record', value: `🏆 ${n.warsWon.toLocaleString()} won / 💀 ${n.warsLost.toLocaleString()} lost`, inline: true });
+
+  const projectsValue = n.projectsBuilt.length ? `${n.numProjects} — ${n.projectsBuilt.join(', ')}` : '0';
+  embed.addFields({ name: 'Projects', value: projectsValue, inline: false });
+
+  // Average infrastructure estimate from score formula
+  if (n.numCities > 0) {
+    const militaryScore = n.soldiers * 0.0004 + n.tanks * 0.025 + n.aircraft * 0.3 + n.ships * 1.0 + n.missiles * 5.0 + n.nukes * 15.0;
+    const infraScore = n.score - (n.numCities - 1) * 100 - 10 - n.numProjects * 20 - militaryScore;
+    const avgInfra = infraScore * 40 / n.numCities;
+    embed.addFields({ name: 'Avg Infra', value: avgInfra.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), inline: true });
+  }
+
+  if (n.lastActiveUnix) {
+    embed.addFields({ name: 'Last Active', value: `<t:${n.lastActiveUnix}:R>`, inline: true });
+  } else if (n.lastActive) {
+    embed.addFields({ name: 'Last Active', value: n.lastActive, inline: true });
+  }
+
+  // Military capacity percentages
+  if (n.numCities > 0) {
+    const maxSol = MAX_SOLDIERS_PER_CITY * n.numCities;
+    const maxTan = MAX_TANKS_PER_CITY * n.numCities;
+    const maxAir = MAX_AIRCRAFT_PER_CITY * n.numCities;
+    const maxShi = MAX_SHIPS_PER_CITY * n.numCities;
+    const pct = (val: number, cap: number) =>
+      cap === 0 ? `${val.toLocaleString()} (—)` : `${val.toLocaleString()} (${((val / cap) * 100).toFixed(1)}%)`;
+    const militaryText = [
+      `🪖 Soldiers: ${pct(n.soldiers, maxSol)}`,
+      `⚔️ Tanks:    ${pct(n.tanks, maxTan)}`,
+      `✈️ Aircraft: ${pct(n.aircraft, maxAir)}`,
+      `🚢 Ships:    ${pct(n.ships, maxShi)}`,
+      `🚀 Missiles: ${n.missiles.toLocaleString()}`,
+      `☢️ Nukes:    ${n.nukes.toLocaleString()}`,
+    ].join('\n');
+    embed.addFields({ name: 'Military', value: militaryText, inline: false });
+  }
+
+  if (registeredDiscord) {
+    embed.addFields({ name: 'Discord', value: registeredDiscord, inline: true });
+  } else if (n.discordTag) {
+    embed.addFields({ name: 'PnW Discord', value: `\`${n.discordTag}\``, inline: true });
+  }
+
+  if (note) embed.setFooter({ text: note });
+
+  return embed;
+}
+
+/** Rich alliance embed matching Python's _alliance_embed. */
+function allianceEmbed(info: AllianceInfo, baseUrl = PNW_BASE_URL): EmbedBuilder {
+  const title = info.acronym ? `${info.name} (${info.acronym})` : info.name;
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setURL(allianceUrl(info.allianceId, baseUrl))
+    .setColor(0xF1C40F);
+
+  if (info.flag) embed.setThumbnail(info.flag);
+
+  embed.addFields({ name: 'ID', value: String(info.allianceId), inline: true });
+  embed.addFields({ name: 'Score', value: info.score.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), inline: true });
+  embed.addFields({ name: 'Avg Score', value: info.averageScore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), inline: true });
+  embed.addFields({ name: 'Color', value: info.color ? info.color.charAt(0).toUpperCase() + info.color.slice(1).toLowerCase() : '—', inline: true });
+  embed.addFields({ name: 'Members', value: String(info.numMembers), inline: true });
+  embed.addFields({ name: 'Applicants', value: String(info.numApplicants), inline: true });
+  if (info.rank) embed.addFields({ name: 'Rank', value: `#${info.rank}`, inline: true });
+  if (info.totalCities) embed.addFields({ name: 'Total Cities', value: String(info.totalCities), inline: true });
+  embed.addFields({ name: 'Avg Cities', value: info.avgCities.toFixed(1), inline: true });
+  if (info.discordLink) embed.addFields({ name: 'Discord', value: `[Join Server](${info.discordLink})`, inline: true });
+
+  return embed;
+}
+
+/** Build an active-wars embed for /whois "Show Wars" button. */
+function buildActiveWarsEmbed(nation: Nation, wars: NationWar[], baseUrl = PNW_BASE_URL): EmbedBuilder {
+  const lines: string[] = [];
+  for (let i = 0; i < wars.length; i++) {
+    const w = wars[i]!;
+    const isAttacker = w.attackerId === nation.nationId;
+    const oppId = isAttacker ? w.defenderId : w.attackerId;
+    const oppName = isAttacker ? w.defenderName : w.attackerName;
+    const side = isAttacker ? 'Attacking' : 'Defending';
+    lines.push(`\`${String(i + 1).padStart(2)}\`. [${oppName}](${nationUrl(oppId, baseUrl)}) — ${side} · [War #${w.warId}](${warUrl(w.warId, baseUrl)})`);
+  }
   return new EmbedBuilder()
-    .setTitle(`${n?.nationName ?? 'Unknown'} (${n?.nationId ?? '?'})`)
-    .addFields(
-      { name: 'Leader', value: n?.leaderName || 'Unknown', inline: true },
-      { name: 'Alliance', value: n?.allianceName || 'None', inline: true },
-      { name: 'Cities', value: String(n?.numCities ?? 0), inline: true },
-      { name: 'Score', value: (n?.score ?? 0).toFixed(2), inline: true },
-      { name: 'Military', value: `S ${n?.soldiers ?? 0} | T ${n?.tanks ?? 0} | A ${n?.aircraft ?? 0} | N ${n?.ships ?? 0}` },
-    )
-    .setColor(0x00AE86);
+    .setTitle(`⚔️ Active Wars — ${nation.nationName}`)
+    .setDescription(lines.join('\n') || '*(no active wars)*')
+    .setColor(0xE67E22)
+    .setFooter({ text: `${wars.length} active war(s)` });
 }
 
 async function handleRegister(i: ChatInputCommandInteraction, db: Database, pnw: PnWClient): Promise<void> {
+  await i.deferReply();
   const nationId = i.options.getInteger('nation_id', true);
-  const discordName = i.user.username;
-  const nation = await pnw.getNation(nationId);
-  if (!nation) return void i.reply({ content: 'Nation not found.', ephemeral: true });
-  if (!PnWClient.discordMatches(nation.discordTag, discordName)) {
-    return void i.reply({ content: `Verification failed. Nation discord tag '${nation.discordTag || '(empty)'}' does not match '${discordName}'.`, ephemeral: true });
+  if (nationId <= 0) {
+    await i.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Please provide a valid positive nation ID.').setColor(0xE74C3C)] });
+    return;
   }
+
+  // Check if this nation is already registered to a different user
+  const existingByNation = await db.getByNationId(nationId);
+  if (existingByNation && BigInt(existingByNation.discord_id) !== BigInt(i.user.id)) {
+    await i.followUp({ embeds: [new EmbedBuilder().setDescription('❌ That nation is already registered to a different Discord account.').setColor(0xE74C3C)] });
+    return;
+  }
+
+  let nation: Nation | null;
+  try {
+    nation = await pnw.getNation(nationId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await i.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Could not reach the Politics and War API: ${msg}`).setColor(0xE74C3C)] });
+    return;
+  }
+
+  if (!nation) {
+    await i.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Nation with ID **${nationId}** was not found.`).setColor(0xE74C3C)] });
+    return;
+  }
+
+  const discordName = i.user.username;
+  if (!PnWClient.discordMatches(nation.discordTag, discordName)) {
+    await i.followUp({
+      embeds: [new EmbedBuilder().setDescription(
+        `❌ Verification failed.\n\nNation **${nation.nationName}** (leader: ${nation.leaderName}) ` +
+        `has \`${nation.discordTag || '(empty)'}\` as its Discord handle, ` +
+        `but your Discord username is \`${discordName}\`.\n\n` +
+        `Please set your Discord handle on your nation's edit page to \`${discordName}\` and try again.`
+      ).setColor(0xE74C3C)],
+    });
+    return;
+  }
+
   await db.register(BigInt(i.user.id), nationId, discordName);
-  await i.reply({ content: `Registered <@${i.user.id}> to nation **${nation.nationName}** (${nation.nationId}).` });
+
+  // Assign VERIFIED_ROLE_ID if configured
+  const roleMentions: string[] = [];
+  if (i.guild && VERIFIED_ROLE_ID) {
+    const member = i.guild.members.cache.get(i.user.id) as GuildMember | undefined;
+    if (member) {
+      const role = i.guild.roles.cache.get(String(VERIFIED_ROLE_ID));
+      if (role && !member.roles.cache.has(String(VERIFIED_ROLE_ID))) {
+        try {
+          await member.roles.add(role, 'flame_bot: /register');
+          roleMentions.push(role.toString());
+        } catch { /* missing permissions — ignore */ }
+      }
+    }
+  }
+
+  const rolesText = roleMentions.length ? `\n\nYou have been given: ${roleMentions.join(', ')}` : '';
+  await i.followUp({
+    embeds: [new EmbedBuilder().setDescription(
+      `✅ Successfully registered!\nNation: **${nation.nationName}** (ID: \`${nationId}\`, leader: ${nation.leaderName})${rolesText}`
+    ).setColor(0x2ECC71)],
+  });
 }
 
 async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: PnWClient, pnwTest: PnWClient, useTest = false): Promise<void> {
