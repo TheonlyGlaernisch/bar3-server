@@ -1,6 +1,7 @@
 import {
   ChatInputCommandInteraction,
   Client,
+  ComponentType,
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
@@ -385,70 +386,330 @@ async function handleRegister(i: ChatInputCommandInteraction, db: Database, pnw:
   });
 }
 
+/** Try to resolve a mentioned Discord user to a PnW Nation via Discord tag matching. */
+async function resolveMentionedNationViaApi(
+  i: ChatInputCommandInteraction,
+  pnw: PnWClient,
+  discordId: string,
+): Promise<Nation | null> {
+  let member: GuildMember | null = null;
+  if (i.guild) {
+    member = i.guild.members.cache.get(discordId) ?? null;
+    if (!member) {
+      try { member = await i.guild.members.fetch(discordId); } catch { member = null; }
+    }
+  }
+  if (!member) return null;
+
+  const candidateTags: string[] = [member.user.username, member.displayName];
+  if (member.user.globalName) candidateTags.push(member.user.globalName);
+  if (member.user.discriminator && member.user.discriminator !== '0') {
+    candidateTags.push(`${member.user.username}#${member.user.discriminator}`);
+  }
+
+  for (const tag of candidateTags) {
+    const candidate = tag.trim();
+    if (!candidate) continue;
+    const nation = await pnw.getNationByDiscordTag(candidate);
+    if (nation && PnWClient.discordMatches(nation.discordTag, candidate)) return nation;
+  }
+  return null;
+}
+
 async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: PnWClient, pnwTest: PnWClient, useTest = false): Promise<void> {
+  await i.deferReply();
   const query = i.options.getString('query', true).trim();
   const client = useTest ? pnwTest : pnw;
-  let nation = /^\d+$/.test(query) ? await client.getNation(parseInt(query, 10)) : await client.getNationByName(query);
-  if (!nation && /^<@!?\d+>$/.test(query)) {
-    const id = BigInt(query.replace(/\D/g, ''));
-    const row = await db.getByDiscordId(id);
-    if (row) nation = await client.getNation(Number(row.nation_id));
+  const baseUrl = useTest ? PNW_TEST_BASE_URL : PNW_BASE_URL;
+  const MENTION_RE = /^<@!?(\d+)>$/;
+  const mentionMatch = MENTION_RE.exec(query);
+
+  if (mentionMatch) {
+    const targetId = mentionMatch[1]!;
+    const row = await db.getByDiscordId(BigInt(targetId));
+    if (!row) {
+      // Not locally registered — try PnW Discord tag lookup
+      const nation = await resolveMentionedNationViaApi(i, client, targetId);
+      if (nation) {
+        const embed = nationEmbed(nation, `<@${targetId}>`, 'ℹ️ Found via PnW discord field (not locally registered).', baseUrl);
+        const warsRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder().setCustomId(`wars:${nation.nationId}`).setLabel('Show Wars').setStyle(ButtonStyle.Secondary).setEmoji('⚔️'),
+        );
+        const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
+        const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
+        collector.on('collect', async (btn) => {
+          await btn.deferReply({ ephemeral: true });
+          try {
+            const wars = await client.getActiveWarsForNation(nation.nationId);
+            wars.sort((a, b) => b.warId - a.warId);
+            await btn.editReply({ embeds: [buildActiveWarsEmbed(nation, wars, baseUrl)] });
+          } catch (err) {
+            const msg2 = err instanceof Error ? err.message : String(err);
+            await btn.editReply({ content: `❌ Could not fetch wars: ${msg2}` });
+          }
+        });
+      } else {
+        await i.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ <@${targetId}> has not registered yet and no matching PnW nation was found.`).setColor(0x3498DB)] });
+      }
+      return;
+    }
+    let nation: Nation | null = null;
+    try { nation = await client.getNation(Number(row.nation_id)); } catch { nation = null; }
+    if (nation) {
+      const embed = nationEmbed(nation, `<@${targetId}>`, null, baseUrl);
+      const warsRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId(`wars:${nation.nationId}`).setLabel('Show Wars').setStyle(ButtonStyle.Secondary).setEmoji('⚔️'),
+      );
+      const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
+      const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
+      collector.on('collect', async (btn) => {
+        await btn.deferReply({ ephemeral: true });
+        try {
+          const wars = await client.getActiveWarsForNation(nation!.nationId);
+          wars.sort((a, b) => b.warId - a.warId);
+          await btn.editReply({ embeds: [buildActiveWarsEmbed(nation!, wars, baseUrl)] });
+        } catch (err) {
+          const msg2 = err instanceof Error ? err.message : String(err);
+          await btn.editReply({ content: `❌ Could not fetch wars: ${msg2}` });
+        }
+      });
+    } else {
+      await i.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ <@${targetId}> is registered with nation ID \`${row.nation_id}\` (nation details unavailable).`).setColor(0x3498DB)] });
+    }
+    return;
   }
-  if (!nation) {
-    const row = await db.getByDiscordUsername(query);
-    if (row) nation = await client.getNation(Number(row.nation_id));
+
+  // Numeric query
+  if (/^\d+$/.test(query)) {
+    const nationId = parseInt(query, 10);
+    if (nationId <= 0) {
+      await i.editReply({ embeds: [new EmbedBuilder().setDescription('❌ Please provide a valid positive nation ID.').setColor(0xE74C3C)] });
+      return;
+    }
+    let nation: Nation | null = null;
+    try { nation = await client.getNation(nationId); } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await i.editReply({ embeds: [new EmbedBuilder().setDescription(`❌ Could not reach the Politics and War API: ${msg}`).setColor(0xE74C3C)] });
+      return;
+    }
+    if (!nation) {
+      await i.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ No nation with ID \`${nationId}\` was found.`).setColor(0x3498DB)] });
+      return;
+    }
+    const row = await db.getByNationId(nationId);
+    const discordUser = row ? `\`${row.discord_username || row.discord_id}\`` : null;
+    const embed = nationEmbed(nation, discordUser, null, baseUrl);
+    const warsRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(`wars:${nation.nationId}`).setLabel('Show Wars').setStyle(ButtonStyle.Secondary).setEmoji('⚔️'),
+    );
+    const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
+    const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
+    collector.on('collect', async (btn) => {
+      await btn.deferReply({ ephemeral: true });
+      try {
+        const wars = await client.getActiveWarsForNation(nation!.nationId);
+        wars.sort((a, b) => b.warId - a.warId);
+        await btn.editReply({ embeds: [buildActiveWarsEmbed(nation!, wars, baseUrl)] });
+      } catch (err) {
+        const msg2 = err instanceof Error ? err.message : String(err);
+        await btn.editReply({ content: `❌ Could not fetch wars: ${msg2}` });
+      }
+    });
+    return;
   }
-  if (!nation) return void i.reply({ content: 'No matching nation found.', ephemeral: true });
-  await i.reply({ embeds: [nationEmbed(nation)] });
+
+  // Text query — try nation name, then discord username
+  let nation: Nation | null = null;
+  try { nation = await client.getNationByName(query); } catch { nation = null; }
+  if (nation) {
+    const row = await db.getByNationId(nation.nationId);
+    const discordUser = row ? `\`${row.discord_username || row.discord_id}\`` : null;
+    const embed = nationEmbed(nation, discordUser, null, baseUrl);
+    const warsRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(`wars:${nation.nationId}`).setLabel('Show Wars').setStyle(ButtonStyle.Secondary).setEmoji('⚔️'),
+    );
+    const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
+    const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
+    collector.on('collect', async (btn) => {
+      await btn.deferReply({ ephemeral: true });
+      try {
+        const wars = await client.getActiveWarsForNation(nation!.nationId);
+        wars.sort((a, b) => b.warId - a.warId);
+        await btn.editReply({ embeds: [buildActiveWarsEmbed(nation!, wars, baseUrl)] });
+      } catch (err) {
+        const msg2 = err instanceof Error ? err.message : String(err);
+        await btn.editReply({ content: `❌ Could not fetch wars: ${msg2}` });
+      }
+    });
+    return;
+  }
+
+  const row = await db.getByDiscordUsername(query);
+  if (!row) {
+    await i.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ No nation or Discord user found for \`${query}\`.`).setColor(0x3498DB)] });
+    return;
+  }
+  const storedName = row.discord_username || String(row.discord_id);
+  try { nation = await client.getNation(Number(row.nation_id)); } catch { nation = null; }
+  if (nation) {
+    const embed = nationEmbed(nation, `\`${storedName}\``, null, baseUrl);
+    const warsRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(`wars:${nation.nationId}`).setLabel('Show Wars').setStyle(ButtonStyle.Secondary).setEmoji('⚔️'),
+    );
+    const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
+    const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
+    collector.on('collect', async (btn) => {
+      await btn.deferReply({ ephemeral: true });
+      try {
+        const wars = await client.getActiveWarsForNation(nation!.nationId);
+        wars.sort((a, b) => b.warId - a.warId);
+        await btn.editReply({ embeds: [buildActiveWarsEmbed(nation!, wars, baseUrl)] });
+      } catch (err) {
+        const msg2 = err instanceof Error ? err.message : String(err);
+        await btn.editReply({ content: `❌ Could not fetch wars: ${msg2}` });
+      }
+    });
+  } else {
+    await i.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ **${storedName}** is registered with nation ID \`${row.nation_id}\` (nation details unavailable).`).setColor(0x3498DB)] });
+  }
 }
 
-async function handleAllianceInfo(i: ChatInputCommandInteraction, pnw: PnWClient, useTest = false): Promise<void> {
+async function handleAllianceInfo(i: ChatInputCommandInteraction, db: Database, pnw: PnWClient, useTest = false): Promise<void> {
+  await i.deferReply();
   const query = i.options.getString('query', true).trim();
   const client = useTest ? new PnWClient(PNW_API_KEY, { restUrl: PNW_TEST_REST_URL }) : pnw;
-  const alliance = /^\d+$/.test(query)
-    ? await client.getAllianceById(parseInt(query, 10))
-    : await client.getAllianceByName(query);
-  if (!alliance) return void i.reply({ content: 'Alliance not found.', ephemeral: true });
-  await i.reply({
-    embeds: [new EmbedBuilder().setTitle(`${alliance.name} (${alliance.allianceId})`).addFields(
-      { name: 'Acronym', value: alliance.acronym || 'N/A', inline: true },
-      { name: 'Members', value: String(alliance.numMembers), inline: true },
-      { name: 'Score', value: alliance.score.toFixed(2), inline: true },
-      { name: 'Avg Cities', value: alliance.avgCities.toFixed(2), inline: true },
-      { name: 'Color', value: alliance.color || 'N/A', inline: true },
-    )],
+  const baseUrl = useTest ? PNW_TEST_BASE_URL : PNW_BASE_URL;
+  const MENTION_RE = /^<@!?(\d+)>$/;
+  const mentionMatch = MENTION_RE.exec(query);
+
+  let alliance: AllianceInfo | null = null;
+  try {
+    if (mentionMatch) {
+      const targetId = mentionMatch[1]!;
+      // Try local DB first, then PnW tag lookup
+      const row = await db.getByDiscordId(BigInt(targetId));
+      let nation: Nation | null = null;
+      if (row) {
+        try { nation = await client.getNation(Number(row.nation_id)); } catch { nation = null; }
+      }
+      if (!nation) nation = await resolveMentionedNationViaApi(i, client, targetId);
+      if (!nation) {
+        await i.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ Could not resolve <@${targetId}> via registration or the PnW Discord field.`).setColor(0x3498DB)] });
+        return;
+      }
+      if (!nation.allianceId) {
+        await i.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ [${nation.nationName}](${nationUrl(nation.nationId, baseUrl)}) is not currently in an alliance.`).setColor(0x3498DB)] });
+        return;
+      }
+      alliance = await client.getAllianceById(nation.allianceId);
+    } else if (/^\d+$/.test(query)) {
+      alliance = await client.getAllianceById(parseInt(query, 10));
+    } else {
+      alliance = await client.getAllianceByName(query);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await i.editReply({ embeds: [new EmbedBuilder().setDescription(`❌ Could not reach the Politics and War API: ${msg}`).setColor(0xE74C3C)] });
+    return;
+  }
+
+  if (!alliance) {
+    await i.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ No alliance found for \`${query}\`.`).setColor(0x3498DB)] });
+    return;
+  }
+  await i.editReply({ embeds: [allianceEmbed(alliance, baseUrl)] });
+}
+
+
+
+const MEMBERS_PAGE_SIZE = 10;
+const POS_ICON: Record<string, string> = {
+  LEADER: '👑',
+  HEIR: '⚔️',
+  OFFICER: '🌟',
+  MEMBER: '👤',
+  APPLICANT: '📝',
+};
+
+function buildAllianceMembersPage(members: Nation[], alliance: AllianceInfo, page: number, baseUrl = PNW_BASE_URL): EmbedBuilder {
+  const total = members.length;
+  const totalPages = Math.max(1, Math.ceil(total / MEMBERS_PAGE_SIZE));
+  const safePage = Math.max(0, Math.min(page, totalPages - 1));
+  const start = safePage * MEMBERS_PAGE_SIZE;
+  const chunk = members.slice(start, start + MEMBERS_PAGE_SIZE);
+  const title = alliance.acronym
+    ? `${alliance.name} (${alliance.acronym}) — Members`
+    : `${alliance.name} — Members`;
+  const lines = chunk.map((m, idx) => {
+    const icon = POS_ICON[m.alliancePosition ?? ''] ?? '👤';
+    return `\`${String(start + idx + 1).padStart(3)}\` ${icon} [${m.nationName}](${nationUrl(m.nationId, baseUrl)}) — 🏙️ ${m.numCities} | ⭐ ${Math.round(m.score).toLocaleString()}`;
   });
+  return new EmbedBuilder()
+    .setTitle(title)
+    .setURL(allianceUrl(alliance.allianceId, baseUrl))
+    .setDescription(lines.join('\n') || '*(no members)*')
+    .setColor(0xFFD700)
+    .setFooter({ text: `Page ${safePage + 1}/${totalPages} • ${total} members total` });
 }
 
-
-
-async function handleAllianceMembers(i: ChatInputCommandInteraction, pnw: PnWClient, useTest = false): Promise<void> {
+async function handleAllianceMembers(i: ChatInputCommandInteraction, db: Database, pnw: PnWClient, useTest = false): Promise<void> {
+  await i.deferReply();
   const query = i.options.getString('query', true).trim();
   const client = useTest ? new PnWClient(PNW_API_KEY, { restUrl: PNW_TEST_REST_URL }) : pnw;
-  const alliance = /^\d+$/.test(query)
-    ? await client.getAllianceById(parseInt(query, 10))
-    : await client.getAllianceByName(query);
-  if (!alliance) return void i.reply({ content: 'Alliance not found.', ephemeral: true });
-  const members = await client.getAllianceMembers([alliance.allianceId]);
-  const sorted = members.sort((a, b) => b.score - a.score);
-  const pageSize = 10;
-  let page = 0;
-  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const baseUrl = useTest ? PNW_TEST_BASE_URL : PNW_BASE_URL;
+  const MENTION_RE = /^<@!?(\d+)>$/;
+  const mentionMatch = MENTION_RE.exec(query);
 
-  const render = (): EmbedBuilder => {
-    const chunk = sorted.slice(page * pageSize, page * pageSize + pageSize);
-    const desc = chunk.map((m, idx) => `${page * pageSize + idx + 1}. **${m.nationName}** (${m.nationId}) — Score ${m.score.toFixed(2)}, Cities ${m.numCities}`).join('\n') || 'No members found.';
-    return new EmbedBuilder().setTitle(`${alliance.name} members`).setDescription(desc).setFooter({ text: `Page ${page + 1}/${totalPages}` });
-  };
+  let alliance: AllianceInfo | null = null;
+  try {
+    if (mentionMatch) {
+      const targetId = mentionMatch[1]!;
+      const row = await db.getByDiscordId(BigInt(targetId));
+      let nation: Nation | null = null;
+      if (row) { try { nation = await client.getNation(Number(row.nation_id)); } catch { nation = null; } }
+      if (!nation) nation = await resolveMentionedNationViaApi(i, client, targetId);
+      if (!nation || !nation.allianceId) {
+        await i.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ Could not resolve <@${targetId}> to an alliance.`).setColor(0x3498DB)] });
+        return;
+      }
+      alliance = await client.getAllianceById(nation.allianceId);
+    } else if (/^\d+$/.test(query)) {
+      alliance = await client.getAllianceById(parseInt(query, 10));
+    } else {
+      alliance = await client.getAllianceByName(query);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await i.editReply({ embeds: [new EmbedBuilder().setDescription(`❌ Could not reach the Politics and War API: ${msg}`).setColor(0xE74C3C)] });
+    return;
+  }
+  if (!alliance) {
+    await i.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ No alliance found for \`${query}\`.`).setColor(0x3498DB)] });
+    return;
+  }
+
+  let members: Nation[];
+  try {
+    members = await client.getAllianceMembers([alliance.allianceId]);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await i.editReply({ embeds: [new EmbedBuilder().setDescription(`❌ Could not fetch alliance members: ${msg}`).setColor(0xE74C3C)] });
+    return;
+  }
+  members.sort((a, b) => b.score - a.score);
+
+  const totalPages = Math.max(1, Math.ceil(members.length / MEMBERS_PAGE_SIZE));
+  let page = 0;
+  const allianceCopy = alliance;
 
   const row = () => new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId('prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
     new ButtonBuilder().setCustomId('next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1),
   );
 
-  const msg = await i.reply({ embeds: [render()], components: totalPages > 1 ? [row()] : [], fetchReply: true });
+  const msg = await i.editReply({ embeds: [buildAllianceMembersPage(members, allianceCopy, page, baseUrl)], components: totalPages > 1 ? [row()] : [] });
   if (totalPages <= 1) return;
-  const collector = msg.createMessageComponentCollector({ time: 120_000 });
+  const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
   collector.on('collect', async (btn) => {
     if (btn.user.id !== i.user.id) {
       await btn.reply({ content: 'Only the command caller can paginate this view.', ephemeral: true });
@@ -456,49 +717,198 @@ async function handleAllianceMembers(i: ChatInputCommandInteraction, pnw: PnWCli
     }
     if (btn.customId === 'prev' && page > 0) page -= 1;
     if (btn.customId === 'next' && page < totalPages - 1) page += 1;
-    await btn.update({ embeds: [render()], components: [row()] });
+    await btn.update({ embeds: [buildAllianceMembersPage(members, allianceCopy, page, baseUrl)], components: [row()] });
   });
   collector.on('end', async () => {
     try { await i.editReply({ components: [] }); } catch { /**/ }
   });
 }
 
+const SLOTS_PAGE_SIZE = 15;
+
+function buildSlotsPage(
+  members: Nation[],
+  warCounts: Map<number, number>,
+  page: number,
+  sortKey: 'slots' | 'score',
+  scoreRange: [number, number] | null,
+): EmbedBuilder {
+  const sortedMembers = [...members].sort((a, b) => {
+    if (sortKey === 'slots') {
+      const slotsA = MAX_DEFENSIVE_SLOTS - (warCounts.get(a.nationId) ?? 0);
+      const slotsB = MAX_DEFENSIVE_SLOTS - (warCounts.get(b.nationId) ?? 0);
+      if (slotsB !== slotsA) return slotsB - slotsA;
+      return b.score - a.score;
+    }
+    return b.score - a.score;
+  });
+  const total = sortedMembers.length;
+  const totalPages = Math.max(1, Math.ceil(total / SLOTS_PAGE_SIZE));
+  const safePage = Math.max(0, Math.min(page, totalPages - 1));
+  const chunk = sortedMembers.slice(safePage * SLOTS_PAGE_SIZE, (safePage + 1) * SLOTS_PAGE_SIZE);
+  const totalOpen = members.reduce((s, m) => s + MAX_DEFENSIVE_SLOTS - (warCounts.get(m.nationId) ?? 0), 0);
+
+  const lines = chunk.map((m) => {
+    const openSlots = MAX_DEFENSIVE_SLOTS - (warCounts.get(m.nationId) ?? 0);
+    const aa = m.allianceName || (m.allianceId ? `AA:${m.allianceId}` : 'None');
+    let line = `[${m.nationName}](${nationUrl(m.nationId)}) (${aa}) — 🏙️ ${m.numCities} | ⭐ ${Math.round(m.score).toLocaleString()} | 🛡️ ${openSlots}/${MAX_DEFENSIVE_SLOTS}`;
+    if (scoreRange && m.score >= scoreRange[0] && m.score <= scoreRange[1]) line += ' | 🎯 In range';
+    if (m.beigeTurns > 0) line += ` | 🟡 ${m.beigeTurns} beige turns`;
+    return line;
+  });
+
+  const sortLabel = sortKey === 'slots' ? 'Open Slots' : 'Score';
+  const embed = new EmbedBuilder()
+    .setTitle(`Defensive Slots — Sorted by ${sortLabel}`)
+    .setDescription(lines.join('\n') || '*(no members)*')
+    .setColor(0x2ECC71)
+    .setFooter({ text: `Page ${safePage + 1}/${totalPages} · ${total} members total · ${totalOpen} open slots total` });
+  if (scoreRange) {
+    embed.addFields({ name: 'Your Target Range', value: `🎯 ${Math.round(scoreRange[0]).toLocaleString()} – ${Math.round(scoreRange[1]).toLocaleString()} score`, inline: false });
+  }
+  return embed;
+}
+
 async function handleSlots(i: ChatInputCommandInteraction, db: Database, pnw: PnWClient): Promise<void> {
   if (!i.guildId) return void i.reply({ content: 'Guild only command.', ephemeral: true });
+  await i.deferReply();
   const allianceIds = await db.getSlotsAlliances(BigInt(i.guildId));
-  if (!allianceIds.length) return void i.reply({ content: 'No slot alliances configured.', ephemeral: true });
-  const members = await pnw.getAllianceMembers(allianceIds);
-  const lines = members
-    .filter((m) => !m.beigeTurns)
-    .sort((a, b) => (b.defensiveWars - a.defensiveWars) || (b.score - a.score))
-    .slice(0, 30)
-    .map((m) => `**${m.nationName}** (${m.nationId}) — score ${m.score.toFixed(2)} | cities ${m.numCities} | open slots ${Math.max(0, 3 - m.defensiveWars)}`);
-  await i.reply({ embeds: [new EmbedBuilder().setTitle('Open defensive slots').setDescription(lines.join('\n') || 'No eligible nations found.')] });
+  if (!allianceIds.length) {
+    await i.editReply({ embeds: [new EmbedBuilder().setDescription('ℹ️ No alliances configured. An admin can use `/config_slots_set` to set them up.').setColor(0x3498DB)] });
+    return;
+  }
+  let members: Nation[];
+  try {
+    members = await pnw.getAllianceMembers(allianceIds);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await i.editReply({ embeds: [new EmbedBuilder().setDescription(`❌ Could not reach the Politics and War API: ${msg}`).setColor(0xE74C3C)] });
+    return;
+  }
+  if (!members.length) {
+    await i.editReply({ embeds: [new EmbedBuilder().setDescription('ℹ️ No active members found for the configured alliance(s).').setColor(0x3498DB)] });
+    return;
+  }
+
+  // Get actual defensive war counts
+  const nationIds = members.map((m) => m.nationId);
+  let warCounts: Map<number, number>;
+  try {
+    warCounts = await pnw.getActiveWarCounts(nationIds);
+  } catch {
+    warCounts = new Map();
+  }
+
+  // Try to get invoker's score range from their registered nation
+  let scoreRange: [number, number] | null = null;
+  const reg = await db.getByDiscordId(BigInt(i.user.id));
+  if (reg) {
+    try {
+      const myNation = await pnw.getNation(Number(reg.nation_id));
+      if (myNation) scoreRange = [myNation.score * 0.75, myNation.score * 2.5];
+    } catch { /* ignore */ }
+  }
+
+  let page = 0;
+  let sortKey: 'slots' | 'score' = 'slots';
+
+  const buildRow = () => {
+    const totalPages = Math.max(1, Math.ceil(members.length / SLOTS_PAGE_SIZE));
+    return new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId('prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+      new ButtonBuilder().setCustomId('sort_slots').setLabel('Sort: Open Slots').setStyle(sortKey === 'slots' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('🛡️'),
+      new ButtonBuilder().setCustomId('sort_score').setLabel('Sort: Score').setStyle(sortKey === 'score' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('⭐'),
+      new ButtonBuilder().setCustomId('next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1),
+    );
+  };
+
+  const msg = await i.editReply({ embeds: [buildSlotsPage(members, warCounts, page, sortKey, scoreRange)], components: [buildRow()] });
+  const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
+  collector.on('collect', async (btn) => {
+    if (btn.user.id !== i.user.id) {
+      await btn.reply({ content: 'Only the command caller can use these buttons.', ephemeral: true });
+      return;
+    }
+    const totalPages = Math.max(1, Math.ceil(members.length / SLOTS_PAGE_SIZE));
+    if (btn.customId === 'prev' && page > 0) page -= 1;
+    else if (btn.customId === 'next' && page < totalPages - 1) page += 1;
+    else if (btn.customId === 'sort_slots') { sortKey = 'slots'; page = 0; }
+    else if (btn.customId === 'sort_score') { sortKey = 'score'; page = 0; }
+    await btn.update({ embeds: [buildSlotsPage(members, warCounts, page, sortKey, scoreRange)], components: [buildRow()] });
+  });
+  collector.on('end', async () => {
+    try { await i.editReply({ components: [] }); } catch { /**/ }
+  });
 }
 
 
 
 function buildWarAlertEmbed(war: WarDetail, watchedAllianceId: number): EmbedBuilder {
-  const isAttacker = war.attackerAllianceId === watchedAllianceId;
-  const own = isAttacker
-    ? { n: war.attackerName, id: war.attackerId, score: war.attackerScore, c: war.attackerCities, aa: war.attackerAllianceName }
-    : { n: war.defenderName, id: war.defenderId, score: war.defenderScore, c: war.defenderCities, aa: war.defenderAllianceName };
-  const opp = isAttacker
-    ? { n: war.defenderName, id: war.defenderId, score: war.defenderScore, c: war.defenderCities, aa: war.defenderAllianceName }
-    : { n: war.attackerName, id: war.attackerId, score: war.attackerScore, c: war.attackerCities, aa: war.attackerAllianceName };
-  return new EmbedBuilder()
-    .setTitle(`War Alert: ${own.n} vs ${opp.n}`)
-    .setDescription(`Type: **${war.warType}**`)
-    .addFields(
-      { name: 'Our nation', value: `${own.n} (${own.id})
-AA: ${own.aa}
-Score: ${own.score.toFixed(2)} | Cities: ${own.c}` },
-      { name: 'Opponent', value: `${opp.n} (${opp.id})
-AA: ${opp.aa}
-Score: ${opp.score.toFixed(2)} | Cities: ${opp.c}` },
-    )
-    .setTimestamp(war.date)
-    .setColor(0xff3b30);
+  const isOffensive = war.attackerAllianceId === watchedAllianceId;
+
+  const WAR_TYPE_LABELS: Record<string, string> = {
+    ORDINARY: 'Standard War',
+    RAID: 'Raid',
+    ATTRITION: 'Attrition War',
+  };
+  const warTypeLabel = WAR_TYPE_LABELS[war.warType] ?? war.warType;
+
+  const title = isOffensive
+    ? `⚔️ Offensive ${warTypeLabel} Declared`
+    : `🛡️ Defensive ${warTypeLabel} Declared`;
+  const color = isOffensive ? 0xff3b30 : 0xff9500;
+
+  const mil = (soldiers: number, tanks: number, aircraft: number, ships: number, missiles: number, nukes: number): string => {
+    const parts = [
+      `👥 ${soldiers.toLocaleString()}`,
+      `🪖 ${tanks.toLocaleString()}`,
+      `✈️ ${aircraft.toLocaleString()}`,
+      `🚢 ${ships.toLocaleString()}`,
+    ];
+    if (missiles) parts.push(`🚀 ${missiles.toLocaleString()}`);
+    if (nukes) parts.push(`☢️ ${nukes.toLocaleString()}`);
+    return parts.join('  ');
+  };
+
+  const record = (won: number, lost: number) => `W ${won} / L ${lost}`;
+
+  const attUrl = nationUrl(war.attackerId);
+  const defUrl = nationUrl(war.defenderId);
+
+  const embed = new EmbedBuilder().setTitle(title).setColor(color);
+  embed.addFields({
+    name: `⚔️ Attacker — [${war.attackerName}](${attUrl})`,
+    value: [
+      `**Leader:** ${war.attackerLeader || '—'}`,
+      `**Alliance:** ${war.attackerAllianceName || 'None'}`,
+      `**Cities:** 🏙️ ${war.attackerCities}  **Score:** ${war.attackerScore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `**Military:** ${mil(war.attackerSoldiers, war.attackerTanks, war.attackerAircraft, war.attackerShips, war.attackerMissiles, war.attackerNukes)}`,
+      `**War record:** ${record(war.attackerWarsWon, war.attackerWarsLost)}`,
+    ].join('\n'),
+    inline: false,
+  });
+  embed.addFields({
+    name: `🛡️ Defender — [${war.defenderName}](${defUrl})`,
+    value: [
+      `**Leader:** ${war.defenderLeader || '—'}`,
+      `**Alliance:** ${war.defenderAllianceName || 'None'}`,
+      `**Cities:** 🏙️ ${war.defenderCities}  **Score:** ${war.defenderScore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `**Military:** ${mil(war.defenderSoldiers, war.defenderTanks, war.defenderAircraft, war.defenderShips, war.defenderMissiles, war.defenderNukes)}`,
+      `**War record:** ${record(war.defenderWarsWon, war.defenderWarsLost)}`,
+    ].join('\n'),
+    inline: false,
+  });
+  embed.addFields({
+    name: 'War link',
+    value: `[View war](${warUrl(war.warId)})`,
+    inline: false,
+  });
+  const legend = '👥 soldiers  🪖 tanks  ✈️ aircraft  🚢 ships  🚀 missiles  ☢️ nukes';
+  const dateStr = war.date instanceof Date
+    ? war.date.toISOString().replace('T', ' ').substring(0, 16) + ' UTC'
+    : String(war.date);
+  embed.setFooter({ text: `War ID ${war.warId} · ${dateStr}  ·  ${legend}` });
+  return embed;
 }
 
 async function main(): Promise<void> {
@@ -528,7 +938,17 @@ async function main(): Promise<void> {
     new SlashCommandBuilder().setName('send').setDescription('Compose transfer command').addStringOption(o => o.setName('receiver').setDescription('Nation ID or @mention').setRequired(true)).addStringOption(o => o.setName('sender').setDescription('Optional sender nation ID')).addStringOption(o => o.setName('bank_note').setDescription('Bank note')).addNumberOption(o => o.setName('money').setDescription('Money amount')).addNumberOption(o => o.setName('food').setDescription('Food amount')).addNumberOption(o => o.setName('coal').setDescription('Coal amount')).addNumberOption(o => o.setName('oil').setDescription('Oil amount')).addNumberOption(o => o.setName('uranium').setDescription('Uranium amount')).addNumberOption(o => o.setName('iron').setDescription('Iron amount')).addNumberOption(o => o.setName('bauxite').setDescription('Bauxite amount')).addNumberOption(o => o.setName('lead').setDescription('Lead amount')).addNumberOption(o => o.setName('gasoline').setDescription('Gasoline amount')).addNumberOption(o => o.setName('munitions').setDescription('Munitions amount')).addNumberOption(o => o.setName('steel').setDescription('Steel amount')).addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount')),
     new SlashCommandBuilder().setName('suggestion').setDescription('Send suggestion to dev').addStringOption(o => o.setName('content').setDescription('Suggestion text').setRequired(true)),
     new SlashCommandBuilder().setName('roles_show').setDescription('Show configured gov role mappings'),
-    new SlashCommandBuilder().setName('roles_setup').setDescription('Configure gov roles').addRoleOption(o => o.setName('econ').setDescription('Economics role')).addRoleOption(o => o.setName('milcom').setDescription('Military command role')).addRoleOption(o => o.setName('ia').setDescription('Internal affairs role')).addRoleOption(o => o.setName('gov').setDescription('Basic gov role')).addRoleOption(o => o.setName('econ_gov').setDescription('Economics gov role')),
+    new SlashCommandBuilder().setName('roles_setup').setDescription('Configure gov roles')
+      .addRoleOption(o => o.setName('leader').setDescription('Leader role'))
+      .addRoleOption(o => o.setName('two_ic').setDescription('Second in command role'))
+      .addRoleOption(o => o.setName('econ').setDescription('Economics role'))
+      .addRoleOption(o => o.setName('econ_gov').setDescription('Economics Gov role'))
+      .addRoleOption(o => o.setName('milcom').setDescription('Military command role'))
+      .addRoleOption(o => o.setName('milcom_gov').setDescription('Military command Gov role'))
+      .addRoleOption(o => o.setName('ia').setDescription('Internal affairs role'))
+      .addRoleOption(o => o.setName('ia_asst').setDescription('Internal affairs assistant role'))
+      .addRoleOption(o => o.setName('gov').setDescription('Basic gov role'))
+      .addRoleOption(o => o.setName('member').setDescription('Member role (required to use most commands)')),
     new SlashCommandBuilder().setName('gov').setDescription('List members in configured gov departments'),
     new SlashCommandBuilder().setName('setup_grant_channel').setDescription('Set grant request channel').addChannelOption(o => o.setName('channel').setDescription('Target channel').setRequired(true)),
     new SlashCommandBuilder().setName('request_grant').setDescription('Request a grant').addStringOption(o => o.setName('note').setDescription('Grant reason').setRequired(true)).addNumberOption(o => o.setName('money').setDescription('Requested money')).addNumberOption(o => o.setName('food').setDescription('Food amount')).addNumberOption(o => o.setName('coal').setDescription('Coal amount')).addNumberOption(o => o.setName('oil').setDescription('Oil amount')).addNumberOption(o => o.setName('uranium').setDescription('Uranium amount')).addNumberOption(o => o.setName('iron').setDescription('Iron amount')).addNumberOption(o => o.setName('bauxite').setDescription('Bauxite amount')).addNumberOption(o => o.setName('lead').setDescription('Lead amount')).addNumberOption(o => o.setName('gasoline').setDescription('Gasoline amount')).addNumberOption(o => o.setName('munitions').setDescription('Munitions amount')).addNumberOption(o => o.setName('steel').setDescription('Steel amount')).addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount')),
@@ -587,10 +1007,10 @@ async function main(): Promise<void> {
       }
       if (interaction.commandName === 'whois') return await handleWhois(interaction, db, pnw, pnwTest, false);
       if (interaction.commandName === 'test_whois') return await handleWhois(interaction, db, pnw, pnwTest, true);
-      if (interaction.commandName === 'alliance_info') return await handleAllianceInfo(interaction, pnw, false);
-      if (interaction.commandName === 'test_alliance_info') return await handleAllianceInfo(interaction, pnw, true);
-      if (interaction.commandName === 'alliance_members') return await handleAllianceMembers(interaction, pnw, false);
-      if (interaction.commandName === 'test_alliance_members') return await handleAllianceMembers(interaction, pnw, true);
+      if (interaction.commandName === 'alliance_info') return await handleAllianceInfo(interaction, db, pnw, false);
+      if (interaction.commandName === 'test_alliance_info') return await handleAllianceInfo(interaction, db, pnw, true);
+      if (interaction.commandName === 'alliance_members') return await handleAllianceMembers(interaction, db, pnw, false);
+      if (interaction.commandName === 'test_alliance_members') return await handleAllianceMembers(interaction, db, pnw, true);
       if (interaction.commandName === 'slots') return await handleSlots(interaction, db, pnw);
 
       if (interaction.commandName === 'config_slots_set') {
@@ -681,9 +1101,31 @@ async function main(): Promise<void> {
       }
 
       if (interaction.commandName === 'suggestion') {
-        const content = interaction.options.getString('content', true);
+        const content = interaction.options.getString('content', true).trim();
+        if (!content) return void interaction.reply({ content: '❌ Suggestion content cannot be empty.', ephemeral: true });
+        if (content.length > 1800) return void interaction.reply({ content: '❌ Suggestion is too long. Please keep it under 1800 characters.', ephemeral: true });
+        const SUGGESTION_DM_USERNAMES = ['glaernisch', 'glaernischtheonly'];
+        const dmMessage = `📬 **New /suggestion submission**\nFrom: ${interaction.user} (ID: ${interaction.user.id})\nGuild: ${interaction.guild?.name ?? 'DM/Unknown'}\nContent:\n${content}`;
+        const sentTo: string[] = [];
+        const wanted = new Set(SUGGESTION_DM_USERNAMES.map((u) => u.toLowerCase()));
+        const found = new Map<string, GuildMember>();
+        for (const guild of client.guilds.cache.values()) {
+          for (const member of guild.members.cache.values()) {
+            for (const handle of [member.user.username.toLowerCase(), member.displayName.toLowerCase(), (member.user.globalName ?? '').toLowerCase()]) {
+              if (handle && wanted.has(handle) && !found.has(handle)) found.set(handle, member);
+            }
+          }
+        }
+        for (const username of SUGGESTION_DM_USERNAMES) {
+          const userObj = found.get(username.toLowerCase());
+          if (!userObj) continue;
+          try { await userObj.send(dmMessage); sentTo.push(username); } catch { /* ignore */ }
+        }
+        const statusLine = sentTo.length
+          ? `✅ DMs sent to: ${sentTo.map((u) => `\`${u}\``).join(', ')}.`
+          : '⚠️ No suggestion DMs were delivered (bot developer not found in shared servers).';
         console.log(`Suggestion from ${interaction.user.id}: ${content}`);
-        return void interaction.reply({ content: 'Suggestion recorded. Thank you!', ephemeral: true });
+        return void interaction.reply({ embeds: [new EmbedBuilder().setDescription(statusLine).setColor(0x2ECC71)], ephemeral: true });
       }
 
 
@@ -691,35 +1133,65 @@ async function main(): Promise<void> {
         if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         if (!await hasGovAccess(interaction, db, ['leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const current = await db.getGovRoles(BigInt(interaction.guildId));
-        const fields: Array<'econ'|'milcom'|'ia'|'gov'|'econ_gov'> = ['econ','milcom','ia','gov','econ_gov'];
-        for (const key of fields) {
-          const role = interaction.options.getRole(key);
-          if (role) (current as any)[key] = Number(role.id);
+        const fields: Array<[string, string]> = [
+          ['leader','leader'], ['two_ic','2ic'], ['econ','econ'], ['econ_gov','econ_gov'],
+          ['milcom','milcom'], ['milcom_gov','milcom_gov'], ['ia','ia'], ['ia_asst','ia_asst'],
+          ['gov','gov'], ['member','member'],
+        ];
+        for (const [optName, dbKey] of fields) {
+          const role = interaction.options.getRole(optName);
+          if (role) (current as Record<string, number | null>)[dbKey] = Number(role.id);
         }
         await db.setGovRoles(BigInt(interaction.guildId), current as any);
-        return void interaction.reply({ content: 'Updated gov role mappings.' });
+        const GOV_DEPT_LABELS: Record<string, string> = {
+          leader: 'Leader', '2ic': 'Second in Command', econ: 'Economics', econ_gov: 'Economics Gov',
+          milcom: 'Military Command', milcom_gov: 'Military Command Gov', ia: 'Internal Affairs',
+          ia_asst: 'Internal Affairs Assistant', gov: 'Basic Gov', member: 'Member',
+        };
+        const lines: string[] = ['✅ Government role configuration updated:'];
+        for (const [key, label] of Object.entries(GOV_DEPT_LABELS)) {
+          const rid = (current as Record<string, number | null>)[key];
+          if (rid && interaction.guild) {
+            const role = interaction.guild.roles.cache.get(String(rid));
+            lines.push(`**${label}:** ${role ? role.toString() : `<@&${rid}>`}`);
+          } else {
+            lines.push(`**${label}:** *(not set)*`);
+          }
+        }
+        return void interaction.reply({ content: lines.join('\n'), ephemeral: true });
       }
       if (interaction.commandName === 'gov') {
         if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         const cfg = await db.getGovRoles(BigInt(interaction.guildId));
-        const departments: Array<[string, keyof typeof cfg]> = [
-          ['Economics', 'econ'],
-          ['Military Command', 'milcom'],
-          ['Internal Affairs', 'ia'],
-          ['Basic Gov', 'gov'],
-        ];
-        const lines: string[] = [];
-        for (const [name, key] of departments) {
-          const rid = cfg[key];
-          if (!rid) {
-            lines.push(`**${name}:** not configured`);
+        const GOV_DEPT_LABELS: Record<string, string> = {
+          leader: 'Leader', '2ic': 'Second in Command', econ: 'Economics', econ_gov: 'Economics Gov',
+          milcom: 'Military Command', milcom_gov: 'Military Command Gov', ia: 'Internal Affairs',
+          ia_asst: 'Internal Affairs Assistant',
+        };
+        const GOV_DEPT_EMOJI: Record<string, string> = {
+          leader: '👑', '2ic': '🥈', econ: '💰', econ_gov: '📊',
+          milcom: '⚔️', milcom_gov: '🛡️', ia: '🤝', ia_asst: '📋',
+        };
+        const embed = new EmbedBuilder().setTitle('Government').setColor(0x5865F2);
+        const guildRoles = new Map(interaction.guild.roles.cache.map((r) => [r.id, r]));
+        let total = 0;
+        for (const [key, label] of Object.entries(GOV_DEPT_LABELS)) {
+          const rid = (cfg as Record<string, number | null>)[key];
+          if (!rid) continue;
+          const role = guildRoles.get(String(rid));
+          if (!role) {
+            embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label}`, value: '*(role not found)*', inline: false });
             continue;
           }
-          const role = interaction.guild.roles.cache.get(String(rid));
-          const members = role ? role.members.map((m) => `<@${m.id}>`).join(', ') : '';
-          lines.push(`**${name}:** ${members || 'no members'}`);
+          const membersWithRole = role.members.filter((m) => !m.user.bot);
+          total += membersWithRole.size;
+          const value = membersWithRole.size
+            ? [...membersWithRole.values()].sort((a, b) => a.displayName.localeCompare(b.displayName)).map((m) => `<@${m.id}>`).join(' ')
+            : '*(no members)*';
+          embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label} (${membersWithRole.size})`, value, inline: false });
         }
-        return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('Government roster').setDescription(lines.join('\n\n'))] });
+        embed.setFooter({ text: `${total} government member(s) total` });
+        return void interaction.reply({ embeds: [embed] });
       }
 
       if (interaction.commandName === 'roles_show') {
@@ -793,65 +1265,112 @@ ${resourceLines}
 
 
 
-      if (interaction.commandName === 'alliance_lots_of_info') {
+      if (interaction.commandName === 'alliance_lots_of_info' || interaction.commandName === 'test_alliance_lots_of_info') {
+        await interaction.deferReply();
         const query = interaction.options.getString('query', true).trim();
-        const alliance = /^\d+$/.test(query)
-          ? await pnw.getAllianceById(parseInt(query, 10))
-          : await pnw.getAllianceByName(query);
-        if (!alliance) return void interaction.reply({ content: 'Alliance not found.', ephemeral: true });
-        const members = await pnw.getAllianceMembers([alliance.allianceId]);
-        const tierBuckets = new Map<number, number>();
-        let beigeCount = 0;
-        for (const m of members) {
-          tierBuckets.set(m.numCities, (tierBuckets.get(m.numCities) ?? 0) + 1);
-          if (m.beigeTurns > 0) beigeCount += 1;
+        const useTestApi = interaction.commandName === 'test_alliance_lots_of_info';
+        const apiClient = useTestApi ? new PnWClient(PNW_API_KEY, { restUrl: PNW_TEST_REST_URL }) : pnw;
+        const baseUrl = useTestApi ? PNW_TEST_BASE_URL : PNW_BASE_URL;
+        let alliance: AllianceInfo | null;
+        let lotsMembers: Nation[];
+        try {
+          alliance = /^\d+$/.test(query)
+            ? await apiClient.getAllianceById(parseInt(query, 10))
+            : await apiClient.getAllianceByName(query);
+          if (!alliance) {
+            await interaction.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ No alliance found for \`${query}\`.`).setColor(0x3498DB)] });
+            return;
+          }
+          lotsMembers = await apiClient.getAllianceMembers([alliance.allianceId]);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          await interaction.editReply({ embeds: [new EmbedBuilder().setDescription(`❌ Could not reach the Politics and War API: ${msg}`).setColor(0xE74C3C)] });
+          return;
         }
-        const tierRows = [...tierBuckets.entries()].sort((a,b) => a[0]-b[0]);
-        const tierSummary = renderVerticalTierChart(tierRows);
-        const topMembers = members
-          .sort((a,b) => b.score - a.score)
-          .slice(0, 12)
-          .map((m) => `• ${m.nationName} (${m.nationId}) — score ${m.score.toFixed(2)}, cities ${m.numCities}, beige ${m.beigeTurns}`)
-          .join('\n');
 
-        const embed = new EmbedBuilder()
-          .setTitle(`Alliance briefing: ${alliance.name} (${alliance.allianceId})`)
-          .setDescription(`Members: **${alliance.numMembers}** | Applicants: **${alliance.numApplicants}** | Beige: **${beigeCount}**`)
-          .addFields(
-            { name: 'Alliance stats', value: `Score ${alliance.score.toFixed(2)} | Avg score ${alliance.averageScore.toFixed(2)} | Avg cities ${alliance.avgCities.toFixed(2)}` },
-            { name: 'City tier distribution', value: tierSummary || 'No tier data' },
-            { name: 'Top members', value: topMembers || 'No members found' },
-          );
-        return void interaction.reply({ embeds: [embed] });
-      }
+        // Build pages
+        const pages: EmbedBuilder[] = [];
 
-
-      if (interaction.commandName === 'test_alliance_lots_of_info') {
-        const query = interaction.options.getString('query', true).trim();
-        const testClient = new PnWClient(PNW_API_KEY, { restUrl: PNW_TEST_REST_URL });
-        const alliance = /^\d+$/.test(query)
-          ? await testClient.getAllianceById(parseInt(query, 10))
-          : await testClient.getAllianceByName(query);
-        if (!alliance) return void interaction.reply({ content: 'Alliance not found.', ephemeral: true });
-        const members = await testClient.getAllianceMembers([alliance.allianceId]);
-        const tierBuckets = new Map<number, number>();
-        let beigeCount = 0;
-        for (const m of members) {
-          tierBuckets.set(m.numCities, (tierBuckets.get(m.numCities) ?? 0) + 1);
-          if (m.beigeTurns > 0) beigeCount += 1;
+        // Page 1: alliance info + militarization
+        const infoEmbed = allianceEmbed(alliance, baseUrl);
+        const totalCities = lotsMembers.reduce((s, n) => s + n.numCities, 0);
+        if (totalCities > 0) {
+          const avgMil = [
+            `🪖 Soldiers: ${(lotsMembers.reduce((s,n)=>s+n.soldiers,0)/(totalCities*MAX_SOLDIERS_PER_CITY)*100).toFixed(1)}%`,
+            `⚔️ Tanks: ${(lotsMembers.reduce((s,n)=>s+n.tanks,0)/(totalCities*MAX_TANKS_PER_CITY)*100).toFixed(1)}%`,
+            `✈️ Aircraft: ${(lotsMembers.reduce((s,n)=>s+n.aircraft,0)/(totalCities*MAX_AIRCRAFT_PER_CITY)*100).toFixed(1)}%`,
+            `🚢 Ships: ${(lotsMembers.reduce((s,n)=>s+n.ships,0)/(totalCities*MAX_SHIPS_PER_CITY)*100).toFixed(1)}%`,
+          ].join('\n');
+          infoEmbed.addFields({ name: 'Avg Militarization', value: avgMil, inline: false });
         }
-        const tierRows = [...tierBuckets.entries()].sort((a,b) => a[0]-b[0]);
-        const tierSummary = renderVerticalTierChart(tierRows);
-        const topMembers = members.sort((a,b) => b.score - a.score).slice(0, 12).map((m) => `• ${m.nationName} (${m.nationId}) — score ${m.score.toFixed(2)}, cities ${m.numCities}, beige ${m.beigeTurns}`).join('\n');
-        const embed = new EmbedBuilder()
-          .setTitle(`Alliance briefing (test): ${alliance.name} (${alliance.allianceId})`)
-          .setDescription(`Members: **${alliance.numMembers}** | Applicants: **${alliance.numApplicants}** | Beige: **${beigeCount}**`)
-          .addFields(
-            { name: 'Alliance stats', value: `Score ${alliance.score.toFixed(2)} | Avg score ${alliance.averageScore.toFixed(2)} | Avg cities ${alliance.avgCities.toFixed(2)}` },
-            { name: 'City tier distribution', value: tierSummary || 'No tier data' },
-            { name: 'Top members', value: topMembers || 'No members found' },
-          );
-        return void interaction.reply({ embeds: [embed] });
+        infoEmbed.setFooter({ text: 'Page 1 · Alliance info' });
+        pages.push(infoEmbed);
+
+        // Page 2: city tier graph
+        const cityCounts = new Map<number, number>();
+        for (const m of lotsMembers) cityCounts.set(m.numCities, (cityCounts.get(m.numCities) ?? 0) + 1);
+        const cityRows = [...cityCounts.entries()].sort((a,b)=>a[0]-b[0]);
+        const cityGraph = cityRows.length
+          ? (() => {
+              const maxCount = Math.max(...cityRows.map(([,c])=>c));
+              return cityRows.map(([city, c]) => `\`${String(city).padStart(2)}c\` ${'█'.repeat(Math.max(1, Math.round((c/maxCount)*18)))} ${c}`).join('\n');
+            })()
+          : '*(no member data)*';
+        const cityEmbed = new EmbedBuilder()
+          .setTitle(`${alliance.name} — City Tier Graph`)
+          .setURL(allianceUrl(alliance.allianceId, baseUrl))
+          .setDescription(cityGraph)
+          .setColor(0x5865F2)
+          .setFooter({ text: 'Page 2 · City tier graph' });
+        pages.push(cityEmbed);
+
+        // Page 3: score development placeholder
+        const scoreEmbed = new EmbedBuilder()
+          .setTitle(`${alliance.name} — Score Development`)
+          .setURL(allianceUrl(alliance.allianceId, baseUrl))
+          .setDescription('Historical alliance-score development is not available from the current PnW endpoints used by this bot.')
+          .setColor(0x1A8A7A)
+          .setFooter({ text: 'Page 3' });
+        pages.push(scoreEmbed);
+
+        // Pages 4+: extended member list (10 per page)
+        const extSorted = [...lotsMembers].sort((a,b)=>b.score-a.score);
+        const extPageSize = 10;
+        const extTotalPages = Math.max(1, Math.ceil(extSorted.length/extPageSize));
+        for (let p = 0; p < extTotalPages; p++) {
+          const chunk = extSorted.slice(p*extPageSize, (p+1)*extPageSize);
+          const lines = chunk.map((n, idx) => {
+            const beige = n.beigeTurns > 0 ? '🟨' : '✅';
+            const ageStr = `${Math.max(0, Math.round(n.allianceSeniority ?? 0))}d`;
+            return `\`${String(p*extPageSize+idx+1).padStart(3)}.\` [${n.nationName}](${nationUrl(n.nationId, baseUrl)}) — ⭐ ${Math.round(n.score).toLocaleString()} | 🏙️ ${n.numCities} | ${beige} | ⏳ ${ageStr}`;
+          });
+          const extEmbed = new EmbedBuilder()
+            .setTitle(`${alliance.name} — Members (Extended)`)
+            .setURL(allianceUrl(alliance.allianceId, baseUrl))
+            .setDescription(lines.join('\n') || '*(no members)*')
+            .setColor(0xFFD700)
+            .setFooter({ text: `Page ${3+p+1} · Members page ${p+1}/${extTotalPages} · ${extSorted.length} total` });
+          pages.push(extEmbed);
+        }
+
+        // Paginated view
+        let curPage = 0;
+        const navRow = () => new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder().setCustomId('lots_prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(curPage <= 0),
+          new ButtonBuilder().setCustomId('lots_next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(curPage >= pages.length - 1),
+        );
+        const msg = await interaction.editReply({ embeds: [pages[0]!], components: pages.length > 1 ? [navRow()] : [] });
+        if (pages.length <= 1) return;
+        const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
+        collector.on('collect', async (btn) => {
+          if (btn.customId === 'lots_prev' && curPage > 0) curPage -= 1;
+          else if (btn.customId === 'lots_next' && curPage < pages.length - 1) curPage += 1;
+          await btn.update({ embeds: [pages[curPage]!], components: [navRow()] });
+        });
+        collector.on('end', async () => {
+          try { await interaction.editReply({ components: [] }); } catch { /**/ }
+        });
+        return;
       }
       if (interaction.commandName === 'fun_quote') {
         const quote = FUN_QUOTES[Math.floor(Math.random() * FUN_QUOTES.length)] ?? 'No quote found.';
