@@ -1075,55 +1075,68 @@ async function main(): Promise<void> {
       }
 
       if (interaction.commandName === 'send') {
-        const receiverRaw = interaction.options.getString('receiver', true).trim();
-        let receiver = receiverRaw.replace(/\D/g, '');
-        if (!receiver) {
-          const row = await db.getByDiscordUsername(receiverRaw);
-          if (row) receiver = String(row.nation_id);
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        await interaction.deferReply({ ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], ephemeral: true });
         }
-        if (!receiver) return void interaction.reply({ content: 'Could not resolve receiver nation ID.', ephemeral: true });
-
+        const isAdmin = (() => {
+          const m = interaction.member as any;
+          return ADMIN_DISCORD_IDS.has(BigInt(interaction.user.id)) ||
+            (m?.permissions && typeof m.permissions !== 'string' && m.permissions.has('Administrator'));
+        })();
+        if (!isAdmin && !await hasGovAccess(interaction, db, ['econ', 'econ_gov'])) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Economics** role to use this command.').setColor(0xE74C3C)], ephemeral: true });
+        }
+        const receiverRaw = interaction.options.getString('receiver', true).trim();
         const sender = interaction.options.getString('sender')?.trim() ?? '';
         const bankNoteInput = interaction.options.getString('bank_note') ?? '#grant';
         const bankNote = bankNoteInput.startsWith('#') ? bankNoteInput : `#${bankNoteInput}`;
 
-        const resources: Record<string, number> = {
-          money: interaction.options.getNumber('money') ?? 0,
-          food: interaction.options.getNumber('food') ?? 0,
-          coal: interaction.options.getNumber('coal') ?? 0,
-          oil: interaction.options.getNumber('oil') ?? 0,
-          uranium: interaction.options.getNumber('uranium') ?? 0,
-          iron: interaction.options.getNumber('iron') ?? 0,
-          bauxite: interaction.options.getNumber('bauxite') ?? 0,
-          lead: interaction.options.getNumber('lead') ?? 0,
-          gasoline: interaction.options.getNumber('gasoline') ?? 0,
-          munitions: interaction.options.getNumber('munitions') ?? 0,
-          steel: interaction.options.getNumber('steel') ?? 0,
-          aluminum: interaction.options.getNumber('aluminum') ?? 0,
-        };
-        const transferItems = Object.entries(resources)
-          .filter(([,v]) => v && v > 0)
-          .map(([k,v]) => `${k}:${Math.trunc(v)}`)
-          .join(', ');
-        const cmd = `/transfer resources receiver:${receiver} transfer:{ ${transferItems || 'money:0'} } bank_note:${bankNote}` + (sender ? ` sender:${sender}` : '');
-        const summary = Object.entries(resources).filter(([,v]) => v && v > 0).map(([k,v]) => `${k}: ${Math.trunc(v).toLocaleString()}`).join('\n') || 'No resources specified';
+        // Resolve receiver: try registered nation by mention, else use raw string
+        let receiver = receiverRaw;
+        const mentionMatch = /^<@!?(\d+)>$/.exec(receiverRaw);
+        if (mentionMatch) {
+          const row = await db.getByDiscordId(BigInt(mentionMatch[1]!));
+          if (row) receiver = String(row.nation_id);
+        }
 
-        return void interaction.reply({
-          embeds: [
-            new EmbedBuilder()
-              .setTitle('Transfer command')
-              .setDescription(`Receiver: ${receiver}\nSender: ${sender || '(default)'}\nBank note: ${bankNote}\n\n${summary}\n\n\`\`\`${cmd}\`\`\``),
-          ],
-        });
+        const fmtAmt = (v: number) => (v === Math.trunc(v) ? String(Math.trunc(v)) : String(v));
+        const resources: Record<string, number> = {};
+        for (const key of ['money','food','coal','oil','uranium','iron','bauxite','lead','gasoline','munitions','steel','aluminum']) {
+          const v = interaction.options.getNumber(key) ?? 0;
+          if (v > 0) resources[key] = v;
+        }
+        if (!Object.keys(resources).length) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Please provide at least one resource amount greater than zero.').setColor(0xE74C3C)], ephemeral: true });
+        }
+        const transferJson = '{' + Object.entries(resources).map(([k, v]) => `${k}:${fmtAmt(v)}`).join(',') + '}';
+        const locutusCmd = `/transfer resources receiver:${receiver} transfer:${transferJson} bank_note:${bankNote}`;
+
+        const embed = new EmbedBuilder().setTitle('💸 Resource Transfer Request').setColor(0x2ECC71);
+        if (sender) embed.addFields({ name: 'From', value: sender, inline: true });
+        embed.addFields(
+          { name: 'To', value: receiver, inline: true },
+          { name: 'Requested by', value: `<@${interaction.user.id}>`, inline: true },
+          { name: 'Bank note', value: bankNote, inline: true },
+          { name: 'Resources', value: Object.entries(resources).map(([k, v]) => `**${k.charAt(0).toUpperCase() + k.slice(1)}:** ${fmtAmt(v)}`).join('\n'), inline: false },
+          { name: 'Locutus Command', value: `\`\`\`${locutusCmd}\`\`\``, inline: false },
+        );
+        return void interaction.followUp({ embeds: [embed] });
       }
 
       if (interaction.commandName === 'suggestion') {
+        await interaction.deferReply({ ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], ephemeral: true });
+        }
         const content = interaction.options.getString('content', true).trim();
-        if (!content) return void interaction.reply({ content: '❌ Suggestion content cannot be empty.', ephemeral: true });
-        if (content.length > 1800) return void interaction.reply({ content: '❌ Suggestion is too long. Please keep it under 1800 characters.', ephemeral: true });
+        if (!content) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Suggestion content cannot be empty.').setColor(0xE74C3C)], ephemeral: true });
+        if (content.length > 1800) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Suggestion is too long. Please keep it under 1800 characters.').setColor(0xE74C3C)], ephemeral: true });
         const SUGGESTION_DM_USERNAMES = ['glaernisch', 'glaernischtheonly'];
         const dmMessage = `📬 **New /suggestion submission**\nFrom: ${interaction.user} (ID: ${interaction.user.id})\nGuild: ${interaction.guild?.name ?? 'DM/Unknown'}\nContent:\n${content}`;
         const sentTo: string[] = [];
+        const missing: string[] = [];
         const wanted = new Set(SUGGESTION_DM_USERNAMES.map((u) => u.toLowerCase()));
         const found = new Map<string, GuildMember>();
         for (const guild of client.guilds.cache.values()) {
@@ -1135,14 +1148,16 @@ async function main(): Promise<void> {
         }
         for (const username of SUGGESTION_DM_USERNAMES) {
           const userObj = found.get(username.toLowerCase());
-          if (!userObj) continue;
-          try { await userObj.send(dmMessage); sentTo.push(username); } catch { /* ignore */ }
+          if (!userObj) { missing.push(username); continue; }
+          try { await userObj.send(dmMessage); sentTo.push(username); } catch { missing.push(username); }
         }
-        const statusLine = sentTo.length
+        const statusLines: string[] = [];
+        statusLines.push(sentTo.length
           ? `✅ DMs sent to: ${sentTo.map((u) => `\`${u}\``).join(', ')}.`
-          : '⚠️ No suggestion DMs were delivered (bot developer not found in shared servers).';
+          : '⚠️ No suggestion DMs were delivered.');
+        if (missing.length) statusLines.push(`ℹ️ Could not DM: ${missing.map((u) => `\`${u}\``).join(', ')}.`);
         console.log(`Suggestion from ${interaction.user.id}: ${content}`);
-        return void interaction.reply({ embeds: [new EmbedBuilder().setDescription(statusLine).setColor(0x2ECC71)], ephemeral: true });
+        return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(statusLines.join('\n')).setColor(0x2ECC71)], ephemeral: true });
       }
 
 
@@ -1396,17 +1411,45 @@ ${resourceLines}
 
       if (interaction.commandName === 'color') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: '❌ You need the **Member** role to use this command.', ephemeral: true });
+        await interaction.deferReply();
         const allianceId = await db.getAllianceId(BigInt(interaction.guildId));
-        if (!allianceId) return void interaction.reply({ content: 'Primary alliance is not configured.', ephemeral: true });
-        const alliance = await pnw.getAllianceById(allianceId);
-        if (!alliance) return void interaction.reply({ content: 'Alliance not found.', ephemeral: true });
-        const members = await pnw.getAllianceMembers([allianceId]);
-        const expected = (alliance.color || '').toLowerCase();
-        const wrong = members.filter((m) => !m.beigeTurns && (m.color || '').toLowerCase() !== expected);
-        const desc = wrong.length
-          ? wrong.slice(0, 30).map((m) => `• ${m.nationName} (${m.nationId}) is **${m.color || 'none'}**`).join('\n')
-          : 'All active members are on the correct color.';
-        return void interaction.reply({ embeds: [new EmbedBuilder().setTitle(`Alliance color check: ${alliance.name}`).setDescription(desc)] });
+        if (!allianceId) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ No primary alliance configured. An admin can use `/admin_alliance_set` to set one.').setColor(0x3498DB)] });
+        let alliance: import('./pnw_api').AllianceInfo | null;
+        let members: Nation[];
+        try {
+          [alliance, members] = await Promise.all([
+            pnw.getAllianceById(allianceId),
+            pnw.getAllianceMembers([allianceId]),
+          ]);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Could not reach the Politics and War API: ${msg}`).setColor(0xE74C3C)] });
+        }
+        if (!alliance) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Alliance **${allianceId}** not found on Politics and War.`).setColor(0xE74C3C)] });
+        if (!members.length) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ No active members found for the configured alliance.').setColor(0x3498DB)] });
+        const expected = (alliance.color || '').trim().toLowerCase();
+        const wrong = members.filter((m) => {
+          const col = (m.color || '').trim().toLowerCase();
+          return col !== 'beige' && col !== expected;
+        });
+        if (!wrong.length) {
+          const embed = new EmbedBuilder()
+            .setTitle('✅ Color Check')
+            .setDescription(`All active members of **${alliance.name}** are on the correct color (**${expected.charAt(0).toUpperCase() + expected.slice(1)}**).`)
+            .setColor(0x2ECC71)
+            .setFooter({ text: `${members.length} members checked` });
+          return void interaction.followUp({ embeds: [embed] });
+        }
+        const lines = wrong.map((m) =>
+          `[${m.nationName}](${nationUrl(m.nationId)}) — 🎨 **${(m.color || 'none').charAt(0).toUpperCase() + (m.color || 'none').slice(1)}** (expected **${expected.charAt(0).toUpperCase() + expected.slice(1)}**)`
+        );
+        const embed = new EmbedBuilder()
+          .setTitle(`⚠️ Color Check — ${alliance.name}`)
+          .setDescription(lines.join('\n'))
+          .setColor(0xFF9500)
+          .setFooter({ text: `${wrong.length} member(s) on wrong color · ${members.length} total checked · expected: ${expected.charAt(0).toUpperCase() + expected.slice(1)}` });
+        return void interaction.followUp({ embeds: [embed] });
       }
       if (interaction.commandName === 'damage_leaderboard') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
