@@ -75,3 +75,13 @@ export const ADMIN_DISCORD_IDS: Set<bigint> = _optionalIntList('ADMIN_DISCORD_ID
 
 // PnW API key used exclusively for scanning new nations.
 export const PW_SCAN_API_KEY: string = process.env['PW_SCAN_API_KEY'] || '';
+
+// Discord OAuth2 config — required for the /auth/* endpoints.
+// Leave unset to disable the OAuth2 flow entirely.
+export const DISCORD_CLIENT_ID: string = process.env['DISCORD_CLIENT_ID'] || '';
+export const DISCORD_CLIENT_SECRET: string = process.env['DISCORD_CLIENT_SECRET'] || '';
+export const DISCORD_REDIRECT_URI: string =
+  process.env['DISCORD_REDIRECT_URI'] || 'http://localhost:8080/auth/discord/callback';
+// After a successful login the browser is sent here.
+// When unset, the callback falls back to '/'.
+export const CLIENT_APP_URL: string = (process.env['CLIENT_APP_URL'] || '').replace(/\/$/, '');

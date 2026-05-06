@@ -36,9 +36,44 @@
  * POST /api/bot/send
  *     Send a message to the configured welcome channel of every server the bot is in.
  *     Requires the X-API-Key request header.
+ *
+ * Discord OAuth2 auth flow (requires DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET / DISCORD_REDIRECT_URI):
+ * GET /auth/login
+ *     Show the HTML login page. Accepts optional ?returnTo= and ?error= query params.
+ *
+ * GET /auth/discord
+ *     Redirect the browser to Discord's OAuth2 authorization endpoint.
+ *     Accepts optional ?returnTo= and ?mobile=1 query params.
+ *
+ * GET /auth/discord/callback
+ *     Handle the OAuth2 callback: exchange the code, fetch the user identity,
+ *     check bar3 roles via the bot's guild membership cache, and either:
+ *       - Issue an in-memory session token (mobile flow: ?state=mobile) and
+ *         redirect to CLIENT_APP_URL?mobileToken=<token>, or
+ *       - Issue an in-memory session token and redirect to CLIENT_APP_URL/dashboard
+ *         (or CLIENT_APP_URL alone when CLIENT_APP_URL is unset, redirects to /).
+ *
+ * GET /auth/session?token=<token>
+ *     Return session info for a token issued by the callback.
+ *     Returns 200 { authenticated, user, roles, isAdmin } on success,
+ *     or 401 { authenticated: false } when the token is unknown or expired.
+ *
+ * POST /auth/logout
+ *     Body: { token: string }
+ *     Revoke a session token and return { ok: true }.
+ *
+ * GET /auth/mobile-session?token=<token>
+ *     Alias for GET /auth/session (kept for bar3-client compatibility).
  */
 import express, { Application, Request, Response } from 'express';
 import { Guild, GuildMember } from 'discord.js';
+import {
+  DISCORD_CLIENT_ID,
+  DISCORD_CLIENT_SECRET,
+  DISCORD_REDIRECT_URI,
+  CLIENT_APP_URL,
+  ADMIN_DISCORD_IDS,
+} from './config';
 
 export interface RoleConfig {
   verifiedRoleId?: bigint | null;
@@ -70,6 +105,143 @@ export interface CreateAppOptions {
 
 function checkApiKey(req: Request, apiKey: string): boolean {
   return req.headers['x-api-key'] === apiKey;
+}
+
+// ---------------------------------------------------------------------------
+// Auth session store — lightweight in-memory token map (no external deps)
+// ---------------------------------------------------------------------------
+
+export interface AuthSession {
+  expiresAt: number;
+  discordUserId: string;
+  discordUsername: string;
+  discordRoles: {
+    verified: boolean;
+    bar3_client: boolean;
+    bar3_server: boolean;
+  };
+}
+
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const _sessions = new Map<string, AuthSession>();
+
+function _issueToken(data: Omit<AuthSession, 'expiresAt'>): string {
+  const token = `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  _sessions.set(token, { ...data, expiresAt: Date.now() + SESSION_TTL_MS });
+  return token;
+}
+
+function _getSession(token: string): AuthSession | null {
+  const s = _sessions.get(token);
+  if (!s) return null;
+  if (s.expiresAt < Date.now()) { _sessions.delete(token); return null; }
+  return s;
+}
+
+function _revokeToken(token: string): void {
+  _sessions.delete(token);
+}
+
+/** Purge expired sessions (call periodically or inline). */
+function _purgeExpired(): void {
+  const now = Date.now();
+  for (const [k, v] of _sessions) {
+    if (v.expiresAt < now) _sessions.delete(k);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Auth HTML pages
+// ---------------------------------------------------------------------------
+
+const _LOGIN_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Bar3 — Login</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#1a1a2e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e0e0e0}
+    .card{background:#16213e;border:1px solid #0f3460;border-radius:12px;padding:48px 40px;max-width:400px;width:100%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+    h1{font-size:1.8rem;margin-bottom:8px;color:#e0e0e0}
+    p{color:#a0a0b0;margin-bottom:32px;font-size:.95rem}
+    .btn-discord{display:inline-flex;align-items:center;gap:12px;background:#5865F2;color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-size:1rem;font-weight:600;transition:background .2s}
+    .btn-discord:hover{background:#4752c4}
+    .btn-discord svg{width:22px;height:22px;fill:#fff}
+    .error{background:#3d1515;border:1px solid #8b2121;border-radius:8px;padding:12px 16px;margin-bottom:24px;color:#ff8080;font-size:.9rem}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Bar3</h1>
+    <p>Sign in with Discord to continue.<br/>You must be a member of the Bar3 server.</p>
+    {{ERROR_BLOCK}}
+    <a href="{{DISCORD_LOGIN_HREF}}" class="btn-discord">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.033.055a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+      </svg>
+      Login with Discord
+    </a>
+  </div>
+</body>
+</html>`;
+
+const _ACCESS_DENIED_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Bar3 — Access Denied</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#1a1a2e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e0e0e0}
+    .card{background:#16213e;border:1px solid #3d1515;border-radius:12px;padding:48px 40px;max-width:420px;width:100%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+    h1{font-size:1.8rem;margin-bottom:16px;color:#ff8080}
+    p{color:#a0a0b0;margin-bottom:28px;font-size:.95rem;line-height:1.6}
+    a{color:#5865F2;text-decoration:none}
+    a:hover{text-decoration:underline}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Access Denied</h1>
+    <p>You do not have the required role in the Bar3 Discord server to access this application.</p>
+    <p><a href="/auth/login">← Back to login</a></p>
+  </div>
+</body>
+</html>`;
+
+// ---------------------------------------------------------------------------
+// OAuth2 helpers — uses native fetch (Node 18+)
+// ---------------------------------------------------------------------------
+
+interface DiscordTokenResponse { access_token: string; token_type: string; }
+interface DiscordUser { id: string; username: string; }
+
+async function _discordExchangeCode(code: string): Promise<DiscordTokenResponse | null> {
+  const body = new URLSearchParams({
+    client_id: DISCORD_CLIENT_ID,
+    client_secret: DISCORD_CLIENT_SECRET,
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: DISCORD_REDIRECT_URI,
+  });
+  const res = await fetch('https://discord.com/api/oauth2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+  if (!res.ok) return null;
+  return res.json() as Promise<DiscordTokenResponse>;
+}
+
+async function _discordGetMe(accessToken: string): Promise<DiscordUser | null> {
+  const res = await fetch('https://discord.com/api/users/@me', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) return null;
+  return res.json() as Promise<DiscordUser>;
 }
 
 const EGG_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="420" viewBox="0 0 320 420">
@@ -237,6 +409,181 @@ export function createApp(options: CreateAppOptions): Application {
 
     const result = await sendToWelcomeFn(message);
     res.status(200).json(result);
+  });
+
+  // -------------------------------------------------------------------------
+  // Discord OAuth2 auth flow
+  // -------------------------------------------------------------------------
+
+  /** GET /auth/login — show the HTML login page */
+  app.get('/auth/login', (req: Request, res: Response) => {
+    const error = typeof req.query['error'] === 'string' ? req.query['error'] : null;
+    let errorBlock = '';
+    if (error === 'no_role') {
+      errorBlock = '<div class="error">You do not have the required role in the Bar3 Discord server.</div>';
+    } else if (error === 'auth_failed') {
+      errorBlock = '<div class="error">Discord authentication failed. Please try again.</div>';
+    } else if (error === 'no_code') {
+      errorBlock = '<div class="error">No authorization code received from Discord. Please try again.</div>';
+    } else if (error === 'not_configured') {
+      errorBlock = '<div class="error">Discord OAuth2 is not configured on this server.</div>';
+    }
+    const returnTo = typeof req.query['returnTo'] === 'string' ? req.query['returnTo'] : '';
+    const discordLoginHref = returnTo
+      ? `/auth/discord?returnTo=${encodeURIComponent(returnTo)}`
+      : '/auth/discord';
+    const html = _LOGIN_HTML
+      .replace('{{ERROR_BLOCK}}', errorBlock)
+      .replace('{{DISCORD_LOGIN_HREF}}', discordLoginHref);
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+  });
+
+  /** GET /auth/discord — redirect to Discord OAuth2 authorization */
+  app.get('/auth/discord', (req: Request, res: Response) => {
+    if (!DISCORD_CLIENT_ID) {
+      res.redirect('/auth/login?error=not_configured');
+      return;
+    }
+    const mobile = req.query['mobile'] === '1';
+    const params = new URLSearchParams({
+      client_id: DISCORD_CLIENT_ID,
+      redirect_uri: DISCORD_REDIRECT_URI,
+      response_type: 'code',
+      scope: 'identify',
+    });
+    if (mobile) params.set('state', 'mobile');
+    const returnTo = typeof req.query['returnTo'] === 'string' ? req.query['returnTo'] : '';
+    if (returnTo) params.set('state', mobile ? `mobile:${returnTo}` : `web:${returnTo}`);
+    res.redirect(`https://discord.com/oauth2/authorize?${params.toString()}`);
+  });
+
+  /** GET /auth/discord/callback — handle OAuth2 callback */
+  app.get('/auth/discord/callback', async (req: Request, res: Response) => {
+    const code = typeof req.query['code'] === 'string' ? req.query['code'] : '';
+    if (!code) {
+      res.redirect('/auth/login?error=no_code');
+      return;
+    }
+
+    _purgeExpired();
+
+    try {
+      const tokenData = await _discordExchangeCode(code);
+      if (!tokenData?.access_token) {
+        res.redirect('/auth/login?error=auth_failed');
+        return;
+      }
+
+      const me = await _discordGetMe(tokenData.access_token);
+      if (!me?.id) {
+        res.redirect('/auth/login?error=auth_failed');
+        return;
+      }
+
+      // Check roles via bot's guild membership cache
+      const guild = guildGetter();
+      const discordRoles: AuthSession['discordRoles'] = {
+        verified: false,
+        bar3_client: false,
+        bar3_server: false,
+      };
+      if (guild) {
+        let member: GuildMember | null = guild.members.cache.get(me.id) ?? null;
+        if (!member) {
+          try { member = await guild.members.fetch(me.id); } catch { member = null; }
+        }
+        if (member) {
+          const memberRoleIds = new Set(member.roles.cache.keys());
+          if (roleConfig.verifiedRoleId && memberRoleIds.has(roleConfig.verifiedRoleId.toString())) discordRoles.verified = true;
+          if (roleConfig.bar3ClientRoleId && memberRoleIds.has(roleConfig.bar3ClientRoleId.toString())) discordRoles.bar3_client = true;
+          if (roleConfig.bar3ServerRoleId && memberRoleIds.has(roleConfig.bar3ServerRoleId.toString())) discordRoles.bar3_server = true;
+        }
+      }
+
+      const hasAccess = discordRoles.bar3_client || discordRoles.bar3_server;
+      if (!hasAccess) {
+        res.send(_ACCESS_DENIED_HTML);
+        return;
+      }
+
+      const token = _issueToken({ discordUserId: me.id, discordUsername: me.username, discordRoles });
+
+      // Parse returnTo from state
+      const state = typeof req.query['state'] === 'string' ? req.query['state'] : '';
+      const isMobile = state === 'mobile' || state.startsWith('mobile:');
+      const savedReturnTo = state.startsWith('mobile:') ? state.slice(7)
+        : state.startsWith('web:') ? state.slice(4)
+        : '';
+
+      if (isMobile) {
+        const base = CLIENT_APP_URL || '';
+        const dest = savedReturnTo ? `${base}${savedReturnTo}` : base;
+        res.redirect(`${dest}?mobileToken=${encodeURIComponent(token)}`);
+        return;
+      }
+
+      let destination: string;
+      if (CLIENT_APP_URL) {
+        destination = savedReturnTo ? `${CLIENT_APP_URL}${savedReturnTo}` : `${CLIENT_APP_URL}/dashboard`;
+      } else {
+        destination = savedReturnTo || '/';
+      }
+      // Append the token to the destination so the SPA can store it
+      const sep = destination.includes('?') ? '&' : '?';
+      res.redirect(`${destination}${sep}token=${encodeURIComponent(token)}`);
+    } catch (err) {
+      console.error('[Auth] OAuth callback error:', (err as Error).message ?? err);
+      res.redirect('/auth/login?error=auth_failed');
+    }
+  });
+
+  /** GET /auth/session?token=<token> — check session validity */
+  app.get('/auth/session', (req: Request, res: Response) => {
+    const token = typeof req.query['token'] === 'string' ? req.query['token'] : '';
+    if (!token) {
+      res.status(400).json({ error: 'Missing token' });
+      return;
+    }
+    const session = _getSession(token);
+    if (!session) {
+      res.status(401).json({ authenticated: false });
+      return;
+    }
+    res.status(200).json({
+      authenticated: true,
+      user: { id: session.discordUserId, username: session.discordUsername },
+      roles: session.discordRoles,
+      isAdmin: ADMIN_DISCORD_IDS.has(BigInt(session.discordUserId)),
+    });
+  });
+
+  /** GET /auth/mobile-session?token=<token> — alias kept for bar3-client compatibility */
+  app.get('/auth/mobile-session', (req: Request, res: Response) => {
+    const token = typeof req.query['token'] === 'string' ? req.query['token'] : '';
+    if (!token) {
+      res.status(400).json({ error: 'Missing token' });
+      return;
+    }
+    const session = _getSession(token);
+    if (!session) {
+      res.status(401).json({ authenticated: false });
+      return;
+    }
+    res.status(200).json({
+      authenticated: true,
+      user: { id: session.discordUserId, username: session.discordUsername },
+      roles: session.discordRoles,
+      isAdmin: ADMIN_DISCORD_IDS.has(BigInt(session.discordUserId)),
+    });
+  });
+
+  /** POST /auth/logout — revoke a session token */
+  app.post('/auth/logout', (req: Request, res: Response) => {
+    const body = req.body as Record<string, unknown>;
+    const token = typeof body['token'] === 'string' ? body['token'] : '';
+    if (token) _revokeToken(token);
+    res.status(200).json({ ok: true });
   });
 
   return app;

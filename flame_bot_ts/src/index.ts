@@ -48,6 +48,8 @@ import {
   MAX_AIRCRAFT_PER_CITY,
   MAX_SHIPS_PER_CITY,
   MAX_DEFENSIVE_SLOTS,
+  WAR_RANGE_MIN_RATIO,
+  WAR_RANGE_MAX_RATIO,
   calculateInfraCost,
   calculateCityCost,
   computeNationRevenue,
@@ -972,16 +974,25 @@ async function main(): Promise<void> {
     new SlashCommandBuilder().setName('setup_recruiter_list').setDescription('List recruiter subscription channels'),
     new SlashCommandBuilder().setName('admin_api_key_set').setDescription('Set runtime PnW API key').addStringOption(o => o.setName('api_key').setDescription('PnW API key').setRequired(true)),
     new SlashCommandBuilder().setName('help').setDescription('Show bot command help'),
-    new SlashCommandBuilder().setName('infra').setDescription('Calculate infra purchase cost').addNumberOption(o => o.setName('from').setDescription('Current infra').setRequired(true)).addNumberOption(o => o.setName('to').setDescription('Target infra').setRequired(true)).addIntegerOption(o => o.setName('cities').setDescription('Number of cities').setRequired(true)),
+    new SlashCommandBuilder().setName('infra').setDescription('Calculate infra purchase cost')
+      .addNumberOption(o => o.setName('from').setDescription('Current infra level per city').setRequired(true))
+      .addNumberOption(o => o.setName('to').setDescription('Target infra level per city').setRequired(true))
+      .addIntegerOption(o => o.setName('cities').setDescription('Number of cities (default: 1)').setMinValue(1))
+      .addBooleanOption(o => o.setName('urban_planning').setDescription('Urban Planning project? (−5% cost)'))
+      .addBooleanOption(o => o.setName('advanced_urban_planning').setDescription('Advanced Urban Planning? (−10% cost, stacks with UP)')),
     new SlashCommandBuilder().setName('city_cost').setDescription('Calculate city purchase cost using the live dynamic formula')
       .addIntegerOption(o => o.setName('current').setDescription('Current number of cities').setRequired(true).setMinValue(0))
       .addIntegerOption(o => o.setName('target').setDescription('Target number of cities (defaults to current + 1)').setMinValue(1))
       .addBooleanOption(o => o.setName('manifest_destiny').setDescription('Is the nation\'s domestic policy Manifest Destiny? (−5% cost)'))
       .addBooleanOption(o => o.setName('government_support_agency').setDescription('Does the nation have Government Support Agency? (additional −2.5%)')),
     new SlashCommandBuilder().setName('revenue').setDescription('Show estimated gross daily revenue for a nation (or your own if omitted)').addStringOption(o => o.setName('query').setDescription('Optional: a nation ID, @mention, nation name, or Discord username')),
-    new SlashCommandBuilder().setName('war_range_targets').setDescription('Show slotter alliance targets and highlight war range'),
-    new SlashCommandBuilder().setName('spy_target_find').setDescription('Show slotter alliance targets and highlight spy range'),
-    new SlashCommandBuilder().setName('missile_targets_find').setDescription('Show slotter alliance targets and highlight missile range'),
+    new SlashCommandBuilder().setName('war_range_targets').setDescription('Show nations in your war range with open defensive slots')
+      .addUserOption(o => o.setName('user').setDescription('Discord user to look up (defaults to yourself)')),
+    new SlashCommandBuilder().setName('spy_target_find').setDescription('Find spy targets in given alliances by city count')
+      .addStringOption(o => o.setName('alliances').setDescription('Comma-separated alliance names or IDs (e.g. Rose, Camelot)').setRequired(true))
+      .addBooleanOption(o => o.setName('ignore_score_range').setDescription('If true, do not mark nations in your personal spy range')),
+    new SlashCommandBuilder().setName('missile_targets_find').setDescription('Top 20 nations in /slots alliances with open defensive slots, sorted by avg infra')
+      .addBooleanOption(o => o.setName('ignore_score_range').setDescription('If true, do not mark nations in your personal score range')),
     new SlashCommandBuilder().setName('admin_sync_commands').setDescription('Sync slash commands now'),
     new SlashCommandBuilder().setName('admin_clear_guild_commands').setDescription('Clear guild-scoped commands'),
 
@@ -1064,55 +1075,68 @@ async function main(): Promise<void> {
       }
 
       if (interaction.commandName === 'send') {
-        const receiverRaw = interaction.options.getString('receiver', true).trim();
-        let receiver = receiverRaw.replace(/\D/g, '');
-        if (!receiver) {
-          const row = await db.getByDiscordUsername(receiverRaw);
-          if (row) receiver = String(row.nation_id);
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        await interaction.deferReply({ ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], ephemeral: true });
         }
-        if (!receiver) return void interaction.reply({ content: 'Could not resolve receiver nation ID.', ephemeral: true });
-
+        const isAdmin = (() => {
+          const m = interaction.member as any;
+          return ADMIN_DISCORD_IDS.has(BigInt(interaction.user.id)) ||
+            (m?.permissions && typeof m.permissions !== 'string' && m.permissions.has('Administrator'));
+        })();
+        if (!isAdmin && !await hasGovAccess(interaction, db, ['econ', 'econ_gov'])) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Economics** role to use this command.').setColor(0xE74C3C)], ephemeral: true });
+        }
+        const receiverRaw = interaction.options.getString('receiver', true).trim();
         const sender = interaction.options.getString('sender')?.trim() ?? '';
         const bankNoteInput = interaction.options.getString('bank_note') ?? '#grant';
         const bankNote = bankNoteInput.startsWith('#') ? bankNoteInput : `#${bankNoteInput}`;
 
-        const resources: Record<string, number> = {
-          money: interaction.options.getNumber('money') ?? 0,
-          food: interaction.options.getNumber('food') ?? 0,
-          coal: interaction.options.getNumber('coal') ?? 0,
-          oil: interaction.options.getNumber('oil') ?? 0,
-          uranium: interaction.options.getNumber('uranium') ?? 0,
-          iron: interaction.options.getNumber('iron') ?? 0,
-          bauxite: interaction.options.getNumber('bauxite') ?? 0,
-          lead: interaction.options.getNumber('lead') ?? 0,
-          gasoline: interaction.options.getNumber('gasoline') ?? 0,
-          munitions: interaction.options.getNumber('munitions') ?? 0,
-          steel: interaction.options.getNumber('steel') ?? 0,
-          aluminum: interaction.options.getNumber('aluminum') ?? 0,
-        };
-        const transferItems = Object.entries(resources)
-          .filter(([,v]) => v && v > 0)
-          .map(([k,v]) => `${k}:${Math.trunc(v)}`)
-          .join(', ');
-        const cmd = `/transfer resources receiver:${receiver} transfer:{ ${transferItems || 'money:0'} } bank_note:${bankNote}` + (sender ? ` sender:${sender}` : '');
-        const summary = Object.entries(resources).filter(([,v]) => v && v > 0).map(([k,v]) => `${k}: ${Math.trunc(v).toLocaleString()}`).join('\n') || 'No resources specified';
+        // Resolve receiver: try registered nation by mention, else use raw string
+        let receiver = receiverRaw;
+        const mentionMatch = /^<@!?(\d+)>$/.exec(receiverRaw);
+        if (mentionMatch) {
+          const row = await db.getByDiscordId(BigInt(mentionMatch[1]!));
+          if (row) receiver = String(row.nation_id);
+        }
 
-        return void interaction.reply({
-          embeds: [
-            new EmbedBuilder()
-              .setTitle('Transfer command')
-              .setDescription(`Receiver: ${receiver}\nSender: ${sender || '(default)'}\nBank note: ${bankNote}\n\n${summary}\n\n\`\`\`${cmd}\`\`\``),
-          ],
-        });
+        const fmtAmt = (v: number) => (v === Math.trunc(v) ? String(Math.trunc(v)) : String(v));
+        const resources: Record<string, number> = {};
+        for (const key of ['money','food','coal','oil','uranium','iron','bauxite','lead','gasoline','munitions','steel','aluminum']) {
+          const v = interaction.options.getNumber(key) ?? 0;
+          if (v > 0) resources[key] = v;
+        }
+        if (!Object.keys(resources).length) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Please provide at least one resource amount greater than zero.').setColor(0xE74C3C)], ephemeral: true });
+        }
+        const transferJson = '{' + Object.entries(resources).map(([k, v]) => `${k}:${fmtAmt(v)}`).join(',') + '}';
+        const locutusCmd = `/transfer resources receiver:${receiver} transfer:${transferJson} bank_note:${bankNote}`;
+
+        const embed = new EmbedBuilder().setTitle('💸 Resource Transfer Request').setColor(0x2ECC71);
+        if (sender) embed.addFields({ name: 'From', value: sender, inline: true });
+        embed.addFields(
+          { name: 'To', value: receiver, inline: true },
+          { name: 'Requested by', value: `<@${interaction.user.id}>`, inline: true },
+          { name: 'Bank note', value: bankNote, inline: true },
+          { name: 'Resources', value: Object.entries(resources).map(([k, v]) => `**${k.charAt(0).toUpperCase() + k.slice(1)}:** ${fmtAmt(v)}`).join('\n'), inline: false },
+          { name: 'Locutus Command', value: `\`\`\`${locutusCmd}\`\`\``, inline: false },
+        );
+        return void interaction.followUp({ embeds: [embed] });
       }
 
       if (interaction.commandName === 'suggestion') {
+        await interaction.deferReply({ ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], ephemeral: true });
+        }
         const content = interaction.options.getString('content', true).trim();
-        if (!content) return void interaction.reply({ content: '❌ Suggestion content cannot be empty.', ephemeral: true });
-        if (content.length > 1800) return void interaction.reply({ content: '❌ Suggestion is too long. Please keep it under 1800 characters.', ephemeral: true });
+        if (!content) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Suggestion content cannot be empty.').setColor(0xE74C3C)], ephemeral: true });
+        if (content.length > 1800) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Suggestion is too long. Please keep it under 1800 characters.').setColor(0xE74C3C)], ephemeral: true });
         const SUGGESTION_DM_USERNAMES = ['glaernisch', 'glaernischtheonly'];
         const dmMessage = `📬 **New /suggestion submission**\nFrom: ${interaction.user} (ID: ${interaction.user.id})\nGuild: ${interaction.guild?.name ?? 'DM/Unknown'}\nContent:\n${content}`;
         const sentTo: string[] = [];
+        const missing: string[] = [];
         const wanted = new Set(SUGGESTION_DM_USERNAMES.map((u) => u.toLowerCase()));
         const found = new Map<string, GuildMember>();
         for (const guild of client.guilds.cache.values()) {
@@ -1124,14 +1148,16 @@ async function main(): Promise<void> {
         }
         for (const username of SUGGESTION_DM_USERNAMES) {
           const userObj = found.get(username.toLowerCase());
-          if (!userObj) continue;
-          try { await userObj.send(dmMessage); sentTo.push(username); } catch { /* ignore */ }
+          if (!userObj) { missing.push(username); continue; }
+          try { await userObj.send(dmMessage); sentTo.push(username); } catch { missing.push(username); }
         }
-        const statusLine = sentTo.length
+        const statusLines: string[] = [];
+        statusLines.push(sentTo.length
           ? `✅ DMs sent to: ${sentTo.map((u) => `\`${u}\``).join(', ')}.`
-          : '⚠️ No suggestion DMs were delivered (bot developer not found in shared servers).';
+          : '⚠️ No suggestion DMs were delivered.');
+        if (missing.length) statusLines.push(`ℹ️ Could not DM: ${missing.map((u) => `\`${u}\``).join(', ')}.`);
         console.log(`Suggestion from ${interaction.user.id}: ${content}`);
-        return void interaction.reply({ embeds: [new EmbedBuilder().setDescription(statusLine).setColor(0x2ECC71)], ephemeral: true });
+        return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(statusLines.join('\n')).setColor(0x2ECC71)], ephemeral: true });
       }
 
 
@@ -1385,35 +1411,177 @@ ${resourceLines}
 
       if (interaction.commandName === 'color') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: '❌ You need the **Member** role to use this command.', ephemeral: true });
+        await interaction.deferReply();
         const allianceId = await db.getAllianceId(BigInt(interaction.guildId));
-        if (!allianceId) return void interaction.reply({ content: 'Primary alliance is not configured.', ephemeral: true });
-        const alliance = await pnw.getAllianceById(allianceId);
-        if (!alliance) return void interaction.reply({ content: 'Alliance not found.', ephemeral: true });
-        const members = await pnw.getAllianceMembers([allianceId]);
-        const expected = (alliance.color || '').toLowerCase();
-        const wrong = members.filter((m) => !m.beigeTurns && (m.color || '').toLowerCase() !== expected);
-        const desc = wrong.length
-          ? wrong.slice(0, 30).map((m) => `• ${m.nationName} (${m.nationId}) is **${m.color || 'none'}**`).join('\n')
-          : 'All active members are on the correct color.';
-        return void interaction.reply({ embeds: [new EmbedBuilder().setTitle(`Alliance color check: ${alliance.name}`).setDescription(desc)] });
+        if (!allianceId) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ No primary alliance configured. An admin can use `/admin_alliance_set` to set one.').setColor(0x3498DB)] });
+        let alliance: import('./pnw_api').AllianceInfo | null;
+        let members: Nation[];
+        try {
+          [alliance, members] = await Promise.all([
+            pnw.getAllianceById(allianceId),
+            pnw.getAllianceMembers([allianceId]),
+          ]);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Could not reach the Politics and War API: ${msg}`).setColor(0xE74C3C)] });
+        }
+        if (!alliance) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Alliance **${allianceId}** not found on Politics and War.`).setColor(0xE74C3C)] });
+        if (!members.length) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ No active members found for the configured alliance.').setColor(0x3498DB)] });
+        const expected = (alliance.color || '').trim().toLowerCase();
+        const wrong = members.filter((m) => {
+          const col = (m.color || '').trim().toLowerCase();
+          return col !== 'beige' && col !== expected;
+        });
+        if (!wrong.length) {
+          const embed = new EmbedBuilder()
+            .setTitle('✅ Color Check')
+            .setDescription(`All active members of **${alliance.name}** are on the correct color (**${expected.charAt(0).toUpperCase() + expected.slice(1)}**).`)
+            .setColor(0x2ECC71)
+            .setFooter({ text: `${members.length} members checked` });
+          return void interaction.followUp({ embeds: [embed] });
+        }
+        const lines = wrong.map((m) =>
+          `[${m.nationName}](${nationUrl(m.nationId)}) — 🎨 **${(m.color || 'none').charAt(0).toUpperCase() + (m.color || 'none').slice(1)}** (expected **${expected.charAt(0).toUpperCase() + expected.slice(1)}**)`
+        );
+        const embed = new EmbedBuilder()
+          .setTitle(`⚠️ Color Check — ${alliance.name}`)
+          .setDescription(lines.join('\n'))
+          .setColor(0xFF9500)
+          .setFooter({ text: `${wrong.length} member(s) on wrong color · ${members.length} total checked · expected: ${expected.charAt(0).toUpperCase() + expected.slice(1)}` });
+        return void interaction.followUp({ embeds: [embed] });
       }
       if (interaction.commandName === 'damage_leaderboard') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
         const allianceId = await db.getAllianceId(BigInt(interaction.guildId));
         if (!allianceId) return void interaction.reply({ content: 'Primary alliance is not configured.', ephemeral: true });
+        await interaction.deferReply();
         const after = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        const data = await pnw.getAllianceDamage(allianceId, after);
-        const rows = Array.from(data.entries()).map(([nationId, e]) => {
-          const infra = Number(e['infra_value'] || 0);
-          const loot = Number(e['money_looted'] || 0);
-          const res = Number(e['gas_looted'] || 0) + Number(e['mun_looted'] || 0) + Number(e['alum_looted'] || 0) + Number(e['steel_looted'] || 0);
-          const total = infra + loot + res;
-          return { nationId, name: String(e['nation_name'] || nationId), total };
-        }).sort((a,b) => b.total - a.total).slice(0, 20);
-        const desc = rows.length
-          ? rows.map((r, i) => `${i+1}. **${r.name}** (${r.nationId}) — $${Math.round(r.total).toLocaleString()}`).join('\n')
-          : 'No recent damage data.';
-        return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('7-day damage leaderboard').setDescription(desc)] });
+        let damageData: Map<number, Record<string, unknown>>;
+        let prices: import('./pnw_api').TradePrice;
+        let allMembers: Nation[];
+        try {
+          [damageData, prices, allMembers] = await Promise.all([
+            pnw.getAllianceDamage(allianceId, after),
+            pnw.getTradePrices().catch(() => ({ gasoline: 2000, munitions: 1800, aluminum: 3200, steel: 4000 })),
+            pnw.getAllianceMembers([allianceId]).catch(() => [] as Nation[]),
+          ]);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Could not reach the Politics and War API: ${msg}`).setColor(0xE74C3C)] });
+        }
+        // Include all current members (even zero-damage ones)
+        for (const member of allMembers) {
+          if (!damageData.has(member.nationId)) {
+            damageData.set(member.nationId, {
+              nation_name: member.nationName, num_cities: member.numCities,
+              infra_value: 0, money_looted: 0, gas_looted: 0, mun_looted: 0,
+              alum_looted: 0, steel_looted: 0, def_gas_used: 0, def_mun_used: 0,
+              def_alum_used: 0, def_steel_used: 0, def_soldiers_killed: 0,
+              def_tanks_killed: 0, def_aircraft_killed: 0, def_ships_sunk: 0,
+            });
+          }
+        }
+        if (!damageData.size) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ No members found for the configured alliance.').setColor(0x3498DB)] });
+
+        const fmtK = (v: number) => {
+          if (Math.abs(v) >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+          if (Math.abs(v) >= 10_000) return `$${(v / 1_000).toFixed(0)}K`;
+          return `$${v.toFixed(0)}`;
+        };
+        const calcMetrics = (e: Record<string, unknown>) => {
+          const n = (x: unknown) => Number(x ?? 0);
+          const infra = n(e['infra_value']);
+          const resDmg =
+            (n(e['def_gas_used']) + n(e['gas_looted'])) * prices.gasoline +
+            (n(e['def_mun_used']) + n(e['mun_looted'])) * prices.munitions +
+            (n(e['def_alum_used']) + n(e['alum_looted'])) * prices.aluminum +
+            (n(e['def_steel_used']) + n(e['steel_looted'])) * prices.steel +
+            n(e['def_soldiers_killed']) * 5.0 +
+            n(e['def_tanks_killed']) * (60.0 + 0.5 * prices.steel) +
+            n(e['def_aircraft_killed']) * (4_000.0 + 10.0 * prices.aluminum) +
+            n(e['def_ships_sunk']) * (50_000.0 + 30.0 * prices.steel);
+          const loot = n(e['money_looted']) +
+            n(e['gas_looted']) * prices.gasoline + n(e['mun_looted']) * prices.munitions +
+            n(e['alum_looted']) * prices.aluminum + n(e['steel_looted']) * prices.steel;
+          const total = infra + resDmg;
+          const cities = Math.max(1, n(e['num_cities']));
+          return { infra, resDmg, loot, total, dmgCity: total / cities };
+        };
+
+        const SORT_MODES = ['total', 'loot', 'dmg_city', 'infra', 'res_dmg'] as const;
+        type SortMode = typeof SORT_MODES[number];
+        const SORT_LABELS: Record<SortMode, string> = { total: '📊 Total', loot: '💰 Loot', dmg_city: '💥 /City', infra: '🏗️ Infra', res_dmg: '💥 Res Dmg' };
+        const LB_PAGE_SIZE = 10;
+
+        const allNations = Array.from(damageData.entries());
+        let sortMode: SortMode = 'total';
+        let lbPage = 0;
+
+        const getSorted = () => [...allNations].sort((a, b) => {
+          const ma = calcMetrics(a[1]);
+          const mb = calcMetrics(b[1]);
+          return mb[sortMode === 'dmg_city' ? 'dmgCity' : sortMode === 'res_dmg' ? 'resDmg' : sortMode as 'total'|'loot'|'infra'] -
+                 ma[sortMode === 'dmg_city' ? 'dmgCity' : sortMode === 'res_dmg' ? 'resDmg' : sortMode as 'total'|'loot'|'infra'];
+        });
+
+        const buildLbEmbed = (sorted: [number, Record<string, unknown>][], pg: number, sm: SortMode) => {
+          const total = sorted.length;
+          const totalPages = Math.max(1, Math.ceil(total / LB_PAGE_SIZE));
+          const safePg = Math.max(0, Math.min(pg, totalPages - 1));
+          const chunk = sorted.slice(safePg * LB_PAGE_SIZE, (safePg + 1) * LB_PAGE_SIZE);
+          const lines = chunk.map(([nationId, e], idx) => {
+            const rank = safePg * LB_PAGE_SIZE + idx + 1;
+            const m = calcMetrics(e);
+            const cities = Math.max(1, Number(e['num_cities'] ?? 1));
+            const name = String(e['nation_name'] ?? nationId);
+            const bold = (s: string, active: boolean) => active ? `**${s}**` : s;
+            const stats = [
+              bold(`📊 ${fmtK(m.total)} (${fmtK(m.total / cities)}/c)`, sm === 'total' || sm === 'dmg_city'),
+              bold(`🏗️ ${fmtK(m.infra)}`, sm === 'infra'),
+              bold(`💥 ${fmtK(m.resDmg)}`, sm === 'res_dmg'),
+              bold(`💰 ${fmtK(m.loot)}`, sm === 'loot'),
+            ].join('  ');
+            return `**${rank}.** [${name}](${nationUrl(nationId)})  ·  ${cities}🏙️\n${stats}`;
+          });
+          const footerParts = [`Sorted: ${SORT_LABELS[sm]}`, `Page ${safePg + 1}/${totalPages}`, `${total} members`, `g:${Math.round(prices.gasoline)} m:${Math.round(prices.munitions)} a:${Math.round(prices.aluminum)} s:${Math.round(prices.steel)} ppu`];
+          return new EmbedBuilder()
+            .setTitle(`⚔️ War Leaderboard — Past 7 Days`)
+            .setDescription(lines.join('\n\n') || '*No data.*')
+            .setColor(0xF1C40F)
+            .setFooter({ text: footerParts.join('  ·  ') });
+        };
+
+        const buildLbRow = (sorted: [number, Record<string, unknown>][], pg: number, sm: SortMode) => {
+          const totalPages = Math.max(1, Math.ceil(sorted.length / LB_PAGE_SIZE));
+          const sortRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+            ...SORT_MODES.map(mode =>
+              new ButtonBuilder().setCustomId(`lb_sort_${mode}`).setLabel(SORT_LABELS[mode]).setStyle(mode === sm ? ButtonStyle.Primary : ButtonStyle.Secondary)
+            )
+          );
+          const navRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder().setCustomId('lb_prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(pg === 0),
+            new ButtonBuilder().setCustomId('lb_next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(pg >= totalPages - 1),
+          );
+          return totalPages > 1 ? [sortRow, navRow] : [sortRow];
+        };
+
+        let sorted = getSorted();
+        const lbMsg = await interaction.followUp({ embeds: [buildLbEmbed(sorted, lbPage, sortMode)], components: buildLbRow(sorted, lbPage, sortMode) });
+        const lbCollector = lbMsg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
+        lbCollector.on('collect', async (btn) => {
+          if (btn.user.id !== interaction.user.id) { await btn.reply({ content: 'Only the command caller can use these buttons.', ephemeral: true }); return; }
+          if (btn.customId.startsWith('lb_sort_')) {
+            sortMode = btn.customId.replace('lb_sort_', '') as SortMode;
+            lbPage = 0;
+            sorted = getSorted();
+          } else if (btn.customId === 'lb_prev' && lbPage > 0) { lbPage -= 1; }
+          else if (btn.customId === 'lb_next') { lbPage += 1; }
+          await btn.update({ embeds: [buildLbEmbed(sorted, lbPage, sortMode)], components: buildLbRow(sorted, lbPage, sortMode) });
+        });
+        lbCollector.on('end', async () => { try { await interaction.editReply({ components: [] }); } catch { /**/ } });
+        return;
       }
 
 
@@ -1487,14 +1655,33 @@ Message: ${cfg.message}`)],
       if (interaction.commandName === 'infra') {
         const from = interaction.options.getNumber('from', true);
         const to = interaction.options.getNumber('to', true);
-        const cities = interaction.options.getInteger('cities', true);
+        const cities = interaction.options.getInteger('cities') ?? 1;
+        const urbanPlanning = interaction.options.getBoolean('urban_planning') ?? false;
+        const advancedUrbanPlanning = interaction.options.getBoolean('advanced_urban_planning') ?? false;
         if (to <= from) return void interaction.reply({ content: 'Target infra must be greater than current infra.', ephemeral: true });
-        const perCity = calculateInfraCost(from, to);
-        const total = perCity * cities;
-        return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('Infrastructure cost').setDescription(`From ${from.toFixed(2)} to ${to.toFixed(2)}
-Cities: ${cities}
-Per city: **$${Math.round(perCity).toLocaleString()}**
-Total: **$${Math.round(total).toLocaleString()}**`)] });
+        if (from < 0 || to > 100_000) return void interaction.reply({ content: 'Infrastructure values must be between 0 and 100,000.', ephemeral: true });
+        if (cities < 1) return void interaction.reply({ content: 'Number of cities must be at least 1.', ephemeral: true });
+        const baseCostPerCity = calculateInfraCost(from, to);
+        let discount = 0.0;
+        const discountParts: string[] = [];
+        if (urbanPlanning) { discount += 0.05; discountParts.push('Urban Planning (−5%)'); }
+        if (advancedUrbanPlanning) { discount += 0.10; discountParts.push('Advanced Urban Planning (−10%)'); }
+        const discountedCostPerCity = baseCostPerCity * (1.0 - discount);
+        const total = discountedCostPerCity * cities;
+        const embed = new EmbedBuilder().setTitle('🏗️ Infrastructure Cost Calculator').setColor(0x3498DB);
+        embed.addFields(
+          { name: 'From', value: from.toFixed(2), inline: true },
+          { name: 'To', value: to.toFixed(2), inline: true },
+          { name: 'Amount', value: `+${(to - from).toFixed(2)}`, inline: true },
+          { name: 'Cost per City', value: `$${Math.round(discountedCostPerCity).toLocaleString()}`, inline: true },
+          { name: 'Cities', value: String(cities), inline: true },
+          { name: 'Total Cost', value: `**$${Math.round(total).toLocaleString()}**`, inline: true },
+          { name: discountParts.length ? `Discounts (−${Math.round(discount * 100)}% total)` : 'Discounts', value: discountParts.length ? discountParts.join('\n') : 'None', inline: false },
+        );
+        if (discount > 0) {
+          embed.setFooter({ text: `Base cost per city: $${Math.round(baseCostPerCity).toLocaleString()}  ·  Savings: $${Math.round((baseCostPerCity - discountedCostPerCity) * cities).toLocaleString()}` });
+        }
+        return void interaction.reply({ embeds: [embed] });
       }
       if (interaction.commandName === 'city_cost') {
         await interaction.deferReply();
@@ -1650,48 +1837,220 @@ Total: **$${Math.round(total).toLocaleString()}**`)] });
         revEmbed.setFooter({ text: `Food: ${rev.foodProduction.toFixed(2)} prod − ${rev.foodConsumption.toFixed(2)} use  ·  Season month: ${revGameInfo.gameMonth}  ·  Money net of improvement upkeep, before military upkeep & tax` });
         return void interaction.followUp({ embeds: [revEmbed] });
       }
-      if (interaction.commandName === 'war_range_targets' || interaction.commandName === 'spy_target_find' || interaction.commandName === 'missile_targets_find') {
+      if (interaction.commandName === 'war_range_targets') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        const reg = await db.getByDiscordId(BigInt(interaction.user.id));
-        if (!reg) return void interaction.reply({ content: 'You are not registered. Use /register first.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        await interaction.deferReply();
+        const targetUser = interaction.options.getUser('user') ?? interaction.user;
+        let me: Nation | null = null;
+        const reg = await db.getByDiscordId(BigInt(targetUser.id));
+        if (reg) {
+          try { me = await pnw.getNation(reg.nation_id); } catch { /**/ }
+        }
+        if (!me) {
+          try { me = await pnw.getNationByDiscordTag(targetUser.username); } catch { /**/ }
+        }
+        if (!me) {
+          const mention = targetUser.id !== interaction.user.id ? targetUser.toString() : 'You';
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`ℹ️ ${mention} ${targetUser.id !== interaction.user.id ? 'is' : 'are'} not registered. Use \`/register <nation_id>\` to link your Discord account.`).setColor(0x3498DB)] });
+        }
         const allianceIds = await db.getSlotsAlliances(BigInt(interaction.guildId));
-        if (!allianceIds.length) return void interaction.reply({ content: 'No slot alliances configured. Use /config_slots_set first.', ephemeral: true });
-
-        const me = await pnw.getNation(reg.nation_id);
-        if (!me) return void interaction.reply({ content: 'Your registered nation could not be loaded.', ephemeral: true });
-
-        const targets = await pnw.getNationsInAllianceByScoreRange(allianceIds, 0, Number.MAX_SAFE_INTEGER);
-        const range = interaction.commandName === 'spy_target_find'
-          ? { min: me.score * 0.4, max: me.score * 2.5 }
-          : { min: me.score * 0.75, max: me.score * 2.5 };
-
-        const sorted = [...targets].sort((a, b) => b.score - a.score).slice(0, 40);
-        const lines = sorted.map((t) => {
-          const inRange = t.score >= range.min && t.score <= range.max;
-          const marker = inRange ? '🟩' : '⬜';
-          if (interaction.commandName === 'spy_target_find') {
-            return `${marker} ${t.nationName} (${t.nationId}) — spies ${t.spies}, score ${t.score.toFixed(2)}, cities ${t.numCities}`;
-          }
-          if (interaction.commandName === 'missile_targets_find') {
-            return `${marker} ${t.nationName} (${t.nationId}) — missiles ${t.missiles}, ships ${t.ships}, score ${t.score.toFixed(2)}`;
-          }
-          return `${marker} ${t.nationName} (${t.nationId}) — score ${t.score.toFixed(2)}, cities ${t.numCities}, def wars ${t.defensiveWars}`;
+        if (!allianceIds.length) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ No alliances configured. An admin can use `/config_slots_set` to set them up.').setColor(0x3498DB)] });
+        let members: Nation[];
+        let warCountMap: Map<number, number>;
+        try {
+          [members, warCountMap] = await Promise.all([
+            pnw.getAllianceMembers(allianceIds),
+            pnw.getActiveDefWarCountsByAlliance(allianceIds),
+          ]);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Could not reach the Politics and War API: ${msg}`).setColor(0xE74C3C)] });
+        }
+        const minScore = me.score * WAR_RANGE_MIN_RATIO;
+        const maxScore = me.score * WAR_RANGE_MAX_RATIO;
+        const wrTargets: [Nation, number][] = members
+          .filter(n => n.score >= minScore && n.score <= maxScore && (warCountMap.get(n.nationId) ?? 0) < MAX_DEFENSIVE_SLOTS)
+          .map(n => [n, warCountMap.get(n.nationId) ?? 0]);
+        wrTargets.sort((a, b) => b[0].numCities - a[0].numCities);
+        if (!wrTargets.length) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`ℹ️ No nations from the configured alliance(s) are in your war range (${minScore.toFixed(0)}–${maxScore.toFixed(0)} score) with open defensive slots.`).setColor(0x3498DB)] });
+        const WR_PAGE_SIZE = 15;
+        const multiAlliance = new Set(wrTargets.map(([n]) => n.allianceId)).size > 1;
+        let wrPage = 0;
+        const buildWrEmbed = (pg: number) => {
+          const totalPages = Math.max(1, Math.ceil(wrTargets.length / WR_PAGE_SIZE));
+          const safePg = Math.max(0, Math.min(pg, totalPages - 1));
+          const chunk = wrTargets.slice(safePg * WR_PAGE_SIZE, (safePg + 1) * WR_PAGE_SIZE);
+          const lines = chunk.map(([t, defWars], idx) => {
+            const rank = safePg * WR_PAGE_SIZE + idx + 1;
+            const beige = t.beigeTurns > 0 ? ' 🔵' : '';
+            const aaTag = multiAlliance && t.allianceName ? ` [${t.allianceName}]` : '';
+            const openSlots = MAX_DEFENSIVE_SLOTS - defWars;
+            return `\`${String(rank).padStart(3, ' ')}.\` [${t.nationName}](${nationUrl(t.nationId)})${beige}${aaTag} — 🏙️ ${t.numCities} · 📊 ${t.score.toFixed(0)} | 🛡️ ${openSlots}/${MAX_DEFENSIVE_SLOTS} slots`;
+          });
+          const footer = [`${wrTargets.length} target(s) in range`, `Page ${safePg + 1}/${totalPages}`, 'open def slots only · 🔵 = beiged'].join('  ·  ');
+          return new EmbedBuilder()
+            .setTitle(`⚔️ War Range Targets for ${me!.nationName}`)
+            .setDescription(lines.join('\n') || '*(no targets found)*')
+            .setColor(0xFF9500)
+            .addFields(
+              { name: 'Your Score', value: me!.score.toFixed(2), inline: true },
+              { name: 'Min Target', value: minScore.toFixed(2), inline: true },
+              { name: 'Max Target', value: maxScore.toFixed(2), inline: true },
+            )
+            .setFooter({ text: footer });
+        };
+        const buildWrRow = (pg: number) => {
+          const totalPages = Math.max(1, Math.ceil(wrTargets.length / WR_PAGE_SIZE));
+          return new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder().setCustomId('wr_prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(pg === 0),
+            new ButtonBuilder().setCustomId('wr_next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(pg >= totalPages - 1),
+          );
+        };
+        const totalWrPages = Math.max(1, Math.ceil(wrTargets.length / WR_PAGE_SIZE));
+        const wrMsg = await interaction.followUp({ embeds: [buildWrEmbed(wrPage)], components: totalWrPages > 1 ? [buildWrRow(wrPage)] : [] });
+        if (totalWrPages <= 1) return;
+        const wrCollector = wrMsg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 300_000 });
+        wrCollector.on('collect', async (btn) => {
+          if (btn.user.id !== interaction.user.id) { await btn.reply({ content: 'Only the command caller can use these buttons.', ephemeral: true }); return; }
+          if (btn.customId === 'wr_prev' && wrPage > 0) wrPage -= 1;
+          else if (btn.customId === 'wr_next' && wrPage < totalWrPages - 1) wrPage += 1;
+          await btn.update({ embeds: [buildWrEmbed(wrPage)], components: [buildWrRow(wrPage)] });
         });
-
-        const title = interaction.commandName === 'spy_target_find'
-          ? `Spy targets for ${me.nationName}`
-          : interaction.commandName === 'missile_targets_find'
-            ? `Missile targets for ${me.nationName}`
-            : `War range targets for ${me.nationName}`;
-
-        const description = [
-          `Using registered nation **${me.nationName}** (${me.nationId}) and slotter alliances: ${allianceIds.join(', ')}`,
-          `Range: **${range.min.toFixed(2)} - ${range.max.toFixed(2)}**`,
-          lines.join('\n') || 'No targets found.',
-        ].join('\n\n');
-
-        return void interaction.reply({ embeds: [new EmbedBuilder().setTitle(title).setDescription(description)] });
+        wrCollector.on('end', async () => { try { await interaction.editReply({ components: [] }); } catch { /**/ } });
+        return;
       }
+
+      if (interaction.commandName === 'spy_target_find') {
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        const alliancesRaw = interaction.options.getString('alliances', true);
+        const ignoreRange = interaction.options.getBoolean('ignore_score_range') ?? false;
+        const names = alliancesRaw.split(',').map(s => s.trim()).filter(Boolean);
+        if (!names.length) return void interaction.reply({ content: 'Please provide at least one alliance name or ID.', ephemeral: true });
+        await interaction.deferReply();
+        const allianceIds: number[] = [];
+        const allianceNames: string[] = [];
+        const notFound: string[] = [];
+        for (const name of names) {
+          let info: AllianceInfo | null = null;
+          try { info = /^\d+$/.test(name) ? await pnw.getAllianceById(parseInt(name, 10)) : await pnw.getAllianceByName(name); } catch { /**/ }
+          if (!info) { notFound.push(name); } else if (!allianceIds.includes(info.allianceId)) { allianceIds.push(info.allianceId); allianceNames.push(info.name); }
+        }
+        if (notFound.length) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Alliance${notFound.length > 1 ? 's' : ''} not found: ${notFound.map(n => `**${n}**`).join(', ')}`).setColor(0xE74C3C)], ephemeral: true });
+        }
+        let spyMembers: Nation[];
+        try { spyMembers = await pnw.getAllianceMembers(allianceIds); } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Could not reach the Politics and War API: ${msg}`).setColor(0xE74C3C)] });
+        }
+        spyMembers = spyMembers.filter(m => !['APPLICANT', 'NOALLIANCE', ''].includes(m.alliancePosition));
+        spyMembers.sort((a, b) => b.numCities - a.numCities);
+        if (!spyMembers.length) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ No active members found in the given alliances.').setColor(0x3498DB)], ephemeral: true });
+        let spyRange: [number, number] | null = null;
+        if (!ignoreRange) {
+          const reg = await db.getByDiscordId(BigInt(interaction.user.id));
+          if (reg) { try { const myN = await pnw.getNation(reg.nation_id); if (myN) spyRange = [myN.score * 0.4, myN.score * 2.5]; } catch { /**/ } }
+        }
+        const SPY_PAGE_SIZE = 15;
+        const multiSpy = allianceIds.length > 1;
+        const spyTitle = `🕵️ Spy Targets — ${allianceNames.join(', ')}`;
+        let spyPage = 0;
+        const buildSpyEmbed = (pg: number) => {
+          const total = spyMembers.length;
+          const totalPages = Math.max(1, Math.ceil(total / SPY_PAGE_SIZE));
+          const safePg = Math.max(0, Math.min(pg, totalPages - 1));
+          const chunk = spyMembers.slice(safePg * SPY_PAGE_SIZE, (safePg + 1) * SPY_PAGE_SIZE);
+          const lines = chunk.map((n, idx) => {
+            const rank = safePg * SPY_PAGE_SIZE + idx + 1;
+            const beige = n.beigeTurns > 0 ? ' 🔵' : '';
+            const aaTag = multiSpy && n.allianceName ? ` [${n.allianceName}]` : '';
+            const spyStr = n.spies >= 0 ? ` | 🕵️ ${n.spies}` : ' | 🕵️ ?';
+            let line = `\`${String(rank).padStart(3, ' ')}.\` [${n.nationName}](${nationUrl(n.nationId)})${beige}${aaTag} — 🏙️ ${n.numCities} | ⭐ ${n.score.toFixed(0)}${spyStr}`;
+            if (spyRange && n.score >= spyRange[0] && n.score <= spyRange[1]) line += ' | 🎯 In range';
+            return line;
+          });
+          const embed = new EmbedBuilder().setTitle(spyTitle).setDescription(lines.join('\n') || '*(no targets found)*').setColor(0x607D8B);
+          if (spyRange) embed.addFields({ name: 'Your Spy Range', value: `🎯 ${spyRange[0].toFixed(0)} – ${spyRange[1].toFixed(0)} score`, inline: false });
+          embed.setFooter({ text: `Page ${safePg + 1}/${totalPages} · ${total} nations · sorted by cities desc · 🔵 = beiged` });
+          return embed;
+        };
+        const totalSpyPages = Math.max(1, Math.ceil(spyMembers.length / SPY_PAGE_SIZE));
+        const buildSpyRow = (pg: number) => new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder().setCustomId('spy_prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(pg === 0),
+          new ButtonBuilder().setCustomId('spy_next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(pg >= totalSpyPages - 1),
+        );
+        const spyMsg = await interaction.followUp({ embeds: [buildSpyEmbed(spyPage)], components: totalSpyPages > 1 ? [buildSpyRow(spyPage)] : [] });
+        if (totalSpyPages <= 1) return;
+        const spyCollector = spyMsg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
+        spyCollector.on('collect', async (btn) => {
+          if (btn.user.id !== interaction.user.id) { await btn.reply({ content: 'Only the command caller can use these buttons.', ephemeral: true }); return; }
+          if (btn.customId === 'spy_prev' && spyPage > 0) spyPage -= 1;
+          else if (btn.customId === 'spy_next' && spyPage < totalSpyPages - 1) spyPage += 1;
+          await btn.update({ embeds: [buildSpyEmbed(spyPage)], components: [buildSpyRow(spyPage)] });
+        });
+        spyCollector.on('end', async () => { try { await interaction.editReply({ components: [] }); } catch { /**/ } });
+        return;
+      }
+
+      if (interaction.commandName === 'missile_targets_find') {
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        const ignoreRange = interaction.options.getBoolean('ignore_score_range') ?? false;
+        await interaction.deferReply();
+        const allianceIds = await db.getSlotsAlliances(BigInt(interaction.guildId));
+        if (!allianceIds.length) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ No alliances configured. An admin can use `/config_slots_set` to set them up.').setColor(0x3498DB)] });
+        let missileMembers: Nation[];
+        let missileWarCounts: Map<number, number>;
+        try {
+          [missileMembers, missileWarCounts] = await Promise.all([
+            pnw.getAllianceMembers(allianceIds),
+            pnw.getActiveDefWarCountsByAlliance(allianceIds),
+          ]);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Could not reach the Politics and War API: ${msg}`).setColor(0xE74C3C)] });
+        }
+        if (!missileMembers.length) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ No active members found for the configured alliance(s).').setColor(0x3498DB)] });
+        const estimateAvgInfra = (n: Nation): number => {
+          if (n.numCities <= 0) return 0;
+          const milScore = n.soldiers * 0.0004 + n.tanks * 0.025 + n.aircraft * 0.3 + n.ships * 1.0 + n.missiles * 5.0 + n.nukes * 15.0;
+          const infraScore = n.score - (n.numCities - 1) * 100 - 10 - n.numProjects * 20 - milScore;
+          return Math.max(0, (infraScore * 40) / n.numCities);
+        };
+        const openSlotNations = missileMembers.filter(n => (missileWarCounts.get(n.nationId) ?? 0) < MAX_DEFENSIVE_SLOTS);
+        if (!openSlotNations.length) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ All nations in the configured alliances currently have full defensive slots.').setColor(0x3498DB)] });
+        const avgInfraMap = new Map(openSlotNations.map(n => [n.nationId, estimateAvgInfra(n)]));
+        openSlotNations.sort((a, b) => (avgInfraMap.get(b.nationId) ?? 0) - (avgInfraMap.get(a.nationId) ?? 0) || b.numCities - a.numCities);
+        const MISSILE_TOP_N = 20;
+        const topNations = openSlotNations.slice(0, MISSILE_TOP_N);
+        const seenAa = new Set<number>();
+        const missileAllianceNames: string[] = [];
+        for (const n of topNations) { if (!seenAa.has(n.allianceId)) { seenAa.add(n.allianceId); if (n.allianceName) missileAllianceNames.push(n.allianceName); } }
+        if (!missileAllianceNames.length) missileAllianceNames.push(...allianceIds.map(String));
+        let missileRange: [number, number] | null = null;
+        if (!ignoreRange) {
+          const reg = await db.getByDiscordId(BigInt(interaction.user.id));
+          if (reg) { try { const myN = await pnw.getNation(reg.nation_id); if (myN) missileRange = [myN.score * 0.75, myN.score * 2.5]; } catch { /**/ } }
+        }
+        const lines = topNations.map((n, idx) => {
+          const defWars = missileWarCounts.get(n.nationId) ?? 0;
+          const avgInfra = avgInfraMap.get(n.nationId) ?? 0;
+          const beige = n.beigeTurns > 0 ? ' 🔵' : '';
+          const infraStr = avgInfra > 0 ? ` | 🏗️ ${avgInfra.toFixed(0)} avg infra` : '';
+          let line = `\`${String(idx + 1).padStart(3, ' ')}.\` [${n.nationName}](${nationUrl(n.nationId)})${beige} — 🏙️ ${n.numCities}${infraStr} | 🛡️ ${defWars}/${MAX_DEFENSIVE_SLOTS} def`;
+          if (missileRange && n.score >= missileRange[0] && n.score <= missileRange[1]) line += ' | 🎯 In range';
+          return line;
+        });
+        const missileEmbed = new EmbedBuilder()
+          .setTitle(`🚀 Missile Targets — ${missileAllianceNames.join(', ')}`)
+          .setDescription(lines.join('\n') || '*(no targets found)*')
+          .setColor(0xE74C3C)
+          .setFooter({ text: `Top ${topNations.length} · sorted by avg infra desc · open def slots only · 🔵 = beiged` });
+        if (missileRange) missileEmbed.addFields({ name: 'Your Missile/War Range', value: `🎯 ${missileRange[0].toFixed(0)} – ${missileRange[1].toFixed(0)} score`, inline: false });
+        return void interaction.followUp({ embeds: [missileEmbed] });
+      }
+
 
       if (interaction.commandName === 'admin_sync_commands') {
         if (!await hasGovAccess(interaction, db, ['leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
