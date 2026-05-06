@@ -48,6 +48,8 @@ import {
   MAX_AIRCRAFT_PER_CITY,
   MAX_SHIPS_PER_CITY,
   MAX_DEFENSIVE_SLOTS,
+  WAR_RANGE_MIN_RATIO,
+  WAR_RANGE_MAX_RATIO,
   calculateInfraCost,
   calculateCityCost,
   computeNationRevenue,
