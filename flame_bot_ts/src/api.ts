@@ -158,6 +158,7 @@ async function _resolveDiscordRoles(
   roleConfig: RoleConfig
 ): Promise<DiscordRoles> {
   const roles = _emptyDiscordRoles();
+  if (!/^\d+$/.test(discordId)) return roles;
   const guild = guildGetter();
   if (!guild) return roles;
 
@@ -530,6 +531,7 @@ export function createApp(options: CreateAppOptions): Application {
     }
   });
 
+  /** Shared handler for /auth/session and /auth/mobile-session token validation. */
   const _respondWithAuthSession = (req: Request, res: Response): void => {
     const token = typeof req.query['token'] === 'string' ? req.query['token'] : '';
     if (!token) {
