@@ -1432,7 +1432,8 @@ async function main(): Promise<void> {
 
       if (commandName === 'config_slots_set') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['milcom','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const raw = interaction.options.getString('alliance_ids', true);
         const ids = raw.split(',').map((x) => parseInt(x.trim(), 10)).filter((n) => Number.isFinite(n) && n > 0);
         if (!ids.length) return void interaction.reply({ content: 'No valid alliance IDs provided.', ephemeral: true });
@@ -1446,14 +1447,16 @@ async function main(): Promise<void> {
       }
       if (commandName === 'config_slots_clear') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['milcom','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         await db.setSlotsAlliances(BigInt(interaction.guildId), []);
         return void interaction.reply({ content: 'Cleared slot alliances.' });
       }
 
       if (commandName === 'setup_war_alerts_add') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['milcom','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const channel = interaction.options.getChannel('channel', true);
         const minCities = interaction.options.getInteger('min_cities');
         const maxCities = interaction.options.getInteger('max_cities');
@@ -1475,13 +1478,15 @@ async function main(): Promise<void> {
       }
       if (commandName === 'setup_war_alerts_remove') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['milcom','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const channel = interaction.options.getChannel('channel', true);
         const removed = await db.removeWarAlertSubscription(BigInt(interaction.guildId), BigInt(channel.id));
         return void interaction.reply({ content: removed ? `War alerts removed from <#${channel.id}>.` : `No subscription found for <#${channel.id}>.`, ephemeral: true });
       }
       if (commandName === 'setup_war_alerts_list') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
         const subs = await db.getWarAlertSubscriptions(BigInt(interaction.guildId));
         const lines = subs.map((row) => `• <#${row.channel_id}> cities ${row.min_cities ?? 'any'}-${row.max_cities ?? 'any'}`);
         return void interaction.reply({ content: lines.length ? lines.join('\n') : 'No war alert subscriptions configured.', ephemeral: true });
@@ -2047,20 +2052,23 @@ Message: ${cfg.message}`)],
       }
       if (commandName === 'setup_recruiter_add') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov','ia','ia_asst'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const ch = interaction.options.getChannel('channel', true);
         await db.addRecruiterSubscription(BigInt(interaction.guildId), BigInt(ch.id));
         return void interaction.reply({ content: `Recruiter subscription added for <#${ch.id}>.` });
       }
       if (commandName === 'setup_recruiter_remove') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov','ia','ia_asst'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const ch = interaction.options.getChannel('channel', true);
         const removed = await db.removeRecruiterSubscription(BigInt(interaction.guildId), BigInt(ch.id));
         return void interaction.reply({ content: removed ? `Recruiter subscription removed from <#${ch.id}>.` : `No recruiter subscription found for <#${ch.id}>.` , ephemeral: true});
       }
       if (commandName === 'setup_recruiter_list') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
         const subs = await db.getRecruiterSubscriptions(BigInt(interaction.guildId));
         const text = subs.map((r) => `• <#${r.channel_id}>`).join('\n');
         return void interaction.reply({ content: text || 'No recruiter subscriptions configured.', ephemeral: true });
