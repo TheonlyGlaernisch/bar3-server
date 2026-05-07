@@ -125,6 +125,7 @@ export interface AuthSession {
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const _sessions = new Map<string, AuthSession>();
+type DiscordRoles = AuthSession['discordRoles'];
 
 function _issueToken(data: Omit<AuthSession, 'expiresAt'>): string {
   const token = `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -141,6 +142,48 @@ function _getSession(token: string): AuthSession | null {
 
 function _revokeToken(token: string): void {
   _sessions.delete(token);
+}
+
+function _emptyDiscordRoles(): DiscordRoles {
+  return {
+    verified: false,
+    bar3_client: false,
+    bar3_server: false,
+  };
+}
+
+async function _resolveDiscordRoles(
+  discordId: string,
+  guildGetter: GuildGetter,
+  roleConfig: RoleConfig
+): Promise<DiscordRoles> {
+  const roles = _emptyDiscordRoles();
+  if (!/^\d+$/.test(discordId)) return roles;
+  const guild = guildGetter();
+  if (!guild) return roles;
+
+  let member: GuildMember | null = guild.members.cache.get(discordId) ?? null;
+  if (!member) {
+    try {
+      member = await guild.members.fetch(discordId);
+    } catch {
+      member = null;
+    }
+  }
+  if (!member) return roles;
+
+  const memberRoleIds = new Set(member.roles.cache.keys());
+  if (roleConfig.verifiedRoleId && memberRoleIds.has(roleConfig.verifiedRoleId.toString())) {
+    roles.verified = true;
+  }
+  if (roleConfig.bar3ClientRoleId && memberRoleIds.has(roleConfig.bar3ClientRoleId.toString())) {
+    roles.bar3_client = true;
+  }
+  if (roleConfig.bar3ServerRoleId && memberRoleIds.has(roleConfig.bar3ServerRoleId.toString())) {
+    roles.bar3_server = true;
+  }
+
+  return roles;
 }
 
 /** Purge expired sessions (call periodically or inline). */
@@ -314,41 +357,11 @@ export function createApp(options: CreateAppOptions): Application {
       return;
     }
 
-    const discordId = BigInt(discordIdStr);
-
-    const roles: Record<string, boolean> = {
-      verified: false,
-      bar3_client: false,
-      bar3_server: false,
-    };
-
-    const guild = guildGetter();
-    if (!guild) {
+    if (!guildGetter()) {
       res.status(503).json({ error: 'Bot not ready' });
       return;
     }
-
-    let member: GuildMember | null = guild.members.cache.get(discordId.toString()) ?? null;
-    if (!member) {
-      try {
-        member = await guild.members.fetch(discordId.toString());
-      } catch {
-        member = null;
-      }
-    }
-
-    if (member) {
-      const memberRoleIds = new Set(member.roles.cache.keys());
-      if (roleConfig.verifiedRoleId && memberRoleIds.has(roleConfig.verifiedRoleId.toString())) {
-        roles['verified'] = true;
-      }
-      if (roleConfig.bar3ClientRoleId && memberRoleIds.has(roleConfig.bar3ClientRoleId.toString())) {
-        roles['bar3_client'] = true;
-      }
-      if (roleConfig.bar3ServerRoleId && memberRoleIds.has(roleConfig.bar3ServerRoleId.toString())) {
-        roles['bar3_server'] = true;
-      }
-    }
+    const roles = await _resolveDiscordRoles(discordIdStr, guildGetter, roleConfig);
 
     res.status(200).json({ discord_id: discordIdStr, roles });
   });
@@ -488,24 +501,7 @@ export function createApp(options: CreateAppOptions): Application {
       }
 
       // Check roles via bot's guild membership cache
-      const guild = guildGetter();
-      const discordRoles: AuthSession['discordRoles'] = {
-        verified: false,
-        bar3_client: false,
-        bar3_server: false,
-      };
-      if (guild) {
-        let member: GuildMember | null = guild.members.cache.get(me.id) ?? null;
-        if (!member) {
-          try { member = await guild.members.fetch(me.id); } catch { member = null; }
-        }
-        if (member) {
-          const memberRoleIds = new Set(member.roles.cache.keys());
-          if (roleConfig.verifiedRoleId && memberRoleIds.has(roleConfig.verifiedRoleId.toString())) discordRoles.verified = true;
-          if (roleConfig.bar3ClientRoleId && memberRoleIds.has(roleConfig.bar3ClientRoleId.toString())) discordRoles.bar3_client = true;
-          if (roleConfig.bar3ServerRoleId && memberRoleIds.has(roleConfig.bar3ServerRoleId.toString())) discordRoles.bar3_server = true;
-        }
-      }
+      const discordRoles = await _resolveDiscordRoles(me.id, guildGetter, roleConfig);
 
       const hasAccess = discordRoles.bar3_client || discordRoles.bar3_server;
       if (!hasAccess) {
@@ -535,8 +531,8 @@ export function createApp(options: CreateAppOptions): Application {
     }
   });
 
-  /** GET /auth/session?token=<token> — check session validity */
-  app.get('/auth/session', (req: Request, res: Response) => {
+  /** Shared handler for /auth/session and /auth/mobile-session token validation. */
+  const _respondWithAuthSession = (req: Request, res: Response): void => {
     const token = typeof req.query['token'] === 'string' ? req.query['token'] : '';
     if (!token) {
       res.status(400).json({ error: 'Missing token' });
@@ -553,27 +549,13 @@ export function createApp(options: CreateAppOptions): Application {
       roles: session.discordRoles,
       isAdmin: ADMIN_DISCORD_IDS.has(BigInt(session.discordUserId)),
     });
-  });
+  };
+
+  /** GET /auth/session?token=<token> — check session validity */
+  app.get('/auth/session', _respondWithAuthSession);
 
   /** GET /auth/mobile-session?token=<token> — alias kept for bar3-client compatibility */
-  app.get('/auth/mobile-session', (req: Request, res: Response) => {
-    const token = typeof req.query['token'] === 'string' ? req.query['token'] : '';
-    if (!token) {
-      res.status(400).json({ error: 'Missing token' });
-      return;
-    }
-    const session = _getSession(token);
-    if (!session) {
-      res.status(401).json({ authenticated: false });
-      return;
-    }
-    res.status(200).json({
-      authenticated: true,
-      user: { id: session.discordUserId, username: session.discordUsername },
-      roles: session.discordRoles,
-      isAdmin: ADMIN_DISCORD_IDS.has(BigInt(session.discordUserId)),
-    });
-  });
+  app.get('/auth/mobile-session', _respondWithAuthSession);
 
   /** POST /auth/logout — revoke a session token */
   app.post('/auth/logout', (req: Request, res: Response) => {
