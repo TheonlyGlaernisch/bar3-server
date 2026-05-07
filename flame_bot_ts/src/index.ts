@@ -125,6 +125,64 @@ function resolveCanonicalCommandName(name: string): string {
   return (LEGACY_COMMAND_ALIASES as Partial<Record<string, CanonicalCommandName>>)[name] ?? name;
 }
 
+function resolveCanonicalCommandNameFromInteraction(i: ChatInputCommandInteraction): string {
+  const commandName = resolveCanonicalCommandName(i.commandName);
+  if (commandName !== i.commandName) return commandName;
+
+  const group = i.options.getSubcommandGroup(false);
+  const sub = i.options.getSubcommand(false);
+
+  if (i.commandName === 'alliance') {
+    if (sub === 'info') return 'alliance_info';
+    if (sub === 'members') return 'alliance_members';
+  }
+  if (i.commandName === 'test') {
+    if (sub === 'whois') return 'test_whois';
+    if (group === 'alliance' && sub === 'info') return 'test_alliance_info';
+  }
+  if (i.commandName === 'config' && group === 'slots') {
+    if (sub === 'set') return 'config_slots_set';
+    if (sub === 'show') return 'config_slots_show';
+    if (sub === 'clear') return 'config_slots_clear';
+  }
+  if (i.commandName === 'setup') {
+    if (sub === 'grant_channel') return 'setup_grant_channel';
+    if (group === 'war_alerts' && sub === 'add') return 'setup_war_alerts_add';
+    if (group === 'war_alerts' && sub === 'remove') return 'setup_war_alerts_remove';
+    if (group === 'war_alerts' && sub === 'list') return 'setup_war_alerts_list';
+    if (group === 'recruiter' && sub === 'add') return 'setup_recruiter_add';
+    if (group === 'recruiter' && sub === 'remove') return 'setup_recruiter_remove';
+    if (group === 'recruiter' && sub === 'list') return 'setup_recruiter_list';
+  }
+  if (i.commandName === 'request' && sub === 'grant') return 'request_grant';
+  if (i.commandName === 'roles') {
+    if (sub === 'setup') return 'roles_setup';
+    if (sub === 'show') return 'roles_show';
+  }
+  if (i.commandName === 'fun' && sub === 'quote') return 'fun_quote';
+  if (i.commandName === 'damage' && sub === 'leaderboard') return 'damage_leaderboard';
+  if (i.commandName === 'spy' && group === 'target' && sub === 'find') return 'spy_target_find';
+  if (i.commandName === 'missile' && group === 'targets' && sub === 'find') return 'missile_targets_find';
+  if (i.commandName === 'war' && group === 'range' && sub === 'targets') return 'war_range_targets';
+  if (i.commandName === 'city' && sub === 'cost') return 'city_cost';
+  if (i.commandName === 'admin') {
+    if (group === 'alliance' && sub === 'set') return 'admin_alliance_set';
+    if (group === 'alliance' && sub === 'show') return 'admin_alliance_show';
+    if (group === 'api_key' && sub === 'set') return 'admin_api_key_set';
+    if (sub === 'sync') return 'admin_sync_commands';
+    if (sub === 'clear_guild_commands') return 'admin_clear_guild_commands';
+    if (group === 'welcome' && sub === 'set_message') return 'welcome_set';
+    if (group === 'welcome' && sub === 'set_channel') return 'welcome_channel_set';
+    if (group === 'welcome' && sub === 'show') return 'welcome_show';
+    if (group === 'welcome' && sub === 'toggle') {
+      const enabled = i.options.getBoolean('enabled');
+      return enabled ? 'welcome_enable' : 'welcome_disable';
+    }
+  }
+
+  return commandName;
+}
+
 function getPrimaryGuild(client: Client): Guild | null {
   if (primaryGuild) return primaryGuild;
   if (GUILD_ID !== null) {
