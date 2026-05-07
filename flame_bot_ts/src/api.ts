@@ -66,6 +66,7 @@
  *     Alias for GET /auth/session (kept for bar3-client compatibility).
  */
 import express, { Application, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { Guild, GuildMember } from 'discord.js';
 import {
   DISCORD_CLIENT_ID,
@@ -274,6 +275,12 @@ export function createApp(options: CreateAppOptions): Application {
 
   const app = express();
   app.use(express.json());
+  const authLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
 
   app.get('/', (_req: Request, res: Response) => {
     res.status(200).send('would you kindly begone');
@@ -428,10 +435,7 @@ export function createApp(options: CreateAppOptions): Application {
     } else if (error === 'not_configured') {
       errorBlock = '<div class="error">Discord OAuth2 is not configured on this server.</div>';
     }
-    const returnTo = typeof req.query['returnTo'] === 'string' ? req.query['returnTo'] : '';
-    const discordLoginHref = returnTo
-      ? `/auth/discord?returnTo=${encodeURIComponent(returnTo)}`
-      : '/auth/discord';
+    const discordLoginHref = '/auth/discord';
     const html = _LOGIN_HTML
       .replace('{{ERROR_BLOCK}}', errorBlock)
       .replace('{{DISCORD_LOGIN_HREF}}', discordLoginHref);
@@ -440,8 +444,8 @@ export function createApp(options: CreateAppOptions): Application {
   });
 
   /** GET /auth/discord — redirect to Discord OAuth2 authorization */
-  app.get('/auth/discord', (req: Request, res: Response) => {
-    if (!DISCORD_CLIENT_ID) {
+  app.get('/auth/discord', authLimiter, (req: Request, res: Response) => {
+    if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET) {
       res.redirect('/auth/login?error=not_configured');
       return;
     }
@@ -453,13 +457,15 @@ export function createApp(options: CreateAppOptions): Application {
       scope: 'identify',
     });
     if (mobile) params.set('state', 'mobile');
-    const returnTo = typeof req.query['returnTo'] === 'string' ? req.query['returnTo'] : '';
-    if (returnTo) params.set('state', mobile ? `mobile:${returnTo}` : `web:${returnTo}`);
     res.redirect(`https://discord.com/oauth2/authorize?${params.toString()}`);
   });
 
   /** GET /auth/discord/callback — handle OAuth2 callback */
-  app.get('/auth/discord/callback', async (req: Request, res: Response) => {
+  app.get('/auth/discord/callback', authLimiter, async (req: Request, res: Response) => {
+    if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET) {
+      res.redirect('/auth/login?error=not_configured');
+      return;
+    }
     const code = typeof req.query['code'] === 'string' ? req.query['code'] : '';
     if (!code) {
       res.redirect('/auth/login?error=no_code');
@@ -509,26 +515,17 @@ export function createApp(options: CreateAppOptions): Application {
 
       const token = _issueToken({ discordUserId: me.id, discordUsername: me.username, discordRoles });
 
-      // Parse returnTo from state
       const state = typeof req.query['state'] === 'string' ? req.query['state'] : '';
-      const isMobile = state === 'mobile' || state.startsWith('mobile:');
-      const savedReturnTo = state.startsWith('mobile:') ? state.slice(7)
-        : state.startsWith('web:') ? state.slice(4)
-        : '';
+      const isMobile = state === 'mobile';
 
       if (isMobile) {
-        const base = CLIENT_APP_URL || '';
-        const dest = savedReturnTo ? `${base}${savedReturnTo}` : base;
-        res.redirect(`${dest}?mobileToken=${encodeURIComponent(token)}`);
+        const destination = CLIENT_APP_URL || '/';
+        const sep = destination.includes('?') ? '&' : '?';
+        res.redirect(`${destination}${sep}mobileToken=${encodeURIComponent(token)}`);
         return;
       }
 
-      let destination: string;
-      if (CLIENT_APP_URL) {
-        destination = savedReturnTo ? `${CLIENT_APP_URL}${savedReturnTo}` : `${CLIENT_APP_URL}/dashboard`;
-      } else {
-        destination = savedReturnTo || '/';
-      }
+      const destination = CLIENT_APP_URL ? `${CLIENT_APP_URL}/dashboard` : '/';
       // Append the token to the destination so the SPA can store it
       const sep = destination.includes('?') ? '&' : '?';
       res.redirect(`${destination}${sep}token=${encodeURIComponent(token)}`);

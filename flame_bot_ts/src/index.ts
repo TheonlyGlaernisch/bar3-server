@@ -14,6 +14,7 @@ import {
   Routes,
   SlashCommandBuilder,
   TextChannel,
+  PermissionFlagsBits,
 } from 'discord.js';
 import { createServer, Server } from 'http';
 
@@ -78,6 +79,9 @@ over time, gasoline and alu might get more expensive, but so will all rss except
 -# -sirius`,
   `we wish you a merry christmas, and a happy ~~new year~~ lump of coal`,
 ];
+
+const RECRUIT_DELAY_SECONDS = 5 * 60;
+const DEFAULT_WELCOME_MESSAGE = 'Welcome !(user)! !(status)';
 
 function getPrimaryGuild(client: Client): Guild | null {
   if (primaryGuild) return primaryGuild;
@@ -915,10 +919,46 @@ function buildWarAlertEmbed(war: WarDetail, watchedAllianceId: number): EmbedBui
   return embed;
 }
 
+function buildRecruiterEmbed(nation: NationCreateDetail): EmbedBuilder {
+  const embed = new EmbedBuilder()
+    .setTitle(`🌍 New Nation: ${nation.nationName}`)
+    .setURL(nationUrl(nation.nationId))
+    .setColor(0x2ECC71)
+    .addFields(
+      { name: 'Nation ID', value: String(nation.nationId), inline: true },
+      { name: 'Leader', value: nation.leaderName || '—', inline: true },
+      { name: 'Cities', value: String(nation.cities), inline: true },
+    );
+  if (nation.score > 0) {
+    embed.addFields({
+      name: 'Score',
+      value: nation.score.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      inline: true,
+    });
+  }
+  if (nation.allianceId) {
+    embed.addFields({
+      name: 'Alliance',
+      value: `[${nation.allianceId}](${allianceUrl(nation.allianceId)})`,
+      inline: true,
+    });
+  }
+  const foundedStr = nation.founded instanceof Date
+    ? nation.founded.toISOString().replace('T', ' ').substring(0, 16) + ' UTC'
+    : String(nation.founded);
+  embed.setFooter({ text: `Founded ${foundedStr} · Recruit now!` });
+  return embed;
+}
+
 async function main(): Promise<void> {
   const db = new Database(MONGODB_URI);
   await db.connect();
-  const pnw = new PnWClient(PNW_API_KEY);
+  const overriddenPnwApiKey = await db.getPnwApiKey();
+  const effectivePnwApiKey = overriddenPnwApiKey || PNW_API_KEY;
+  if (overriddenPnwApiKey) {
+    console.log('Loaded overridden PnW API key from database.');
+  }
+  const pnw = new PnWClient(effectivePnwApiKey);
   const pnwTest = new PnWClient(PNW_API_KEY, { restUrl: PNW_TEST_REST_URL });
 
   const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
@@ -998,6 +1038,72 @@ async function main(): Promise<void> {
 
   ].map(c => c.toJSON());
 
+  const createGuildInvite = async (guild: Guild): Promise<string | null> => {
+    const me = guild.members.me;
+    if (!me) return null;
+    const candidates: TextChannel[] = [];
+    if (guild.systemChannel instanceof TextChannel) candidates.push(guild.systemChannel);
+    for (const channel of guild.channels.cache.values()) {
+      if (channel instanceof TextChannel) candidates.push(channel);
+    }
+    const seen = new Set<string>();
+    for (const channel of candidates) {
+      if (seen.has(channel.id)) continue;
+      seen.add(channel.id);
+      if (!channel.permissionsFor(me).has(PermissionFlagsBits.CreateInstantInvite)) continue;
+      try {
+        const invite = await channel.createInvite({
+          maxAge: 0,
+          maxUses: 0,
+          unique: true,
+          reason: 'Persist guild invite link for flame_bot metadata.',
+        });
+        return invite.url;
+      } catch {
+        // ignore and continue trying other channels
+      }
+    }
+    return null;
+  };
+
+  const persistGuildMetadata = async (guild: Guild): Promise<void> => {
+    try {
+      const inviteLink = await createGuildInvite(guild);
+      await db.upsertGuild(BigInt(guild.id), guild.name, inviteLink);
+    } catch (err) {
+      console.warn(`Failed to persist guild metadata for ${guild.id}:`, err);
+    }
+  };
+
+  const sendToAllWelcomeChannels = async (message: string): Promise<{ sent: number; skipped: number }> => {
+    let sent = 0;
+    let skipped = 0;
+    for (const guild of client.guilds.cache.values()) {
+      const cfg = await db.getWelcomeConfig(BigInt(guild.id));
+      const channelId = cfg.channel_id;
+      let channel: TextChannel | null = null;
+      if (channelId != null) {
+        const configured = guild.channels.cache.get(String(channelId));
+        if (configured instanceof TextChannel) channel = configured;
+      }
+      if (!channel && guild.systemChannel instanceof TextChannel) channel = guild.systemChannel;
+      if (!channel) {
+        channel = guild.channels.cache.find((c): c is TextChannel => c instanceof TextChannel) ?? null;
+      }
+      if (!channel) {
+        skipped += 1;
+        continue;
+      }
+      try {
+        await channel.send(message);
+        sent += 1;
+      } catch {
+        skipped += 1;
+      }
+    }
+    return { sent, skipped };
+  };
+
   client.once('ready', async () => {
     console.log(`Logged in as ${client.user?.tag ?? 'unknown'}`);
     const appId = client.application?.id;
@@ -1008,7 +1114,42 @@ async function main(): Promise<void> {
     } else {
       await rest.put(Routes.applicationCommands(appId), { body: commands });
     }
+    for (const guild of client.guilds.cache.values()) {
+      await persistGuildMetadata(guild);
+    }
     console.log('Slash commands synced.');
+  });
+
+  client.on('guildCreate', async (guild) => {
+    await persistGuildMetadata(guild);
+  });
+
+  client.on('guildUpdate', async (before, after) => {
+    if (before.name !== after.name) {
+      await persistGuildMetadata(after);
+    }
+  });
+
+  client.on('guildMemberAdd', async (member) => {
+    try {
+      const cfg = await db.getWelcomeConfig(BigInt(member.guild.id));
+      if (!cfg.enabled) return;
+      if (cfg.channel_id == null) return;
+      const channel = member.guild.channels.cache.get(String(cfg.channel_id));
+      if (!(channel instanceof TextChannel)) return;
+      const template = String(cfg.message || DEFAULT_WELCOME_MESSAGE);
+      const isRegistered = (await db.getByDiscordId(BigInt(member.id))) !== null;
+      const message = renderWelcomeMessage(
+        template,
+        member.toString(),
+        member.user.username,
+        isRegistered,
+        channel.toString(),
+      );
+      await channel.send(message);
+    } catch (err) {
+      console.warn('Failed to send welcome message:', err);
+    }
   });
 
   client.on('interactionCreate', async (interaction: Interaction) => {
@@ -1293,6 +1434,14 @@ ${resourceLines}
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         const allianceId = await db.getAllianceId(BigInt(interaction.guildId));
         return void interaction.reply({ content: allianceId ? `Primary alliance: ${allianceId}` : 'No primary alliance configured.', ephemeral: true });
+      }
+      if (interaction.commandName === 'admin_api_key_set') {
+        if (!await hasGovAccess(interaction, db, ['leader', '2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        const apiKey = interaction.options.getString('api_key', true).trim();
+        if (apiKey.length === 0) return void interaction.reply({ content: 'API key cannot be empty.', ephemeral: true });
+        await db.setPnwApiKey(apiKey);
+        pnw.apiKey = apiKey;
+        return void interaction.reply({ content: 'PnW API key updated successfully.', ephemeral: true });
       }
 
 
@@ -2095,6 +2244,7 @@ Message: ${cfg.message}`)],
         bar3ServerRoleId: BAR3_SERVER_ROLE_ID != null ? BigInt(BAR3_SERVER_ROLE_ID) : null,
       },
       guildsGetter: () => [...client.guilds.cache.values()],
+      sendToWelcomeFn: sendToAllWelcomeChannels,
       commandUsageGetter: () => Object.fromEntries(commandUsage.entries()),
       adminIds: ADMIN_DISCORD_IDS,
     });
@@ -2104,8 +2254,10 @@ Message: ${cfg.message}`)],
 
   await client.login(DISCORD_TOKEN);
 
-  const warSubClient = new PnWSubscriptionClient(PNW_API_KEY);
+  const warSubClient = new PnWSubscriptionClient(effectivePnwApiKey);
+  const recruiterSubClient = new PnWSubscriptionClient(PW_SCAN_API_KEY || effectivePnwApiKey);
   let warLoopStopped = false;
+  let recruiterLoopStopped = false;
   const warLoopTask = (async () => {
     for await (const war of warSubClient.iterWarCreates()) {
       if (warLoopStopped) break;
@@ -2130,11 +2282,49 @@ Message: ${cfg.message}`)],
     }
   })();
 
+  const dispatchRecruiterNation = async (nation: NationCreateDetail): Promise<void> => {
+    const foundedMs = nation.founded instanceof Date && !Number.isNaN(nation.founded.getTime())
+      ? nation.founded.getTime()
+      : Date.now();
+    const ageSeconds = (Date.now() - foundedMs) / 1000;
+    const remaining = Math.max(0, RECRUIT_DELAY_SECONDS - ageSeconds);
+    if (remaining > 0) {
+      await new Promise((r) => setTimeout(r, remaining * 1000));
+    }
+    const subs = await db.getAllRecruiterSubscriptions();
+    if (!subs.length) return;
+    const embed = buildRecruiterEmbed(nation);
+    for (const sub of subs) {
+      const guild = client.guilds.cache.get(String(sub.guild_id));
+      const channel = guild?.channels.cache.get(String(sub.channel_id));
+      if (!(channel instanceof TextChannel)) continue;
+      try {
+        await channel.send({ embeds: [embed] });
+      } catch (err) {
+        console.error('recruiter alert send error', err);
+      }
+    }
+  };
+
+  const recruiterLoopTask = (async () => {
+    for await (const nation of recruiterSubClient.iterNationCreates()) {
+      if (recruiterLoopStopped) break;
+      try {
+        // Fire-and-forget to avoid blocking the subscription stream during delay windows.
+        void dispatchRecruiterNation(nation);
+      } catch (e) {
+        console.error('recruiter alert dispatch error', e);
+      }
+    }
+  })();
+
   const shutdown = async () => {
     if (httpServer) await new Promise<void>((resolve, reject) => httpServer?.close((e) => (e ? reject(e) : resolve())));
     warLoopStopped = true;
+    recruiterLoopStopped = true;
     await db.close();
     await Promise.race([warLoopTask, new Promise((r) => setTimeout(r, 1500))]);
+    await Promise.race([recruiterLoopTask, new Promise((r) => setTimeout(r, 1500))]);
     client.destroy();
     process.exit(0);
   };
