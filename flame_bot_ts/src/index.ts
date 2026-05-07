@@ -1157,6 +1157,105 @@ async function main(): Promise<void> {
     new SlashCommandBuilder().setName('admin_clear_guild_commands').setDescription('Clear guild-scoped commands'),
     new SlashCommandBuilder().setName('admin_clear').setDescription('Compatibility alias for /admin_clear_guild_commands'),
 
+    // Legacy grouped command compatibility paths (Python-style).
+    new SlashCommandBuilder().setName('alliance').setDescription('Politics and War alliance commands')
+      .addSubcommand(sc => sc.setName('info').setDescription('Lookup alliance').addStringOption(o => o.setName('query').setDescription('Alliance ID or name').setRequired(true)))
+      .addSubcommand(sc => sc.setName('members').setDescription('List alliance members').addStringOption(o => o.setName('query').setDescription('Alliance ID or name').setRequired(true))),
+    new SlashCommandBuilder().setName('test').setDescription('Test-API lookup commands')
+      .addSubcommand(sc => sc.setName('whois').setDescription('Lookup nation on test API').addStringOption(o => o.setName('query').setDescription('Search query').setRequired(true)))
+      .addSubcommandGroup(g => g.setName('alliance').setDescription('Test alliance commands')
+        .addSubcommand(sc => sc.setName('info').setDescription('Lookup alliance on test API').addStringOption(o => o.setName('query').setDescription('Alliance ID or name').setRequired(true)))),
+    new SlashCommandBuilder().setName('config').setDescription('Bot configuration commands')
+      .addSubcommandGroup(g => g.setName('slots').setDescription('Configure slot alliance IDs')
+        .addSubcommand(sc => sc.setName('set').setDescription('Set slot alliance IDs').addStringOption(o => o.setName('alliance_ids').setDescription('e.g. 790,1234').setRequired(true)))
+        .addSubcommand(sc => sc.setName('show').setDescription('Show slot alliance IDs'))
+        .addSubcommand(sc => sc.setName('clear').setDescription('Clear slot alliance IDs'))),
+    new SlashCommandBuilder().setName('setup').setDescription('Setup commands')
+      .addSubcommand(sc => sc.setName('grant_channel').setDescription('Set grant request channel').addChannelOption(o => o.setName('channel').setDescription('Target channel').setRequired(true)))
+      .addSubcommandGroup(g => g.setName('war_alerts').setDescription('Configure war alerts')
+        .addSubcommand(sc => sc.setName('add').setDescription('Add war alerts subscription')
+          .addChannelOption(o => o.setName('channel').setDescription('Target text channel').setRequired(true))
+          .addIntegerOption(o => o.setName('min_cities').setDescription('Minimum cities'))
+          .addIntegerOption(o => o.setName('max_cities').setDescription('Maximum cities')))
+        .addSubcommand(sc => sc.setName('remove').setDescription('Remove war alerts subscription')
+          .addChannelOption(o => o.setName('channel').setDescription('Target text channel').setRequired(true)))
+        .addSubcommand(sc => sc.setName('list').setDescription('List war alerts subscriptions')))
+      .addSubcommandGroup(g => g.setName('recruiter').setDescription('Configure recruiter alerts')
+        .addSubcommand(sc => sc.setName('add').setDescription('Add recruiter subscription channel')
+          .addChannelOption(o => o.setName('channel').setDescription('Text channel').setRequired(true)))
+        .addSubcommand(sc => sc.setName('remove').setDescription('Remove recruiter subscription channel')
+          .addChannelOption(o => o.setName('channel').setDescription('Text channel').setRequired(true)))
+        .addSubcommand(sc => sc.setName('list').setDescription('List recruiter subscription channels'))),
+    new SlashCommandBuilder().setName('request').setDescription('Request commands')
+      .addSubcommand(sc => sc.setName('grant').setDescription('Request a grant')
+        .addStringOption(o => o.setName('note').setDescription('Grant reason').setRequired(true))
+        .addNumberOption(o => o.setName('money').setDescription('Requested money'))
+        .addNumberOption(o => o.setName('food').setDescription('Food amount'))
+        .addNumberOption(o => o.setName('coal').setDescription('Coal amount'))
+        .addNumberOption(o => o.setName('oil').setDescription('Oil amount'))
+        .addNumberOption(o => o.setName('uranium').setDescription('Uranium amount'))
+        .addNumberOption(o => o.setName('iron').setDescription('Iron amount'))
+        .addNumberOption(o => o.setName('bauxite').setDescription('Bauxite amount'))
+        .addNumberOption(o => o.setName('lead').setDescription('Lead amount'))
+        .addNumberOption(o => o.setName('gasoline').setDescription('Gasoline amount'))
+        .addNumberOption(o => o.setName('munitions').setDescription('Munitions amount'))
+        .addNumberOption(o => o.setName('steel').setDescription('Steel amount'))
+        .addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount'))),
+    new SlashCommandBuilder().setName('roles').setDescription('Government role configuration')
+      .addSubcommand(sc => sc.setName('setup').setDescription('Configure gov roles')
+        .addRoleOption(o => o.setName('leader').setDescription('Leader role'))
+        .addRoleOption(o => o.setName('two_ic').setDescription('Second in command role'))
+        .addRoleOption(o => o.setName('econ').setDescription('Economics role'))
+        .addRoleOption(o => o.setName('econ_gov').setDescription('Economics Gov role'))
+        .addRoleOption(o => o.setName('milcom').setDescription('Military command role'))
+        .addRoleOption(o => o.setName('milcom_gov').setDescription('Military command Gov role'))
+        .addRoleOption(o => o.setName('ia').setDescription('Internal affairs role'))
+        .addRoleOption(o => o.setName('ia_asst').setDescription('Internal affairs assistant role'))
+        .addRoleOption(o => o.setName('gov').setDescription('Basic gov role'))
+        .addRoleOption(o => o.setName('member').setDescription('Member role (required to use most commands)')))
+      .addSubcommand(sc => sc.setName('show').setDescription('Show configured gov role mappings')),
+    new SlashCommandBuilder().setName('admin').setDescription('Bot administration commands')
+      .addSubcommandGroup(g => g.setName('alliance').setDescription('Alliance administration')
+        .addSubcommand(sc => sc.setName('set').setDescription('Set guild primary alliance ID')
+          .addIntegerOption(o => o.setName('alliance_id').setDescription('Alliance ID').setRequired(true)))
+        .addSubcommand(sc => sc.setName('show').setDescription('Show guild primary alliance ID')))
+      .addSubcommandGroup(g => g.setName('api_key').setDescription('API key administration')
+        .addSubcommand(sc => sc.setName('set').setDescription('Set runtime PnW API key')
+          .addStringOption(o => o.setName('api_key').setDescription('PnW API key').setRequired(true))))
+      .addSubcommandGroup(g => g.setName('welcome').setDescription('Welcome automation')
+        .addSubcommand(sc => sc.setName('set_message').setDescription('Set welcome message text')
+          .addStringOption(o => o.setName('message').setDescription('Welcome template').setRequired(true)))
+        .addSubcommand(sc => sc.setName('set_channel').setDescription('Set welcome channel')
+          .addChannelOption(o => o.setName('channel').setDescription('Welcome channel').setRequired(true)))
+        .addSubcommand(sc => sc.setName('toggle').setDescription('Enable or disable welcome messages')
+          .addBooleanOption(o => o.setName('enabled').setDescription('Enable welcome messages').setRequired(true)))
+        .addSubcommand(sc => sc.setName('show').setDescription('Show welcome config')))
+      .addSubcommand(sc => sc.setName('sync').setDescription('Sync slash commands now'))
+      .addSubcommand(sc => sc.setName('clear_guild_commands').setDescription('Clear guild-scoped commands')),
+    new SlashCommandBuilder().setName('fun').setDescription('Fun commands')
+      .addSubcommand(sc => sc.setName('quote').setDescription('Get a random quote')),
+    new SlashCommandBuilder().setName('damage').setDescription('Damage commands')
+      .addSubcommand(sc => sc.setName('leaderboard').setDescription('Show 7-day alliance damage leaderboard')),
+    new SlashCommandBuilder().setName('spy').setDescription('Spy commands')
+      .addSubcommandGroup(g => g.setName('target').setDescription('Spy targets')
+        .addSubcommand(sc => sc.setName('find').setDescription('Find spy targets in given alliances by city count')
+          .addStringOption(o => o.setName('alliances').setDescription('Comma-separated alliance names or IDs (e.g. Rose, Camelot)').setRequired(true))
+          .addBooleanOption(o => o.setName('ignore_score_range').setDescription('If true, do not mark nations in your personal spy range')))),
+    new SlashCommandBuilder().setName('missile').setDescription('Missile commands')
+      .addSubcommandGroup(g => g.setName('targets').setDescription('Missile targets')
+        .addSubcommand(sc => sc.setName('find').setDescription('Top 20 nations in /slots alliances with open defensive slots, sorted by avg infra')
+          .addBooleanOption(o => o.setName('ignore_score_range').setDescription('If true, do not mark nations in your personal score range')))),
+    new SlashCommandBuilder().setName('war').setDescription('War commands')
+      .addSubcommandGroup(g => g.setName('range').setDescription('War range commands')
+        .addSubcommand(sc => sc.setName('targets').setDescription('Show nations in your war range with open defensive slots')
+          .addUserOption(o => o.setName('user').setDescription('Discord user to look up (defaults to yourself)')))),
+    new SlashCommandBuilder().setName('city').setDescription('City commands')
+      .addSubcommand(sc => sc.setName('cost').setDescription('Calculate city purchase cost using the live dynamic formula')
+        .addIntegerOption(o => o.setName('current').setDescription('Current number of cities').setRequired(true).setMinValue(0))
+        .addIntegerOption(o => o.setName('target').setDescription('Target number of cities (defaults to current + 1)').setMinValue(1))
+        .addBooleanOption(o => o.setName('manifest_destiny').setDescription('Is the nation\'s domestic policy Manifest Destiny? (−5% cost)'))
+        .addBooleanOption(o => o.setName('government_support_agency').setDescription('Does the nation have Government Support Agency? (additional −2.5%)'))),
+
   ].map(c => c.toJSON());
 
   const createGuildInvite = async (guild: Guild): Promise<string | null> => {
@@ -1313,7 +1412,7 @@ async function main(): Promise<void> {
       });
     }
     commandCooldowns.set(interaction.user.id, now);
-    const commandName = resolveCanonicalCommandName(interaction.commandName);
+    const commandName = resolveCanonicalCommandNameFromInteraction(interaction);
     commandUsage.set(commandName, (commandUsage.get(commandName) ?? 0) + 1);
     try {
       if (commandName === 'register') {
@@ -1331,7 +1430,7 @@ async function main(): Promise<void> {
       if (commandName === 'test_alliance_members') return await handleAllianceMembers(interaction, db, pnw, true);
       if (commandName === 'slots') return await handleSlots(interaction, db, pnw);
 
-      if (interaction.commandName === 'config_slots_set') {
+      if (commandName === 'config_slots_set') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         if (!await hasGovAccess(interaction, db, ['milcom','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const raw = interaction.options.getString('alliance_ids', true);
@@ -1340,19 +1439,19 @@ async function main(): Promise<void> {
         await db.setSlotsAlliances(BigInt(interaction.guildId), ids);
         return void interaction.reply({ content: `Configured slots alliances: ${ids.join(', ')}` });
       }
-      if (interaction.commandName === 'config_slots_show') {
+      if (commandName === 'config_slots_show') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         const ids = await db.getSlotsAlliances(BigInt(interaction.guildId));
         return void interaction.reply({ content: ids.length ? `Configured slots alliances: ${ids.join(', ')}` : 'No slot alliances configured.', ephemeral: true });
       }
-      if (interaction.commandName === 'config_slots_clear') {
+      if (commandName === 'config_slots_clear') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         if (!await hasGovAccess(interaction, db, ['milcom','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         await db.setSlotsAlliances(BigInt(interaction.guildId), []);
         return void interaction.reply({ content: 'Cleared slot alliances.' });
       }
 
-      if (interaction.commandName === 'setup_war_alerts_add') {
+      if (commandName === 'setup_war_alerts_add') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         if (!await hasGovAccess(interaction, db, ['milcom','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const channel = interaction.options.getChannel('channel', true);
@@ -1361,21 +1460,21 @@ async function main(): Promise<void> {
         await db.addWarAlertSubscription(BigInt(interaction.guildId), BigInt(channel.id), minCities, maxCities);
         return void interaction.reply({ content: `War alerts enabled for <#${channel.id}> (${minCities ?? 'any'}-${maxCities ?? 'any'} cities).` });
       }
-      if (interaction.commandName === 'setup_war_alerts_remove') {
+      if (commandName === 'setup_war_alerts_remove') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         if (!await hasGovAccess(interaction, db, ['milcom','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const channel = interaction.options.getChannel('channel', true);
         const removed = await db.removeWarAlertSubscription(BigInt(interaction.guildId), BigInt(channel.id));
         return void interaction.reply({ content: removed ? `War alerts removed from <#${channel.id}>.` : `No subscription found for <#${channel.id}>.`, ephemeral: true });
       }
-      if (interaction.commandName === 'setup_war_alerts_list') {
+      if (commandName === 'setup_war_alerts_list') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         const subs = await db.getWarAlertSubscriptions(BigInt(interaction.guildId));
         const lines = subs.map((row) => `• <#${row.channel_id}> cities ${row.min_cities ?? 'any'}-${row.max_cities ?? 'any'}`);
         return void interaction.reply({ content: lines.length ? lines.join('\n') : 'No war alert subscriptions configured.', ephemeral: true });
       }
 
-      if (interaction.commandName === 'send') {
+      if (commandName === 'send') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         await interaction.deferReply({ ephemeral: true });
         if (!await hasMemberAccess(interaction, db)) {
@@ -1426,7 +1525,7 @@ async function main(): Promise<void> {
         return void interaction.followUp({ embeds: [embed] });
       }
 
-      if (interaction.commandName === 'suggestion') {
+      if (commandName === 'suggestion') {
         await interaction.deferReply({ ephemeral: true });
         if (!await hasMemberAccess(interaction, db)) {
           return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], ephemeral: true });
@@ -1462,7 +1561,7 @@ async function main(): Promise<void> {
       }
 
 
-      if (interaction.commandName === 'roles_setup') {
+      if (commandName === 'roles_setup') {
         if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         if (!await hasGovAccess(interaction, db, ['leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const current = await db.getGovRoles(BigInt(interaction.guildId));
@@ -1493,7 +1592,7 @@ async function main(): Promise<void> {
         }
         return void interaction.reply({ content: lines.join('\n'), ephemeral: true });
       }
-      if (interaction.commandName === 'gov') {
+      if (commandName === 'gov') {
         if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         const cfg = await db.getGovRoles(BigInt(interaction.guildId));
         const GOV_DEPT_LABELS: Record<string, string> = {
@@ -1527,7 +1626,7 @@ async function main(): Promise<void> {
         return void interaction.reply({ embeds: [embed] });
       }
 
-      if (interaction.commandName === 'roles_show') {
+      if (commandName === 'roles_show') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         const roles = await db.getGovRoles(BigInt(interaction.guildId));
         const text = Object.entries(roles).map(([k,v]) => `• ${k}: ${v ? `<@&${v}>` : 'not set'}`).join('\n');
@@ -1716,12 +1815,12 @@ ${resourceLines}
         });
         return;
       }
-      if (interaction.commandName === 'fun_quote') {
+      if (commandName === 'fun_quote') {
         const quote = FUN_QUOTES[Math.floor(Math.random() * FUN_QUOTES.length)] ?? 'No quote found.';
         return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('Quote').setDescription(quote)] });
       }
 
-      if (interaction.commandName === 'color') {
+      if (commandName === 'color') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: '❌ You need the **Member** role to use this command.', ephemeral: true });
         await interaction.deferReply();
@@ -1763,7 +1862,7 @@ ${resourceLines}
           .setFooter({ text: `${wrong.length} member(s) on wrong color · ${members.length} total checked · expected: ${expected.charAt(0).toUpperCase() + expected.slice(1)}` });
         return void interaction.followUp({ embeds: [embed] });
       }
-      if (interaction.commandName === 'damage_leaderboard') {
+      if (commandName === 'damage_leaderboard') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
         const allianceId = await db.getAllianceId(BigInt(interaction.guildId));
@@ -1933,27 +2032,27 @@ Message: ${cfg.message}`)],
           ephemeral: true,
         });
       }
-      if (interaction.commandName === 'setup_recruiter_add') {
+      if (commandName === 'setup_recruiter_add') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const ch = interaction.options.getChannel('channel', true);
         await db.addRecruiterSubscription(BigInt(interaction.guildId), BigInt(ch.id));
         return void interaction.reply({ content: `Recruiter subscription added for <#${ch.id}>.` });
       }
-      if (interaction.commandName === 'setup_recruiter_remove') {
+      if (commandName === 'setup_recruiter_remove') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const ch = interaction.options.getChannel('channel', true);
         const removed = await db.removeRecruiterSubscription(BigInt(interaction.guildId), BigInt(ch.id));
         return void interaction.reply({ content: removed ? `Recruiter subscription removed from <#${ch.id}>.` : `No recruiter subscription found for <#${ch.id}>.` , ephemeral: true});
       }
-      if (interaction.commandName === 'setup_recruiter_list') {
+      if (commandName === 'setup_recruiter_list') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         const subs = await db.getRecruiterSubscriptions(BigInt(interaction.guildId));
         const text = subs.map((r) => `• <#${r.channel_id}>`).join('\n');
         return void interaction.reply({ content: text || 'No recruiter subscriptions configured.', ephemeral: true });
       }
-      if (interaction.commandName === 'infra') {
+      if (commandName === 'infra') {
         const from = interaction.options.getNumber('from', true);
         const to = interaction.options.getNumber('to', true);
         const cities = interaction.options.getInteger('cities') ?? 1;
@@ -1984,7 +2083,7 @@ Message: ${cfg.message}`)],
         }
         return void interaction.reply({ embeds: [embed] });
       }
-      if (interaction.commandName === 'city_cost') {
+      if (commandName === 'city_cost') {
         await interaction.deferReply();
         const current = interaction.options.getInteger('current', true);
         const rawTarget = interaction.options.getInteger('target');
@@ -2034,7 +2133,7 @@ Message: ${cfg.message}`)],
         embed.setFooter({ text: `City average used: ${cityAvg.toFixed(2)}  ·  Formula: Locutus dynamic` });
         return void interaction.followUp({ embeds: [embed] });
       }
-      if (interaction.commandName === 'revenue') {
+      if (commandName === 'revenue') {
         await interaction.deferReply();
         const rawQuery = (interaction.options.getString('query') ?? '').trim();
         const MENTION_RE = /^<@!?(\d+)>$/;
@@ -2138,7 +2237,7 @@ Message: ${cfg.message}`)],
         revEmbed.setFooter({ text: `Food: ${rev.foodProduction.toFixed(2)} prod − ${rev.foodConsumption.toFixed(2)} use  ·  Season month: ${revGameInfo.gameMonth}  ·  Money net of improvement upkeep, before military upkeep & tax` });
         return void interaction.followUp({ embeds: [revEmbed] });
       }
-      if (interaction.commandName === 'war_range_targets') {
+      if (commandName === 'war_range_targets') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
         await interaction.deferReply();
@@ -2222,7 +2321,7 @@ Message: ${cfg.message}`)],
         return;
       }
 
-      if (interaction.commandName === 'spy_target_find') {
+      if (commandName === 'spy_target_find') {
         if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
         const alliancesRaw = interaction.options.getString('alliances', true);
         const ignoreRange = interaction.options.getBoolean('ignore_score_range') ?? false;
@@ -2294,7 +2393,7 @@ Message: ${cfg.message}`)],
         return;
       }
 
-      if (interaction.commandName === 'missile_targets_find') {
+      if (commandName === 'missile_targets_find') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
         const ignoreRange = interaction.options.getBoolean('ignore_score_range') ?? false;
