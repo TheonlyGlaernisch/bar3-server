@@ -1457,6 +1457,19 @@ async function main(): Promise<void> {
         const channel = interaction.options.getChannel('channel', true);
         const minCities = interaction.options.getInteger('min_cities');
         const maxCities = interaction.options.getInteger('max_cities');
+        const allianceId = await db.getAllianceId(BigInt(interaction.guildId));
+        if (!allianceId) {
+          return void interaction.reply({ content: 'No primary alliance configured for this server. An admin must run `/admin_alliance_set` first.', ephemeral: true });
+        }
+        if (minCities != null && minCities < 1) {
+          return void interaction.reply({ content: 'min_cities must be at least 1.', ephemeral: true });
+        }
+        if (maxCities != null && maxCities < 1) {
+          return void interaction.reply({ content: 'max_cities must be at least 1.', ephemeral: true });
+        }
+        if (minCities != null && maxCities != null && minCities > maxCities) {
+          return void interaction.reply({ content: 'min_cities must be ≤ max_cities.', ephemeral: true });
+        }
         await db.addWarAlertSubscription(BigInt(interaction.guildId), BigInt(channel.id), minCities, maxCities);
         return void interaction.reply({ content: `War alerts enabled for <#${channel.id}> (${minCities ?? 'any'}-${maxCities ?? 'any'} cities).` });
       }
