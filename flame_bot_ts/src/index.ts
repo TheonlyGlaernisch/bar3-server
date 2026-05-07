@@ -1477,8 +1477,8 @@ async function main(): Promise<void> {
       }
       if (commandName === 'setup_grant_channel') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['econ','econ_gov','ia','ia_asst'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['econ','econ_gov','ia','ia_asst'])) return void interaction.reply({ content: 'You need Economics or Internal Affairs gov access to use this command.', ephemeral: true });
         const ch = interaction.options.getChannel('channel', true);
         await db.setGrantChannel(BigInt(interaction.guildId), Number(ch.id));
         return void interaction.reply({ content: `Grant channel set to <#${ch.id}>.` });
