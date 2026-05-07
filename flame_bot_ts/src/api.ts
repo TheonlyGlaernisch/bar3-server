@@ -150,6 +150,37 @@ function _purgeExpired(): void {
   }
 }
 
+function _isSafeReturnTo(url: unknown): url is string {
+  return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
+}
+
+function _normalizeReturnTo(input: unknown): string | null {
+  if (typeof input !== 'string' || !input) return null;
+
+  let current = input;
+  for (let i = 0; i < 3; i += 1) {
+    try {
+      const decoded = decodeURIComponent(current);
+      if (decoded === current) break;
+      current = decoded;
+    } catch {
+      break;
+    }
+  }
+
+  if (current.startsWith('/auth/login?') || current.startsWith('/login?')) {
+    const query = current.split('?', 2)[1] || '';
+    const params = new URLSearchParams(query);
+    const nested = params.get('redirect') || params.get('returnTo');
+    if (nested) {
+      const normalizedNested = _normalizeReturnTo(nested);
+      if (normalizedNested) return normalizedNested;
+    }
+  }
+
+  return _isSafeReturnTo(current) ? current : null;
+}
+
 // ---------------------------------------------------------------------------
 // Auth HTML pages
 // ---------------------------------------------------------------------------
@@ -428,7 +459,7 @@ export function createApp(options: CreateAppOptions): Application {
     } else if (error === 'not_configured') {
       errorBlock = '<div class="error">Discord OAuth2 is not configured on this server.</div>';
     }
-    const returnTo = typeof req.query['returnTo'] === 'string' ? req.query['returnTo'] : '';
+    const returnTo = _normalizeReturnTo(req.query['returnTo']) || '';
     const discordLoginHref = returnTo
       ? `/auth/discord?returnTo=${encodeURIComponent(returnTo)}`
       : '/auth/discord';
@@ -441,7 +472,7 @@ export function createApp(options: CreateAppOptions): Application {
 
   /** GET /auth/discord — redirect to Discord OAuth2 authorization */
   app.get('/auth/discord', (req: Request, res: Response) => {
-    if (!DISCORD_CLIENT_ID) {
+    if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET) {
       res.redirect('/auth/login?error=not_configured');
       return;
     }
@@ -453,13 +484,17 @@ export function createApp(options: CreateAppOptions): Application {
       scope: 'identify',
     });
     if (mobile) params.set('state', 'mobile');
-    const returnTo = typeof req.query['returnTo'] === 'string' ? req.query['returnTo'] : '';
+    const returnTo = _normalizeReturnTo(req.query['returnTo']) || '';
     if (returnTo) params.set('state', mobile ? `mobile:${returnTo}` : `web:${returnTo}`);
     res.redirect(`https://discord.com/oauth2/authorize?${params.toString()}`);
   });
 
   /** GET /auth/discord/callback — handle OAuth2 callback */
   app.get('/auth/discord/callback', async (req: Request, res: Response) => {
+    if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET) {
+      res.redirect('/auth/login?error=not_configured');
+      return;
+    }
     const code = typeof req.query['code'] === 'string' ? req.query['code'] : '';
     if (!code) {
       res.redirect('/auth/login?error=no_code');
@@ -512,14 +547,20 @@ export function createApp(options: CreateAppOptions): Application {
       // Parse returnTo from state
       const state = typeof req.query['state'] === 'string' ? req.query['state'] : '';
       const isMobile = state === 'mobile' || state.startsWith('mobile:');
-      const savedReturnTo = state.startsWith('mobile:') ? state.slice(7)
+      const rawReturnTo = state.startsWith('mobile:') ? state.slice(7)
         : state.startsWith('web:') ? state.slice(4)
         : '';
+      const savedReturnTo = _normalizeReturnTo(rawReturnTo) || '';
 
       if (isMobile) {
-        const base = CLIENT_APP_URL || '';
-        const dest = savedReturnTo ? `${base}${savedReturnTo}` : base;
-        res.redirect(`${dest}?mobileToken=${encodeURIComponent(token)}`);
+        let destination: string;
+        if (CLIENT_APP_URL) {
+          destination = savedReturnTo ? `${CLIENT_APP_URL}${savedReturnTo}` : CLIENT_APP_URL;
+        } else {
+          destination = savedReturnTo || '/';
+        }
+        const sep = destination.includes('?') ? '&' : '?';
+        res.redirect(`${destination}${sep}mobileToken=${encodeURIComponent(token)}`);
         return;
       }
 
