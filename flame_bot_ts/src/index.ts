@@ -81,6 +81,7 @@ over time, gasoline and alu might get more expensive, but so will all rss except
 ];
 
 const RECRUIT_DELAY_SECONDS = 5 * 60;
+const DEFAULT_WELCOME_MESSAGE = 'Welcome !(user)! !(status)';
 
 function getPrimaryGuild(client: Client): Guild | null {
   if (primaryGuild) return primaryGuild;
@@ -1136,7 +1137,7 @@ async function main(): Promise<void> {
       if (cfg.channel_id == null) return;
       const channel = member.guild.channels.cache.get(String(cfg.channel_id));
       if (!(channel instanceof TextChannel)) return;
-      const template = String(cfg.message || 'Welcome !(user)! !(status)');
+      const template = String(cfg.message || DEFAULT_WELCOME_MESSAGE);
       const isRegistered = (await db.getByDiscordId(BigInt(member.id))) !== null;
       const message = renderWelcomeMessage(
         template,
@@ -1435,10 +1436,11 @@ ${resourceLines}
         return void interaction.reply({ content: allianceId ? `Primary alliance: ${allianceId}` : 'No primary alliance configured.', ephemeral: true });
       }
       if (interaction.commandName === 'admin_api_key_set') {
-        if (!await hasGovAccess(interaction, db, ['leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['leader', '2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const apiKey = interaction.options.getString('api_key', true).trim();
+        if (apiKey.length === 0) return void interaction.reply({ content: 'API key cannot be empty.', ephemeral: true });
         await db.setPnwApiKey(apiKey);
-        (pnw as unknown as { _apiKey: string })._apiKey = apiKey;
+        pnw.apiKey = apiKey;
         return void interaction.reply({ content: 'PnW API key updated successfully.', ephemeral: true });
       }
 
@@ -2280,24 +2282,36 @@ Message: ${cfg.message}`)],
     }
   })();
 
+  const dispatchRecruiterNation = async (nation: NationCreateDetail): Promise<void> => {
+    const foundedMs = nation.founded instanceof Date && !Number.isNaN(nation.founded.getTime())
+      ? nation.founded.getTime()
+      : Date.now();
+    const ageSeconds = (Date.now() - foundedMs) / 1000;
+    const remaining = Math.max(0, RECRUIT_DELAY_SECONDS - ageSeconds);
+    if (remaining > 0) {
+      await new Promise((r) => setTimeout(r, remaining * 1000));
+    }
+    const subs = await db.getAllRecruiterSubscriptions();
+    if (!subs.length) return;
+    const embed = buildRecruiterEmbed(nation);
+    for (const sub of subs) {
+      const guild = client.guilds.cache.get(String(sub.guild_id));
+      const channel = guild?.channels.cache.get(String(sub.channel_id));
+      if (!(channel instanceof TextChannel)) continue;
+      try {
+        await channel.send({ embeds: [embed] });
+      } catch (err) {
+        console.error('recruiter alert send error', err);
+      }
+    }
+  };
+
   const recruiterLoopTask = (async () => {
     for await (const nation of recruiterSubClient.iterNationCreates()) {
       if (recruiterLoopStopped) break;
       try {
-        const ageSeconds = (Date.now() - nation.founded.getTime()) / 1000;
-        const remaining = Math.max(0, RECRUIT_DELAY_SECONDS - ageSeconds);
-        if (remaining > 0) {
-          await new Promise((r) => setTimeout(r, remaining * 1000));
-        }
-        const subs = await db.getAllRecruiterSubscriptions();
-        if (!subs.length) continue;
-        const embed = buildRecruiterEmbed(nation);
-        for (const sub of subs) {
-          const guild = client.guilds.cache.get(sub.guild_id);
-          const channel = guild?.channels.cache.get(sub.channel_id);
-          if (!(channel instanceof TextChannel)) continue;
-          await channel.send({ embeds: [embed] });
-        }
+        // Fire-and-forget to avoid blocking the subscription stream during delay windows.
+        void dispatchRecruiterNation(nation);
       } catch (e) {
         console.error('recruiter alert dispatch error', e);
       }
