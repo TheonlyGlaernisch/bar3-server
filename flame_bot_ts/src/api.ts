@@ -65,7 +65,7 @@
  * GET /auth/mobile-session?token=<token>
  *     Alias for GET /auth/session (kept for bar3-client compatibility).
  */
-import express, { Application, Request, Response } from 'express';
+import express, { Application, NextFunction, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { Guild, GuildMember } from 'discord.js';
 import {
@@ -318,6 +318,13 @@ export function createApp(options: CreateAppOptions): Application {
 
   const app = express();
   app.use(express.json());
+  app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+    if (err instanceof SyntaxError && 'body' in (err as object)) {
+      res.status(400).json({ error: 'Invalid JSON body' });
+      return;
+    }
+    next(err);
+  });
   const authLimiter = rateLimit({
     windowMs: 60 * 1000,
     limit: 30,

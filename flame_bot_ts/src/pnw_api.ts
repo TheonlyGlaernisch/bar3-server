@@ -1618,6 +1618,13 @@ function inTurnWindow(): [boolean, number] {
   return [false, 0];
 }
 
+export function secsUntilTurnWindow(): number {
+  const s = secsIntoTurnCycle();
+  if (s >= TURN_WINDOW_START) return 0;
+  if (s < TURN_WINDOW_END) return 0;
+  return TURN_WINDOW_START - s;
+}
+
 export function parseNationCreateDetail(raw: Record<string, unknown>): NationCreateDetail | null {
   const nationId = n(raw['id']);
   if (!nationId) return null;

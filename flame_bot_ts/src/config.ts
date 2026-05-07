@@ -76,6 +76,9 @@ export const ADMIN_DISCORD_IDS: Set<bigint> = _optionalIntList('ADMIN_DISCORD_ID
 // PnW API key used exclusively for scanning new nations.
 export const PW_SCAN_API_KEY: string = process.env['PW_SCAN_API_KEY'] || '';
 
+export const LOG_LEVEL: 'DEBUG' | 'INFO' =
+  (process.env['LOG_LEVEL'] || '').toUpperCase() === 'DEBUG' ? 'DEBUG' : 'INFO';
+
 // Discord OAuth2 config — required for the /auth/* endpoints.
 // Leave unset to disable the OAuth2 flow entirely.
 export const DISCORD_CLIENT_ID: string = process.env['DISCORD_CLIENT_ID'] || '';
