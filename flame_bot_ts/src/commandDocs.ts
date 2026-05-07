@@ -4,6 +4,14 @@ export interface CommandDoc {
   category: 'core' | 'alliance' | 'gov' | 'admin' | 'fun' | 'setup';
 }
 
+// Python grouped-command parity matrix:
+// /admin welcome set_message -> canonical /welcome_set (alias /admin_welcome_set_message)
+// /admin welcome set_channel -> canonical /welcome_channel_set (alias /admin_welcome_set_channel)
+// /admin welcome toggle true|false -> canonical /welcome_enable|/welcome_disable (aliases /admin_welcome_enable|/admin_welcome_disable)
+// /admin welcome show -> canonical /welcome_show (alias /admin_welcome_show)
+// /admin sync -> canonical /admin_sync_commands (alias /admin_sync)
+// /admin clear_guild_commands -> canonical /admin_clear_guild_commands (alias /admin_clear)
+
 export const COMMAND_DOCS: CommandDoc[] = [
   { name: '/register <nation_id>', summary: 'Link your Discord account to a nation after Discord-tag verification.', category: 'core' },
   { name: '/unregister', summary: 'Remove your nation registration.', category: 'core' },
@@ -44,6 +52,17 @@ export const COMMAND_DOCS: CommandDoc[] = [
   { name: '/admin_alliance_set <id>', summary: 'Set this guild primary alliance ID.', category: 'admin' },
   { name: '/admin_alliance_show', summary: 'Show this guild primary alliance ID.', category: 'admin' },
   { name: '/admin_api_key_set <api_key>', summary: 'Persist and apply runtime PnW API key.', category: 'admin' },
+  { name: '/admin_sync_commands', summary: 'Sync slash commands now (canonical).', category: 'admin' },
+  { name: '/admin_sync', summary: 'Compatibility alias for /admin_sync_commands.', category: 'admin' },
+  { name: '/admin_clear_guild_commands', summary: 'Clear guild-scoped commands (canonical).', category: 'admin' },
+  { name: '/admin_clear', summary: 'Compatibility alias for /admin_clear_guild_commands.', category: 'admin' },
+  { name: '/welcome_set <message>', summary: 'Set welcome message template (canonical).', category: 'setup' },
+  { name: '/admin_welcome_set_message <message>', summary: 'Compatibility alias for /welcome_set.', category: 'setup' },
+  { name: '/welcome_channel_set <channel>', summary: 'Set welcome channel (canonical).', category: 'setup' },
+  { name: '/admin_welcome_set_channel <channel>', summary: 'Compatibility alias for /welcome_channel_set.', category: 'setup' },
+  { name: '/admin_welcome_enable', summary: 'Compatibility alias for /welcome_enable.', category: 'setup' },
+  { name: '/admin_welcome_disable', summary: 'Compatibility alias for /welcome_disable.', category: 'setup' },
+  { name: '/admin_welcome_show', summary: 'Compatibility alias for /welcome_show.', category: 'setup' },
   { name: '/fun_quote', summary: 'Return a random legacy quote.', category: 'fun' },
   { name: '/suggestion <content>', summary: 'Submit suggestion for bot development.', category: 'fun' },
   { name: '/help', summary: 'Display command help by category.', category: 'core' },
