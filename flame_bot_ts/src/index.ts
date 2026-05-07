@@ -2526,10 +2526,10 @@ Message: ${cfg.message}`)],
 
   await client.login(DISCORD_TOKEN);
 
-  const subscriptionApiKey = PW_SCAN_API_KEY || PNW_API_KEY;
+  const subscriptionApiKey = PW_SCAN_API_KEY || effectivePnwApiKey;
   const warSubClient = new PnWSubscriptionClient(subscriptionApiKey);
   const recruiterSubClient = new PnWSubscriptionClient(subscriptionApiKey);
-  const alertHttpClient = new PnWClient(PNW_API_KEY);
+  const alertHttpClient = new PnWClient(effectivePnwApiKey);
   let warLoopStopped = false;
   let recruiterLoopStopped = false;
   const enrichWarFromApi = async (war: WarDetail): Promise<WarDetail> => {
