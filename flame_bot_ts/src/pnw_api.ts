@@ -1592,10 +1592,15 @@ export function computeNationRevenue(
 const PNW_PUSHER_URL = 'wss://socket.politicsandwar.com/app/a22734a47847a64386c8?protocol=7';
 const PNW_SUBSCRIPTION_URL = 'https://api.politicsandwar.com/subscriptions/v1/subscribe/{model}/{event}';
 const PNW_SUBSCRIPTION_AUTH_URL = 'https://api.politicsandwar.com/subscriptions/v1/auth';
+// Turn-change window constants (seconds in the 2-hour turn cycle).
+// Cycle: even hour:00:00 -> next even hour:00:00 (7200 seconds total).
+// Window spans across boundary: :59:28 -> :00:32.
 const TURN_CYCLE_SECONDS = 7200;
 const TURN_WINDOW_START = 7168;
 const TURN_WINDOW_END = 32;
 const TURN_WINDOW_LEN = (TURN_CYCLE_SECONDS - TURN_WINDOW_START) + TURN_WINDOW_END;
+const MIN_TURN_WINDOW_SLEEP_MS = 100;
+const MAX_TURN_WINDOW_SLEEP_MS = 1000;
 
 function secsIntoTurnCycle(): number {
   const now = new Date();
@@ -1838,7 +1843,10 @@ export class PnWSubscriptionClient {
       const [insideWindow, remaining] = inTurnWindow();
       if (insideWindow) {
         delay = PnWSubscriptionClient.RECONNECT_BASE;
-        const sleepMs = Math.max(100, Math.min(1000, remaining * 1000));
+        const sleepMs = Math.max(
+          MIN_TURN_WINDOW_SLEEP_MS,
+          Math.min(MAX_TURN_WINDOW_SLEEP_MS, remaining * 1000)
+        );
         await new Promise((r) => setTimeout(r, sleepMs));
         continue;
       }
@@ -1867,7 +1875,10 @@ export class PnWSubscriptionClient {
       const [insideWindow, remaining] = inTurnWindow();
       if (insideWindow) {
         delay = PnWSubscriptionClient.RECONNECT_BASE;
-        const sleepMs = Math.max(100, Math.min(1000, remaining * 1000));
+        const sleepMs = Math.max(
+          MIN_TURN_WINDOW_SLEEP_MS,
+          Math.min(MAX_TURN_WINDOW_SLEEP_MS, remaining * 1000)
+        );
         await new Promise((r) => setTimeout(r, sleepMs));
         continue;
       }
