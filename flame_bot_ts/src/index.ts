@@ -2254,14 +2254,15 @@ Message: ${cfg.message}`)],
 
   await client.login(DISCORD_TOKEN);
 
-  const subscriptionApiKey = PW_SCAN_API_KEY || effectivePnwApiKey;
+  const subscriptionApiKey = PW_SCAN_API_KEY || PNW_API_KEY;
   const warSubClient = new PnWSubscriptionClient(subscriptionApiKey);
   const recruiterSubClient = new PnWSubscriptionClient(subscriptionApiKey);
+  const alertHttpClient = new PnWClient(PNW_API_KEY);
   let warLoopStopped = false;
   let recruiterLoopStopped = false;
   const enrichWarFromApi = async (war: WarDetail): Promise<WarDetail> => {
     try {
-      const full = await pnw.getWarDetail(war.warId);
+      const full = await alertHttpClient.getWarDetail(war.warId);
       return full ?? war;
     } catch (err) {
       console.warn(`war alert enrichment failed for war ${war.warId}`, err);
@@ -2270,7 +2271,7 @@ Message: ${cfg.message}`)],
   };
   const enrichNationFromApi = async (nation: NationCreateDetail): Promise<NationCreateDetail> => {
     try {
-      const full = await pnw.getNation(nation.nationId);
+      const full = await alertHttpClient.getNation(nation.nationId);
       if (!full) return nation;
       return {
         nationId: nation.nationId,
