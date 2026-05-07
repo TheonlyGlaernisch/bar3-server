@@ -7,7 +7,7 @@
     "build": "tsc",
     "start": "node ./build/src/index.js",
     "dev": "tsc --watch",
-    "test": "npm run build && node --test ./test_api.mjs"
+    "test": "npm run build && node --test ./test_api.mjs ./test_core.mjs"
   },
   "author": "bsnk-dev",
   "license": "MIT",
