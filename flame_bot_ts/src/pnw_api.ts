@@ -673,6 +673,13 @@ export class PnWClient {
     return parseNationDict(nations[0] as Record<string, unknown>);
   }
 
+  async getWarDetail(warId: number): Promise<WarDetail | null> {
+    if (warId <= 0) return null;
+    const data = await this._query(WAR_DETAIL_QUERY, { id: [warId] });
+    const wars = (((data['data'] as Record<string, unknown>)?.['wars'] as Record<string, unknown>)?.['data'] as unknown[]) ?? [];
+    return wars.length ? parseWarFromDict(wars[0] as Record<string, unknown>) : null;
+  }
+
   async getNationByName(name: string): Promise<Nation | null> {
     if (this._restUrl !== null) {
       const nations = await this._fetchNationsRest();
@@ -1585,6 +1592,26 @@ export function computeNationRevenue(
 const PNW_PUSHER_URL = 'wss://socket.politicsandwar.com/app/a22734a47847a64386c8?protocol=7';
 const PNW_SUBSCRIPTION_URL = 'https://api.politicsandwar.com/subscriptions/v1/subscribe/{model}/{event}';
 const PNW_SUBSCRIPTION_AUTH_URL = 'https://api.politicsandwar.com/subscriptions/v1/auth';
+const TURN_CYCLE_SECONDS = 7200;
+const TURN_WINDOW_START = 7168;
+const TURN_WINDOW_END = 32;
+const TURN_WINDOW_LEN = (TURN_CYCLE_SECONDS - TURN_WINDOW_START) + TURN_WINDOW_END;
+
+function secsIntoTurnCycle(): number {
+  const now = new Date();
+  return (now.getUTCHours() % 2) * 3600 + now.getUTCMinutes() * 60 + now.getUTCSeconds();
+}
+
+function inTurnWindow(): [boolean, number] {
+  const s = secsIntoTurnCycle();
+  if (s >= TURN_WINDOW_START) {
+    return [true, TURN_WINDOW_LEN - (s - TURN_WINDOW_START)];
+  }
+  if (s < TURN_WINDOW_END) {
+    return [true, TURN_WINDOW_END - s];
+  }
+  return [false, 0];
+}
 
 export function parseNationCreateDetail(raw: Record<string, unknown>): NationCreateDetail | null {
   const nationId = n(raw['id']);
@@ -1706,29 +1733,12 @@ export class PnWSubscriptionClient {
     return auth;
   }
 
-  private async _fetchWarDetail(warId: number, apiKey: string): Promise<WarDetail | null> {
-    if (warId <= 0) return null;
-    const url = `${PNW_GRAPHQL_URL}?api_key=${apiKey}`;
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: WAR_DETAIL_QUERY, variables: { id: [warId] } }),
-      signal: AbortSignal.timeout(30_000),
-    });
-    resp.ok || (() => { throw new Error(`War detail query HTTP error: ${resp.status}`); })();
-    const data = await resp.json() as Record<string, unknown>;
-    const wars = (((data['data'] as Record<string, unknown>)?.['wars'] as Record<string, unknown>)?.['data'] as unknown[]) ?? [];
-    return wars.length ? parseWarFromDict(wars[0] as Record<string, unknown>) : null;
-  }
-
   private async *_streamSubscription<T>(opts: {
     model: string;
     event: string;
     eventNames: [string, string];
     parser: (raw: Record<string, unknown>) => T | null;
     logPrefix: string;
-    isWar?: boolean;
-    apiKey?: string;
   }): AsyncGenerator<T> {
     const cacheKey = `${opts.model}:${opts.event}`;
     let channel = this._channelCache.get(cacheKey);
@@ -1794,14 +1804,7 @@ export class PnWSubscriptionClient {
           ? rawData as Record<string, unknown>[]
           : [rawData as Record<string, unknown>];
         for (const item of items) {
-          let parsed = opts.parser(item);
-          if (parsed !== null && opts.isWar && opts.apiKey) {
-            const warDetail = parsed as unknown as WarDetail;
-            try {
-              const full = await this._fetchWarDetail(warDetail.warId, opts.apiKey);
-              if (full) parsed = full as unknown as T;
-            } catch { /**/ }
-          }
+          const parsed = opts.parser(item);
           if (parsed !== null) yield parsed;
         }
       } else if (wsEvent === 'pusher:ping') {
@@ -1825,14 +1828,19 @@ export class PnWSubscriptionClient {
           eventNames: ['WAR_CREATE', 'BULK_WAR_CREATE'],
           parser: parseWarFromDict,
           logPrefix: 'PnW subscription:',
-          isWar: true,
-          apiKey: this._apiKey,
         })) {
           delay = PnWSubscriptionClient.RECONNECT_BASE;
           yield war;
         }
       } catch (err) {
         console.error(`PnW subscription: connection lost, reconnecting in ${delay}s.`, err);
+      }
+      const [insideWindow, remaining] = inTurnWindow();
+      if (insideWindow) {
+        delay = PnWSubscriptionClient.RECONNECT_BASE;
+        const sleepMs = Math.max(100, Math.min(1000, remaining * 1000));
+        await new Promise((r) => setTimeout(r, sleepMs));
+        continue;
       }
       await new Promise((r) => setTimeout(r, delay * 1000));
       delay = Math.min(delay * 2, PnWSubscriptionClient.RECONNECT_MAX);
@@ -1855,6 +1863,13 @@ export class PnWSubscriptionClient {
         }
       } catch (err) {
         console.error(`PnW recruiter subscription: connection lost, reconnecting in ${delay}s.`, err);
+      }
+      const [insideWindow, remaining] = inTurnWindow();
+      if (insideWindow) {
+        delay = PnWSubscriptionClient.RECONNECT_BASE;
+        const sleepMs = Math.max(100, Math.min(1000, remaining * 1000));
+        await new Promise((r) => setTimeout(r, sleepMs));
+        continue;
       }
       await new Promise((r) => setTimeout(r, delay * 1000));
       delay = Math.min(delay * 2, PnWSubscriptionClient.RECONNECT_MAX);

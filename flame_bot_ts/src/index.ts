@@ -2254,27 +2254,56 @@ Message: ${cfg.message}`)],
 
   await client.login(DISCORD_TOKEN);
 
-  const warSubClient = new PnWSubscriptionClient(effectivePnwApiKey);
-  const recruiterSubClient = new PnWSubscriptionClient(PW_SCAN_API_KEY || effectivePnwApiKey);
+  const subscriptionApiKey = PW_SCAN_API_KEY || effectivePnwApiKey;
+  const warSubClient = new PnWSubscriptionClient(subscriptionApiKey);
+  const recruiterSubClient = new PnWSubscriptionClient(subscriptionApiKey);
   let warLoopStopped = false;
   let recruiterLoopStopped = false;
+  const enrichWarFromApi = async (war: WarDetail): Promise<WarDetail> => {
+    try {
+      const full = await pnw.getWarDetail(war.warId);
+      return full ?? war;
+    } catch (err) {
+      console.warn(`war alert enrichment failed for war ${war.warId}`, err);
+      return war;
+    }
+  };
+  const enrichNationFromApi = async (nation: NationCreateDetail): Promise<NationCreateDetail> => {
+    try {
+      const full = await pnw.getNation(nation.nationId);
+      if (!full) return nation;
+      return {
+        nationId: nation.nationId,
+        nationName: full.nationName || nation.nationName,
+        leaderName: full.leaderName || nation.leaderName,
+        founded: nation.founded,
+        allianceId: full.allianceId,
+        cities: full.numCities,
+        score: full.score,
+      };
+    } catch (err) {
+      console.warn(`nation enrichment failed for nation ${nation.nationId}`, err);
+      return nation;
+    }
+  };
   const warLoopTask = (async () => {
     for await (const war of warSubClient.iterWarCreates()) {
       if (warLoopStopped) break;
       try {
+        const fullWar = await enrichWarFromApi(war);
         const subs = await db.getAllWarAlertSubscriptions();
         for (const sub of subs) {
           const allianceId = await db.getAllianceId(BigInt(sub.guild_id));
           if (!allianceId) continue;
-          const involvesAlliance = war.attackerAllianceId === allianceId || war.defenderAllianceId === allianceId;
+          const involvesAlliance = fullWar.attackerAllianceId === allianceId || fullWar.defenderAllianceId === allianceId;
           if (!involvesAlliance) continue;
-          const ownCities = war.attackerAllianceId === allianceId ? war.attackerCities : war.defenderCities;
+          const ownCities = fullWar.attackerAllianceId === allianceId ? fullWar.attackerCities : fullWar.defenderCities;
           if (sub.min_cities != null && ownCities < sub.min_cities) continue;
           if (sub.max_cities != null && ownCities > sub.max_cities) continue;
           const guild = client.guilds.cache.get(sub.guild_id);
           const ch = guild?.channels.cache.get(sub.channel_id) as TextChannel | undefined;
           if (!ch) continue;
-          await ch.send({ embeds: [buildWarAlertEmbed(war, allianceId)] });
+          await ch.send({ embeds: [buildWarAlertEmbed(fullWar, allianceId)] });
         }
       } catch (e) {
         console.error('war alert dispatch error', e);
@@ -2310,8 +2339,9 @@ Message: ${cfg.message}`)],
     for await (const nation of recruiterSubClient.iterNationCreates()) {
       if (recruiterLoopStopped) break;
       try {
+        const fullNation = await enrichNationFromApi(nation);
         // Fire-and-forget to avoid blocking the subscription stream during delay windows.
-        void dispatchRecruiterNation(nation);
+        void dispatchRecruiterNation(fullNation);
       } catch (e) {
         console.error('recruiter alert dispatch error', e);
       }
