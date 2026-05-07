@@ -145,7 +145,7 @@ async function dispatchNationToEnabledAccounts(nation: NationAPICall.Nation): Pr
 
   const baseUrl = getBaseUrlFromEnv();
   const maxPerTick = Number(process.env.AUTOMATION_MAX_SENDS_PER_ACCOUNT_PER_TICK || 25);
-  if (Number.isFinite(maxPerTick) && maxPerTick <= 0) return;
+  if (!Number.isFinite(maxPerTick) || maxPerTick <= 0) return;
 
   // For each enabled account: send to nation if it hasn't been seen.
   for (const setting of enabled) {
