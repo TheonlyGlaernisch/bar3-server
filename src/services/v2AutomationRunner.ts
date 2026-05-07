@@ -64,10 +64,13 @@ function eventNationToV2Nation(event: NationCreateEvent): NationAPICall.Nation {
 }
 
 async function fetchNationByIdGraphql(apiKey: string, nationId: number): Promise<NationAPICall.Nation | null> {
+  const safeNationId = Math.trunc(nationId);
+  if (!Number.isFinite(safeNationId) || safeNationId <= 0) return null;
+
   const endpoint = (process.env.PW_GRAPHQL_URL || 'https://api.politicsandwar.com/graphql').trim();
   const query = `
-    query NationById {
-      nations(id: [${nationId}], first: 1, page: 1) {
+    query NationById($nationId: Int!) {
+      nations(id: [$nationId], first: 1, page: 1) {
         data {
           id
           nation_name
@@ -93,7 +96,7 @@ async function fetchNationByIdGraphql(apiKey: string, nationId: number): Promise
   for (const applyAuth of authModes) {
     const response = await applyAuth(superagent.post(endpoint))
       .accept('json')
-      .send({ query })
+      .send({ query, variables: { nationId: safeNationId } })
       .ok(() => true)
       .catch(() => undefined);
     const data = ((response?.body as Record<string, unknown> | undefined)?.data as Record<string, unknown> | undefined);
