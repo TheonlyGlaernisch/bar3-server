@@ -2182,7 +2182,7 @@ PNW_SUBSCRIPTION_URL = "https://api.politicsandwar.com/subscriptions/v1/subscrib
 PNW_SUBSCRIPTION_AUTH_URL = "https://api.politicsandwar.com/subscriptions/v1/auth"
 
 # Turn change window constants (seconds within the 2-hour cycle).
-# Cycle: even_hour:00:00 -> next_even_hour:00:00 (7200s total)
+# Cycle: even hour:00:00 -> next even hour:00:00 (7200s total)
 # Window starts at 7168s (= :59:28 before the even hour) and ends at
 # 32s of the next cycle (wraps into the next cycle).
 _TURN_CYCLE_SECONDS = 7200
@@ -2565,6 +2565,7 @@ class PnWSubscriptionClient:
                 )
             in_window, remaining = _in_turn_window()
             if in_window:
+                delay = self._RECONNECT_BASE
                 await asyncio.sleep(1 if remaining > 1 else remaining)
                 continue
             await asyncio.sleep(delay)
@@ -2601,6 +2602,7 @@ class PnWSubscriptionClient:
                 )
             in_window, remaining = _in_turn_window()
             if in_window:
+                delay = self._RECONNECT_BASE
                 await asyncio.sleep(1 if remaining > 1 else remaining)
                 continue
             await asyncio.sleep(delay)
