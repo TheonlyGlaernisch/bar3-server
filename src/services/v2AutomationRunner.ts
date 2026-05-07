@@ -145,7 +145,10 @@ async function dispatchNationToEnabledAccounts(nation: NationAPICall.Nation): Pr
 
   const baseUrl = getBaseUrlFromEnv();
   const maxPerTick = Number(process.env.AUTOMATION_MAX_SENDS_PER_ACCOUNT_PER_TICK || 25);
-  if (!Number.isFinite(maxPerTick) || maxPerTick <= 0) return;
+  if (!Number.isFinite(maxPerTick) || maxPerTick <= 0) {
+    console.warn('Skipping automation dispatch: AUTOMATION_MAX_SENDS_PER_ACCOUNT_PER_TICK is invalid.');
+    return;
+  }
 
   // For each enabled account: send to nation if it hasn't been seen.
   for (const setting of enabled) {
@@ -215,7 +218,12 @@ export function startAutomationLoop(): void {
 
   (async () => {
     for await (const event of subscriptionClient.iterNationCreates()) {
-      const enrichedNation = await fetchNationByIdGraphql(httpApiKey, event.nationId).catch(() => null);
+      let enrichedNation: NationAPICall.Nation | null = null;
+      try {
+        enrichedNation = await fetchNationByIdGraphql(httpApiKey, event.nationId);
+      } catch (err) {
+        console.warn(`Automation enrichment failed for nation ${event.nationId}; using subscription payload.`, err);
+      }
       const nation = enrichedNation || eventNationToV2Nation(event);
       await dispatchNationToEnabledAccounts(nation).catch(() => undefined);
     }
