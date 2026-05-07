@@ -530,7 +530,7 @@ export function createApp(options: CreateAppOptions): Application {
     }
   });
 
-  const respondWithAuthSession = (req: Request, res: Response): void => {
+  const _respondWithAuthSession = (req: Request, res: Response): void => {
     const token = typeof req.query['token'] === 'string' ? req.query['token'] : '';
     if (!token) {
       res.status(400).json({ error: 'Missing token' });
@@ -550,10 +550,10 @@ export function createApp(options: CreateAppOptions): Application {
   };
 
   /** GET /auth/session?token=<token> — check session validity */
-  app.get('/auth/session', respondWithAuthSession);
+  app.get('/auth/session', _respondWithAuthSession);
 
   /** GET /auth/mobile-session?token=<token> — alias kept for bar3-client compatibility */
-  app.get('/auth/mobile-session', respondWithAuthSession);
+  app.get('/auth/mobile-session', _respondWithAuthSession);
 
   /** POST /auth/logout — revoke a session token */
   app.post('/auth/logout', (req: Request, res: Response) => {
