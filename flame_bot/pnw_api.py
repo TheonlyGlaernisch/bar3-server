@@ -2181,7 +2181,44 @@ PNW_PUSHER_URL = "wss://socket.politicsandwar.com/app/a22734a47847a64386c8?proto
 PNW_SUBSCRIPTION_URL = "https://api.politicsandwar.com/subscriptions/v1/subscribe/{model}/{event}"
 PNW_SUBSCRIPTION_AUTH_URL = "https://api.politicsandwar.com/subscriptions/v1/auth"
 
+# Turn change window constants (seconds within the 2-hour cycle).
+# Cycle: even hour:00:00 -> next even hour:00:00 (7200s total)
+# Window starts at 7168s (= :59:28 before the even hour) and ends at
+# 32s of the next cycle (wraps into the next cycle).
+_TURN_CYCLE_SECONDS = 7200
+_TURN_WINDOW_START = 7168
+_TURN_WINDOW_END = 32
+_TURN_WINDOW_LEN = (_TURN_CYCLE_SECONDS - _TURN_WINDOW_START) + _TURN_WINDOW_END
+
 T = TypeVar("T")
+
+
+def _secs_into_turn_cycle() -> int:
+    """Return seconds elapsed since the most recent even UTC hour."""
+    now = datetime.now(tz=timezone.utc)
+    return (now.hour % 2) * 3600 + now.minute * 60 + now.second
+
+
+def _in_turn_window() -> tuple[bool, int]:
+    """Return ``(inside_window, seconds_remaining_in_window)``."""
+    s = _secs_into_turn_cycle()
+    if s >= _TURN_WINDOW_START:
+        remaining = _TURN_WINDOW_LEN - (s - _TURN_WINDOW_START)
+        return True, remaining
+    if s < _TURN_WINDOW_END:
+        remaining = _TURN_WINDOW_END - s
+        return True, remaining
+    return False, 0
+
+
+def _secs_until_turn_window() -> int:
+    """Return seconds until the turn-change window starts."""
+    s = _secs_into_turn_cycle()
+    if s >= _TURN_WINDOW_START:
+        return 0
+    if s < _TURN_WINDOW_END:
+        return 0
+    return _TURN_WINDOW_START - s
 
 @dataclass
 class NationCreateDetail:
@@ -2526,6 +2563,11 @@ class PnWSubscriptionClient:
                 log.exception(
                     "PnW subscription: connection lost, reconnecting in %ds.", delay
                 )
+            in_window, remaining = _in_turn_window()
+            if in_window:
+                delay = self._RECONNECT_BASE
+                await asyncio.sleep(1 if remaining > 1 else remaining)
+                continue
             await asyncio.sleep(delay)
             delay = min(delay * 2, self._RECONNECT_MAX)
 
@@ -2558,6 +2600,11 @@ class PnWSubscriptionClient:
                 log.exception(
                     "PnW recruiter subscription: connection lost, reconnecting in %ds.", delay
                 )
+            in_window, remaining = _in_turn_window()
+            if in_window:
+                delay = self._RECONNECT_BASE
+                await asyncio.sleep(1 if remaining > 1 else remaining)
+                continue
             await asyncio.sleep(delay)
             delay = min(delay * 2, self._RECONNECT_MAX)
 
