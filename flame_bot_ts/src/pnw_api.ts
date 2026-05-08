@@ -925,10 +925,14 @@ export class PnWClient {
         wars(alliance_id: $alliance_id, page: $page, first: 100) {
           data {
             id date war_type att_id def_id att_alliance_id def_alliance_id
-            attacker { nation_name leader_name num_cities score soldiers tanks aircraft ships missiles nukes wars_won wars_lost }
-            defender { nation_name leader_name num_cities score soldiers tanks aircraft ships missiles nukes wars_won wars_lost }
-            att_alliance { name }
-            def_alliance { name }
+            attacker {
+              nation_name leader_name num_cities score soldiers tanks aircraft ships missiles nukes wars_won wars_lost
+              alliance { name }
+            }
+            defender {
+              nation_name leader_name num_cities score soldiers tanks aircraft ships missiles nukes wars_won wars_lost
+              alliance { name }
+            }
           }
           paginatorInfo { hasMorePages }
         }
@@ -947,8 +951,8 @@ export class PnWClient {
           if (!warId) continue;
           const attacker = (war['attacker'] as Record<string, unknown>) ?? {};
           const defender = (war['defender'] as Record<string, unknown>) ?? {};
-          const attAlliance = (war['att_alliance'] as Record<string, unknown>) ?? {};
-          const defAlliance = (war['def_alliance'] as Record<string, unknown>) ?? {};
+          const attAlliance = (attacker['alliance'] as Record<string, unknown>) ?? {};
+          const defAlliance = (defender['alliance'] as Record<string, unknown>) ?? {};
           results.push({
             warId,
             date: warDate,
@@ -1651,10 +1655,14 @@ const WAR_DETAIL_QUERY = `query GetWarDetail($id: [Int]) {
   wars(id: $id, first: 1) {
     data {
       id date war_type att_id def_id att_alliance_id def_alliance_id
-      attacker { nation_name leader_name num_cities score soldiers tanks aircraft ships missiles nukes wars_won wars_lost }
-      defender { nation_name leader_name num_cities score soldiers tanks aircraft ships missiles nukes wars_won wars_lost }
-      att_alliance { name }
-      def_alliance { name }
+      attacker {
+        nation_name leader_name num_cities score soldiers tanks aircraft ships missiles nukes wars_won wars_lost
+        alliance { name }
+      }
+      defender {
+        nation_name leader_name num_cities score soldiers tanks aircraft ships missiles nukes wars_won wars_lost
+        alliance { name }
+      }
     }
   }
 }`;
@@ -1666,8 +1674,8 @@ function parseWarFromDict(raw: Record<string, unknown>): WarDetail | null {
   const warDate = dateStr ? new Date(dateStr) : new Date();
   const attacker = (raw['attacker'] as Record<string, unknown>) ?? {};
   const defender = (raw['defender'] as Record<string, unknown>) ?? {};
-  const attAlliance = (raw['att_alliance'] as Record<string, unknown>) ?? {};
-  const defAlliance = (raw['def_alliance'] as Record<string, unknown>) ?? {};
+  const attAlliance = ((attacker['alliance'] as Record<string, unknown>) ?? (raw['att_alliance'] as Record<string, unknown>)) ?? {};
+  const defAlliance = ((defender['alliance'] as Record<string, unknown>) ?? (raw['def_alliance'] as Record<string, unknown>)) ?? {};
   return {
     warId,
     date: isNaN(warDate.getTime()) ? new Date() : warDate,
@@ -1726,8 +1734,8 @@ function parseWarCreateFromSubscription(raw: Record<string, unknown>): WarDetail
   const warDate = dateStr ? new Date(dateStr) : new Date();
   const attacker = (raw['attacker'] as Record<string, unknown>) ?? {};
   const defender = (raw['defender'] as Record<string, unknown>) ?? {};
-  const attAlliance = (raw['att_alliance'] as Record<string, unknown>) ?? {};
-  const defAlliance = (raw['def_alliance'] as Record<string, unknown>) ?? {};
+  const attAlliance = ((attacker['alliance'] as Record<string, unknown>) ?? (raw['att_alliance'] as Record<string, unknown>)) ?? {};
+  const defAlliance = ((defender['alliance'] as Record<string, unknown>) ?? (raw['def_alliance'] as Record<string, unknown>)) ?? {};
   const attackerId = getFirstNumber(raw, ['att_id', 'attacker_id', 'attacker_nation_id', 'attid']) ?? 0;
   const defenderId = getFirstNumber(raw, ['def_id', 'defender_id', 'defender_nation_id', 'defid']) ?? 0;
   return {
