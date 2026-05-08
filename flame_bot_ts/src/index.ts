@@ -273,8 +273,10 @@ async function fetchAllianceScoreHistory(allianceId: number): Promise<AllianceSc
   const byDate = new Map<string, AllianceScoreHistoryPoint>();
   for (const line of lines.slice(1)) {
     const row = parseCsvLine(line);
-    const rowAllianceId = Number(row[allianceIdIdx] ?? 0);
-    if (!Number.isFinite(rowAllianceId) || rowAllianceId !== allianceId) continue;
+    const rowAllianceIdRaw = row[allianceIdIdx];
+    if (rowAllianceIdRaw == null || rowAllianceIdRaw === '') continue;
+    const rowAllianceId = Number(rowAllianceIdRaw);
+    if (!Number.isFinite(rowAllianceId) || rowAllianceId <= 0 || rowAllianceId !== allianceId) continue;
     const fetchDateRaw = row[fetchDateIdx] ?? '';
     const fetchDate = normalizeHistoryDate(fetchDateRaw);
     if (!fetchDate) continue;
@@ -309,8 +311,8 @@ function renderAllianceScoreHistoryTable(points: AllianceScoreHistoryPoint[], ma
     const members = p.members.padStart(memberWidth);
     return `${p.fetchDate.padEnd(dateWidth, ' ')} ${score} ${rank} ${members}`;
   });
-  const trunc = points.length > rows.length ? `\n... showing last ${rows.length} of ${points.length} entries` : '';
-  return `\`\`\`\n${header}\n${body.join('\n')}${trunc}\n\`\`\``;
+  const truncationMessage = points.length > rows.length ? `\n... showing last ${rows.length} of ${points.length} entries` : '';
+  return `\`\`\`\n${header}\n${body.join('\n')}${truncationMessage}\n\`\`\``;
 }
 
 
