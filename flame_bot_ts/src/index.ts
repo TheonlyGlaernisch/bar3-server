@@ -230,7 +230,7 @@ function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
         x: {
           title: {
             display: true,
-            text: 'City Count',
+            text: 'City Tier',
           },
         },
         y: {
