@@ -1785,14 +1785,14 @@ ${resourceLines}
           .setFooter({ text: 'Page 2 · City tier graph' });
         pages.push(cityEmbed);
 
-        // Page 3: score development placeholder
-        const scoreEmbed = new EmbedBuilder()
+        // Page 3: score development note
+        const scoreDevEmbed = new EmbedBuilder()
           .setTitle(`${alliance.name} — Score Development`)
           .setURL(allianceUrl(alliance.allianceId, baseUrl))
           .setDescription('Historical alliance-score development is not available from the current PnW endpoints used by this bot.')
-          .setColor(0x1A8A7A)
+          .setColor(0x0F766E)
           .setFooter({ text: 'Page 3' });
-        pages.push(scoreEmbed);
+        pages.push(scoreDevEmbed);
 
         // Pages 4+: extended member list (10 per page)
         const extSorted = [...lotsMembers].sort((a,b)=>b.score-a.score);
@@ -1810,7 +1810,7 @@ ${resourceLines}
             .setURL(allianceUrl(alliance.allianceId, baseUrl))
             .setDescription(lines.join('\n') || '*(no members)*')
             .setColor(0xFFD700)
-            .setFooter({ text: `Page ${3+p+1} · Members page ${p+1}/${extTotalPages} · ${extSorted.length} total` });
+            .setFooter({ text: `Page ${p+4} · Members page ${p+1}/${extTotalPages} · ${extSorted.length} total` });
           pages.push(extEmbed);
         }
 
@@ -2496,6 +2496,9 @@ Message: ${cfg.message}`)],
       }
 
       if (commandName === 'help') {
+        if (Math.floor(Math.random() * 3) === 0) {
+          return void interaction.reply({ content: 'bot is striking for its rights' });
+        }
         return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('flame_bot commands').setDescription(renderCommandHelp())], ephemeral: true });
       }
     } catch (err) {

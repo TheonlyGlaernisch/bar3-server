@@ -5,7 +5,9 @@ import {
   calculateCityCost,
   calculateInfraCost,
   parseNationCreateDetail,
+  parseResourceLoot,
   secsUntilTurnWindow,
+  PnWClient,
 } from './build/src/pnw_api.js';
 
 test('TradePrice helpers calculate expected value totals', () => {
@@ -59,4 +61,40 @@ test('secsUntilTurnWindow always returns non-negative bounded value', () => {
   const secs = secsUntilTurnWindow();
   assert.ok(secs >= 0);
   assert.ok(secs <= 2 * 60 * 60);
+});
+
+test('parseResourceLoot extracts all five resource amounts', () => {
+  const line = 'attacked and looted 1,234.5 money, 10 gasoline, 20 munitions, 30 aluminum, 40 steel';
+  const [money, gas, mun, alu, stl] = parseResourceLoot(line);
+  assert.equal(money, 1234.5);
+  assert.equal(gas, 10);
+  assert.equal(mun, 20);
+  assert.equal(alu, 30);
+  assert.equal(stl, 40);
+});
+
+test('parseResourceLoot returns zeros for empty string', () => {
+  const [money, gas, mun, alu, stl] = parseResourceLoot('');
+  assert.equal(money, 0);
+  assert.equal(gas, 0);
+  assert.equal(mun, 0);
+  assert.equal(alu, 0);
+  assert.equal(stl, 0);
+});
+
+test('parseResourceLoot returns zeros when resource not mentioned', () => {
+  const [money, gas, mun, alu, stl] = parseResourceLoot('stole 500 money');
+  assert.equal(money, 500);
+  assert.equal(gas, 0);
+  assert.equal(mun, 0);
+  assert.equal(alu, 0);
+  assert.equal(stl, 0);
+});
+
+test('PnWClient.discordMatches is case-insensitive and handles legacy hash tags', () => {
+  assert.ok(PnWClient.discordMatches('alice', 'alice'));
+  assert.ok(PnWClient.discordMatches('ALICE', 'alice'));
+  assert.ok(PnWClient.discordMatches('alice#1234', 'alice'));
+  assert.ok(!PnWClient.discordMatches('alice', 'bob'));
+  assert.ok(!PnWClient.discordMatches('', 'alice'));
 });

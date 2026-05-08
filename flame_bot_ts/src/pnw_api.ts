@@ -16,7 +16,7 @@ const LOOT_STL_RE = /([\d,]+(?:\.\d+)?)\s+steel/i;
 const ATTACK_TYPES_WITH_LOOT = new Set(['GROUND', 'VICTORY']);
 const WARATTACKS_BATCH_SIZE = 50;
 
-function parseResourceLoot(lootInfo: string): [number, number, number, number, number] {
+export function parseResourceLoot(lootInfo: string): [number, number, number, number, number] {
   const extract = (re: RegExp): number => {
     const m = re.exec(lootInfo);
     if (m && m[1]) {
