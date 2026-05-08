@@ -210,6 +210,111 @@ function renderVerticalTierChart(rows: Array<[number, number]>, maxHeight = 8): 
   return `\`\`\`\n${lines.join('\n')}\n\`\`\``;
 }
 
+type AllianceScoreHistoryPoint = {
+  fetchDate: string;
+  allianceId: number;
+  score: number;
+  rank: number;
+  members: number;
+};
+
+const ALLIANCE_SCORE_HISTORY_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1ERfHN5vVorODEPHOnIxyWgq__RltTPQiOa0C5YHX1_k/gviz/tq?tqx=out:csv';
+const ALLIANCE_SCORE_HISTORY_FETCH_TIMEOUT_MS = 15_000;
+
+function parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
+        cur += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === ',' && !inQuotes) {
+      out.push(cur.trim());
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
+}
+
+function normalizeHistoryDate(raw: string): string {
+  const trimmed = raw.trim();
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  const direct = /^(\d{4}-\d{2}-\d{2})/.exec(trimmed);
+  return direct?.[1] ?? trimmed;
+}
+
+async function fetchAllianceScoreHistory(allianceId: number): Promise<AllianceScoreHistoryPoint[]> {
+  const resp = await fetch(ALLIANCE_SCORE_HISTORY_SHEET_CSV_URL, { signal: AbortSignal.timeout(ALLIANCE_SCORE_HISTORY_FETCH_TIMEOUT_MS) });
+  if (!resp.ok) throw new Error(`sheet HTTP error: ${resp.status} ${resp.statusText}`);
+  const csv = await resp.text();
+  const lines = csv.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+  if (lines.length < 2) return [];
+  const headerLine = lines[0];
+  if (!headerLine) return [];
+  const header = parseCsvLine(headerLine).map((h) => h.trim());
+  const fetchDateIdx = header.indexOf('fetch_date');
+  const allianceIdIdx = header.indexOf('alliance_id');
+  const scoreIdx = header.indexOf('score');
+  const rankIdx = header.indexOf('rank');
+  const membersIdx = header.indexOf('members');
+  if ([fetchDateIdx, allianceIdIdx, scoreIdx, rankIdx, membersIdx].some((idx) => idx < 0)) return [];
+  const byDate = new Map<string, AllianceScoreHistoryPoint>();
+  for (const line of lines.slice(1)) {
+    const row = parseCsvLine(line);
+    const rowAllianceIdRaw = row[allianceIdIdx];
+    if (rowAllianceIdRaw == null || rowAllianceIdRaw === '') continue;
+    const rowAllianceId = Number(rowAllianceIdRaw);
+    if (!Number.isFinite(rowAllianceId) || rowAllianceId <= 0 || rowAllianceId !== allianceId) continue;
+    const fetchDateRaw = row[fetchDateIdx] ?? '';
+    const fetchDate = normalizeHistoryDate(fetchDateRaw);
+    if (!fetchDate) continue;
+    const point: AllianceScoreHistoryPoint = {
+      fetchDate,
+      allianceId: rowAllianceId,
+      score: Number(row[scoreIdx] ?? 0),
+      rank: Number(row[rankIdx] ?? 0),
+      members: Number(row[membersIdx] ?? 0),
+    };
+    byDate.set(fetchDate, point);
+  }
+  return [...byDate.values()].sort((a, b) => a.fetchDate.localeCompare(b.fetchDate));
+}
+
+function renderAllianceScoreHistoryTable(points: AllianceScoreHistoryPoint[], maxRows = 20): string {
+  if (!points.length) return 'No data available.';
+  const dateWidth = 10;
+  const rows = points.slice(-maxRows).map((p) => ({
+    fetchDate: p.fetchDate,
+    score: Math.round(p.score).toLocaleString(),
+    rank: Math.round(p.rank).toLocaleString(),
+    members: Math.round(p.members).toLocaleString(),
+  }));
+  const scoreWidth = Math.max(5, ...rows.map((p) => p.score.length));
+  const rankWidth = Math.max(4, ...rows.map((p) => p.rank.length));
+  const memberWidth = Math.max(7, ...rows.map((p) => p.members.length));
+  const header = `${'Date'.padEnd(dateWidth, ' ')} ${'Score'.padStart(scoreWidth)} ${'Rank'.padStart(rankWidth)} ${'Members'.padStart(memberWidth)}`;
+  const body = rows.map((p) => {
+    const score = p.score.padStart(scoreWidth);
+    const rank = p.rank.padStart(rankWidth);
+    const members = p.members.padStart(memberWidth);
+    return `${p.fetchDate.padEnd(dateWidth, ' ')} ${score} ${rank} ${members}`;
+  });
+  const truncationMessage = points.length > rows.length ? `\n... showing last ${rows.length} of ${points.length} entries` : '';
+  return `\`\`\`\n${header}\n${body.join('\n')}${truncationMessage}\n\`\`\``;
+}
+
 
 
 
@@ -1813,13 +1918,19 @@ ${resourceLines}
           .setFooter({ text: 'Page 2 · City tier graph' });
         pages.push(cityEmbed);
 
-        // Page 3: score development note
+        // Page 3: score history table
+        let historyPoints: AllianceScoreHistoryPoint[] = [];
+        try {
+          historyPoints = await fetchAllianceScoreHistory(alliance.allianceId);
+        } catch (err) {
+          logWarn(`alliance score history fetch failed for alliance ${alliance.allianceId}`, err);
+        }
         const scoreDevEmbed = new EmbedBuilder()
-          .setTitle(`${alliance.name} — Score Development`)
+          .setTitle(`${alliance.name} — Score History`)
           .setURL(allianceUrl(alliance.allianceId, baseUrl))
-          .setDescription('Historical alliance-score development is not available from the current PnW endpoints used by this bot.')
+          .setDescription(renderAllianceScoreHistoryTable(historyPoints))
           .setColor(0x0F766E)
-          .setFooter({ text: 'Page 3' });
+          .setFooter({ text: 'Page 3 · Alliance score history' });
         pages.push(scoreDevEmbed);
 
         // Pages 4+: extended member list (10 per page)
