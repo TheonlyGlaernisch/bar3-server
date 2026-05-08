@@ -53,6 +53,7 @@ Use these repo-root commands for the entire project:
 
 `npm run build` builds both the root server and `flame_bot_ts`.  
 `npm run start` starts both services.
+`npm i` installs dependencies for both the root server and `flame_bot_ts`.
 
 # Running both on Render (single service)
 
