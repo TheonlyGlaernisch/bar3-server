@@ -196,8 +196,11 @@ function getPrimaryGuild(client: Client): Guild | null {
 function buildTierCountsWithEmptyInterior(rows: Array<[number, number]>): Array<[number, number]> {
   if (!rows.length) return [];
   const sorted = [...rows].sort((a, b) => a[0] - b[0]);
-  const minTier = sorted[0]![0];
-  const maxTier = sorted[sorted.length - 1]![0];
+  const minEntry = sorted[0];
+  const maxEntry = sorted[sorted.length - 1];
+  if (!minEntry || !maxEntry) return [];
+  const minTier = minEntry[0];
+  const maxTier = maxEntry[0];
   const byTier = new Map<number, number>(sorted);
   const fullRange: Array<[number, number]> = [];
   for (let tier = minTier; tier <= maxTier; tier += 1) {
@@ -371,8 +374,10 @@ function buildAllianceScoreHistoryChartPoints(points: AllianceScoreHistoryPoint[
   const source = points.slice(-maxSourcePoints);
   if (!source.length) return [];
   const byDate = new Map<string, AllianceScoreHistoryPoint>(source.map((p) => [p.fetchDate, p]));
-  const startDateRaw = source[0]?.fetchDate;
-  const endDateRaw = source[source.length - 1]?.fetchDate;
+  const firstPoint = source[0];
+  const lastPoint = source[source.length - 1];
+  const startDateRaw = firstPoint?.fetchDate;
+  const endDateRaw = lastPoint?.fetchDate;
   if (!startDateRaw || !endDateRaw) return [];
   const start = new Date(`${startDateRaw}T00:00:00Z`);
   const end = new Date(`${endDateRaw}T00:00:00Z`);
@@ -2033,14 +2038,16 @@ ${resourceLines}
         for (const m of lotsMembers) cityCounts.set(m.numCities, (cityCounts.get(m.numCities) ?? 0) + 1);
         const cityRows = [...cityCounts.entries()].sort((a,b)=>a[0]-b[0]);
         const cityRowsWithGaps = buildTierCountsWithEmptyInterior(cityRows);
+        const firstCityTier = cityRowsWithGaps[0]?.[0];
+        const lastCityTier = cityRowsWithGaps[cityRowsWithGaps.length - 1]?.[0];
         const cityLegend = cityRowsWithGaps.length
           ? cityRowsWithGaps.map(([city, count]) => `\`${String(city).padStart(2)}c\` ${count}`).join(' · ')
           : '';
         const cityEmbed = new EmbedBuilder()
           .setTitle(`${alliance.name} — City Tier Graph`)
           .setURL(allianceUrl(alliance.allianceId, baseUrl))
-          .setDescription(cityRowsWithGaps.length
-            ? `QuickChart bar graph with full tier range (${cityRowsWithGaps[0]![0]}-${cityRowsWithGaps[cityRowsWithGaps.length - 1]![0]}).\n${cityLegend}`
+          .setDescription(firstCityTier != null && lastCityTier != null
+            ? `QuickChart bar graph with full tier range (${firstCityTier}-${lastCityTier}).\n${cityLegend}`
             : '*(no member data)*')
           .setColor(0x5865F2)
           .setFooter({ text: 'Page 2 · City tier graph' });
@@ -2055,8 +2062,11 @@ ${resourceLines}
           logWarn(`alliance score history fetch failed for alliance ${alliance.allianceId}`, err);
         }
         const historyChartPoints = buildAllianceScoreHistoryChartPoints(historyPoints);
+        const firstHistoryPoint = historyChartPoints[0];
+        const lastHistoryPoint = historyChartPoints[historyChartPoints.length - 1];
         const historyRangeNote = historyChartPoints.length
-          ? `\nGraph shows full interior date range (${historyChartPoints[0]!.fetchDate} to ${historyChartPoints[historyChartPoints.length - 1]!.fetchDate}) with missing dates included as empty points.`
+          && firstHistoryPoint && lastHistoryPoint
+          ? `\nGraph shows full interior date range (${firstHistoryPoint.fetchDate} to ${lastHistoryPoint.fetchDate}) with missing dates included as empty points.`
           : '';
         const scoreDevEmbed = new EmbedBuilder()
           .setTitle(`${alliance.name} — Score History`)
