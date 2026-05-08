@@ -219,6 +219,7 @@ type AllianceScoreHistoryPoint = {
 };
 
 const ALLIANCE_SCORE_HISTORY_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1ERfHN5vVorODEPHOnIxyWgq__RltTPQiOa0C5YHX1_k/gviz/tq?tqx=out:csv';
+const ALLIANCE_SCORE_HISTORY_FETCH_TIMEOUT_MS = 15_000;
 
 function parseCsvLine(line: string): string[] {
   const out: string[] = [];
@@ -255,12 +256,14 @@ function normalizeHistoryDate(raw: string): string {
 }
 
 async function fetchAllianceScoreHistory(allianceId: number): Promise<AllianceScoreHistoryPoint[]> {
-  const resp = await fetch(ALLIANCE_SCORE_HISTORY_SHEET_CSV_URL, { signal: AbortSignal.timeout(15_000) });
+  const resp = await fetch(ALLIANCE_SCORE_HISTORY_SHEET_CSV_URL, { signal: AbortSignal.timeout(ALLIANCE_SCORE_HISTORY_FETCH_TIMEOUT_MS) });
   if (!resp.ok) throw new Error(`sheet HTTP error: ${resp.status} ${resp.statusText}`);
   const csv = await resp.text();
   const lines = csv.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
   if (lines.length < 2) return [];
-  const header = parseCsvLine(lines[0]!).map((h) => h.trim());
+  const headerLine = lines[0];
+  if (!headerLine) return [];
+  const header = parseCsvLine(headerLine).map((h) => h.trim());
   const fetchDateIdx = header.indexOf('fetch_date');
   const allianceIdIdx = header.indexOf('alliance_id');
   const scoreIdx = header.indexOf('score');
