@@ -221,7 +221,7 @@ function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
         label: 'Members',
         data,
         backgroundColor: '#5865F2',
-        borderColor: '#3E4AA8',
+        borderColor: '#FFFFFF',
         borderWidth: 1,
       }],
     },
@@ -231,19 +231,33 @@ function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
       },
       scales: {
         x: {
+          ticks: {
+            color: '#FFFFFF',
+          },
+          grid: {
+            color: 'rgba(255,255,255,0.20)',
+            borderColor: '#FFFFFF',
+          },
           title: {
             display: true,
             text: 'City Tier',
+            color: '#FFFFFF',
           },
         },
         y: {
           beginAtZero: true,
           ticks: {
             precision: 0,
+            color: '#FFFFFF',
+          },
+          grid: {
+            color: 'rgba(255,255,255,0.20)',
+            borderColor: '#FFFFFF',
           },
           title: {
             display: true,
             text: 'Members',
+            color: '#FFFFFF',
           },
         },
       },
@@ -269,6 +283,12 @@ type AllianceScoreHistoryPoint = {
 
 const ALLIANCE_SCORE_HISTORY_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1ERfHN5vVorODEPHOnIxyWgq__RltTPQiOa0C5YHX1_k/gviz/tq?tqx=out:csv';
 const ALLIANCE_SCORE_HISTORY_FETCH_TIMEOUT_MS = 15_000;
+const ALLIANCE_SCORE_HISTORY_SHEET_ID = '1ERfHN5vVorODEPHOnIxyWgq__RltTPQiOa0C5YHX1_k';
+
+function getAllianceScoreHistorySheetCsvUrl(year: number): string {
+  const sheet = `alliances_${year}`;
+  return `https://docs.google.com/spreadsheets/d/${ALLIANCE_SCORE_HISTORY_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`;
+}
 
 function parseCsvLine(line: string): string[] {
   const out: string[] = [];
@@ -304,41 +324,104 @@ function normalizeHistoryDate(raw: string): string {
   return direct?.[1] ?? trimmed;
 }
 
-async function fetchAllianceScoreHistory(allianceId: number): Promise<AllianceScoreHistoryPoint[]> {
-  const resp = await fetch(ALLIANCE_SCORE_HISTORY_SHEET_CSV_URL, { signal: AbortSignal.timeout(ALLIANCE_SCORE_HISTORY_FETCH_TIMEOUT_MS) });
-  if (!resp.ok) throw new Error(`sheet HTTP error: ${resp.status} ${resp.statusText}`);
-  const csv = await resp.text();
+function normalizeHistoryHeaderName(raw: string): string {
+  return raw.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+type AllianceScoreHistoryHeaderIndexes = {
+  fetchDateIdx: number;
+  allianceIdIdx: number;
+  scoreIdx: number;
+  rankIdx: number;
+  membersIdx: number;
+};
+
+function resolveAllianceScoreHistoryHeaderIndexes(header: string[]): AllianceScoreHistoryHeaderIndexes | null {
+  const normalized = header.map(normalizeHistoryHeaderName);
+  const findIndex = (...aliases: string[]): number => normalized.findIndex((h) => aliases.includes(h));
+  const fetchDateIdx = findIndex('fetch_date', 'fetchdate', 'date', 'timestamp', 'fetched_at');
+  const allianceIdIdx = findIndex('alliance_id', 'allianceid', 'id');
+  const scoreIdx = findIndex('score', 'alliance_score');
+  const rankIdx = findIndex('rank');
+  const membersIdx = findIndex('members', 'member_count', 'membercount');
+  if ([fetchDateIdx, allianceIdIdx, scoreIdx, rankIdx, membersIdx].some((idx) => idx < 0)) return null;
+  return { fetchDateIdx, allianceIdIdx, scoreIdx, rankIdx, membersIdx };
+}
+
+function parseHistoryNumber(raw: string | undefined): number {
+  const cleaned = (raw ?? '').trim().replace(/,/g, '');
+  if (!cleaned) return 0;
+  const direct = Number(cleaned);
+  if (Number.isFinite(direct)) return direct;
+  const match = /-?\d+(?:\.\d+)?/.exec(cleaned);
+  if (!match) return 0;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseAllianceIdCell(raw: string | undefined): number | null {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return null;
+  const direct = Number(trimmed.replace(/,/g, ''));
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const urlMatch = /alliance\/id=(\d+)/i.exec(trimmed);
+  if (urlMatch?.[1]) {
+    const parsed = Number(urlMatch[1]);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  const anyNumber = /(\d+)/.exec(trimmed);
+  if (!anyNumber?.[1]) return null;
+  const parsed = Number(anyNumber[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseAllianceScoreHistoryCsv(csv: string, allianceId: number): AllianceScoreHistoryPoint[] {
   const lines = csv.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
-  if (lines.length < 2) return [];
-  const headerLine = lines[0];
-  if (!headerLine) return [];
-  const header = parseCsvLine(headerLine).map((h) => h.trim());
-  const fetchDateIdx = header.indexOf('fetch_date');
-  const allianceIdIdx = header.indexOf('alliance_id');
-  const scoreIdx = header.indexOf('score');
-  const rankIdx = header.indexOf('rank');
-  const membersIdx = header.indexOf('members');
-  if ([fetchDateIdx, allianceIdIdx, scoreIdx, rankIdx, membersIdx].some((idx) => idx < 0)) return [];
+  if (!lines.length) return [];
+  let indexes: AllianceScoreHistoryHeaderIndexes | null = null;
   const byDate = new Map<string, AllianceScoreHistoryPoint>();
-  for (const line of lines.slice(1)) {
+  for (const line of lines) {
     const row = parseCsvLine(line);
-    const rowAllianceIdRaw = row[allianceIdIdx];
-    if (rowAllianceIdRaw == null || rowAllianceIdRaw === '') continue;
-    const rowAllianceId = Number(rowAllianceIdRaw);
-    if (!Number.isFinite(rowAllianceId) || rowAllianceId <= 0 || rowAllianceId !== allianceId) continue;
-    const fetchDateRaw = row[fetchDateIdx] ?? '';
+    const maybeHeader = resolveAllianceScoreHistoryHeaderIndexes(row);
+    if (maybeHeader) {
+      indexes = maybeHeader;
+      continue;
+    }
+    if (!indexes) continue;
+    const rowAllianceId = parseAllianceIdCell(row[indexes.allianceIdIdx]);
+    if (rowAllianceId == null || rowAllianceId !== allianceId) continue;
+    const fetchDateRaw = row[indexes.fetchDateIdx] ?? '';
     const fetchDate = normalizeHistoryDate(fetchDateRaw);
     if (!fetchDate) continue;
     const point: AllianceScoreHistoryPoint = {
       fetchDate,
       allianceId: rowAllianceId,
-      score: Number(row[scoreIdx] ?? 0),
-      rank: Number(row[rankIdx] ?? 0),
-      members: Number(row[membersIdx] ?? 0),
+      score: parseHistoryNumber(row[indexes.scoreIdx]),
+      rank: parseHistoryNumber(row[indexes.rankIdx]),
+      members: parseHistoryNumber(row[indexes.membersIdx]),
     };
     byDate.set(fetchDate, point);
   }
   return [...byDate.values()].sort((a, b) => a.fetchDate.localeCompare(b.fetchDate));
+}
+
+async function fetchAllianceScoreHistory(allianceId: number): Promise<AllianceScoreHistoryPoint[]> {
+  const currentYear = new Date().getUTCFullYear();
+  const urls = [getAllianceScoreHistorySheetCsvUrl(currentYear), ALLIANCE_SCORE_HISTORY_SHEET_CSV_URL];
+  let lastErr: Error | null = null;
+  for (const url of urls) {
+    try {
+      const resp = await fetch(url, { signal: AbortSignal.timeout(ALLIANCE_SCORE_HISTORY_FETCH_TIMEOUT_MS) });
+      if (!resp.ok) throw new Error(`sheet HTTP error: ${resp.status} ${resp.statusText}`);
+      const csv = await resp.text();
+      const parsed = parseAllianceScoreHistoryCsv(csv, allianceId);
+      if (parsed.length > 0) return parsed;
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+    }
+  }
+  if (lastErr) throw lastErr;
+  return [];
 }
 
 function renderAllianceScoreHistoryTable(points: AllianceScoreHistoryPoint[], maxRows = 20): string {
@@ -410,7 +493,7 @@ function buildAllianceScoreHistoryQuickChartUrl(points: AllianceScoreHistoryPoin
       datasets: [{
         label: 'Score',
         data,
-        borderColor: '#0F766E',
+        borderColor: '#FFFFFF',
         backgroundColor: 'rgba(15,118,110,0.20)',
         fill: true,
         spanGaps: false,
@@ -424,15 +507,31 @@ function buildAllianceScoreHistoryQuickChartUrl(points: AllianceScoreHistoryPoin
       },
       scales: {
         x: {
+          ticks: {
+            color: '#FFFFFF',
+          },
+          grid: {
+            color: 'rgba(255,255,255,0.20)',
+            borderColor: '#FFFFFF',
+          },
           title: {
             display: true,
             text: 'Date (MM-DD)',
+            color: '#FFFFFF',
           },
         },
         y: {
+          ticks: {
+            color: '#FFFFFF',
+          },
+          grid: {
+            color: 'rgba(255,255,255,0.20)',
+            borderColor: '#FFFFFF',
+          },
           title: {
             display: true,
             text: 'Score',
+            color: '#FFFFFF',
           },
         },
       },
