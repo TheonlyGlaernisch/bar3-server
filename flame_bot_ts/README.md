@@ -91,7 +91,7 @@ web login flow used by the bar3 SPA.
 ### Prerequisites
 
 - Node.js 20+
-- A [Discord application/bot](https://discord.com/developers/applications) with the **Server Members** and **Message Content** intents enabled
+- A [Discord application/bot](https://discord.com/developers/applications)
 - A [Politics and War API key](https://politicsandwar.com/account)
 - A [MongoDB Atlas](https://cloud.mongodb.com/) cluster (or any MongoDB URI)
 
@@ -122,6 +122,7 @@ cp .env.example .env
 | `API_KEY` | ☑️ | Secret key for the bar3 HTTP API; if unset the API server does not start |
 | `API_PORT` | ☑️ | Port for the bar3 HTTP API (default: `8080`) |
 | `ADMIN_DISCORD_IDS` | ☑️ | Comma-separated Discord IDs that bypass role checks |
+| `DISCORD_ENABLE_GUILD_MEMBERS_INTENT` | ☑️ | Set `true` to request privileged Guild Members intent (needed for member-join welcome events) |
 | `PW_SCAN_API_KEY` | ☑️ | PnW API key used for war/recruiter WebSocket streams (falls back to `PNW_API_KEY`) |
 | `DISCORD_CLIENT_ID` | ☑️ | Discord OAuth2 client ID — required for the `/auth/*` web login flow |
 | `DISCORD_CLIENT_SECRET` | ☑️ | Discord OAuth2 client secret — required for the `/auth/*` web login flow |
@@ -130,6 +131,8 @@ cp .env.example .env
 | `LOG_LEVEL` | ☑️ | Set to `DEBUG` for verbose logging (default: `INFO`) |
 
 > ☑️ = optional but recommended
+>
+> If you set `DISCORD_ENABLE_GUILD_MEMBERS_INTENT=true`, also enable **Server Members Intent** in the Discord Developer Portal for your bot app.
 
 ### Build and run
 
