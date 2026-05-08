@@ -1058,8 +1058,13 @@ function buildRecruiterEmbed(nation: NationCreateDetail): EmbedBuilder {
 }
 
 async function main(): Promise<void> {
+  logInfo('[startup] flame_bot_ts boot sequence started.');
+  logInfo(`[startup] Environment: LOG_LEVEL=${LOG_LEVEL}, API_PORT=${API_PORT}, API_KEY=${API_KEY ? 'set' : 'unset'}, GUILD_ID=${GUILD_ID ?? 'auto'}`);
+
   const db = new Database(MONGODB_URI);
+  logInfo('[startup] Connecting to database...');
   await db.connect();
+  logInfo('[startup] Database connected.');
   const overriddenPnwApiKey = await db.getPnwApiKey();
   const effectivePnwApiKey = overriddenPnwApiKey || PNW_API_KEY;
   if (overriddenPnwApiKey) logInfo('Loaded overridden PnW API key from database.');
@@ -2501,6 +2506,12 @@ Message: ${cfg.message}`)],
         }
         return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('flame_bot commands').setDescription(renderCommandHelp())], ephemeral: true });
       }
+
+      logWarn(`[commands] Unhandled slash command: ${commandName} (raw: ${interaction.commandName})`);
+      return void interaction.reply({
+        content: `This command is not handled yet (\`${commandName}\`). Please run \`/admin_sync_commands\` and try again.`,
+        ephemeral: true,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unexpected error';
       if (interaction.deferred || interaction.replied) await interaction.followUp({ content: msg, ephemeral: true });
@@ -2527,7 +2538,9 @@ Message: ${cfg.message}`)],
     httpServer.listen(API_PORT, () => logInfo(`API listening on :${API_PORT}`));
   }
 
+  logInfo('[startup] Attempting Discord client login...');
   await client.login(DISCORD_TOKEN);
+  logInfo('[startup] Discord client login call resolved; waiting for ready event.');
 
   const subscriptionApiKey = PW_SCAN_API_KEY || effectivePnwApiKey;
   const warSubClient = new PnWSubscriptionClient(subscriptionApiKey);
