@@ -227,7 +227,7 @@ function parseCsvLine(line: string): string[] {
   for (let i = 0; i < line.length; i += 1) {
     const ch = line[i];
     if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
+      if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
         cur += '"';
         i += 1;
       } else {
@@ -260,7 +260,7 @@ async function fetchAllianceScoreHistory(allianceId: number): Promise<AllianceSc
   const csv = await resp.text();
   const lines = csv.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
   if (lines.length < 2) return [];
-  const header = parseCsvLine(lines[0] ?? '').map((h) => h.trim());
+  const header = parseCsvLine(lines[0]!).map((h) => h.trim());
   const fetchDateIdx = header.indexOf('fetch_date');
   const allianceIdIdx = header.indexOf('alliance_id');
   const scoreIdx = header.indexOf('score');
@@ -289,16 +289,22 @@ async function fetchAllianceScoreHistory(allianceId: number): Promise<AllianceSc
 
 function renderAllianceScoreHistoryTable(points: AllianceScoreHistoryPoint[], maxRows = 20): string {
   if (!points.length) return 'No data available.';
-  const rows = points.slice(-maxRows);
-  const scoreWidth = Math.max(5, ...rows.map((p) => Math.round(p.score).toLocaleString().length));
-  const rankWidth = Math.max(4, ...rows.map((p) => Math.round(p.rank).toLocaleString().length));
-  const memberWidth = Math.max(7, ...rows.map((p) => Math.round(p.members).toLocaleString().length));
-  const header = `Date       ${'Score'.padStart(scoreWidth)} ${'Rank'.padStart(rankWidth)} ${'Members'.padStart(memberWidth)}`;
+  const dateWidth = 10;
+  const rows = points.slice(-maxRows).map((p) => ({
+    fetchDate: p.fetchDate,
+    score: Math.round(p.score).toLocaleString(),
+    rank: Math.round(p.rank).toLocaleString(),
+    members: Math.round(p.members).toLocaleString(),
+  }));
+  const scoreWidth = Math.max(5, ...rows.map((p) => p.score.length));
+  const rankWidth = Math.max(4, ...rows.map((p) => p.rank.length));
+  const memberWidth = Math.max(7, ...rows.map((p) => p.members.length));
+  const header = `${'Date'.padEnd(dateWidth, ' ')} ${'Score'.padStart(scoreWidth)} ${'Rank'.padStart(rankWidth)} ${'Members'.padStart(memberWidth)}`;
   const body = rows.map((p) => {
-    const score = Math.round(p.score).toLocaleString().padStart(scoreWidth);
-    const rank = Math.round(p.rank).toLocaleString().padStart(rankWidth);
-    const members = Math.round(p.members).toLocaleString().padStart(memberWidth);
-    return `${p.fetchDate.padEnd(10, ' ')} ${score} ${rank} ${members}`;
+    const score = p.score.padStart(scoreWidth);
+    const rank = p.rank.padStart(rankWidth);
+    const members = p.members.padStart(memberWidth);
+    return `${p.fetchDate.padEnd(dateWidth, ' ')} ${score} ${rank} ${members}`;
   });
   const trunc = points.length > rows.length ? `\n... showing last ${rows.length} of ${points.length} entries` : '';
   return `\`\`\`\n${header}\n${body.join('\n')}${trunc}\n\`\`\``;
