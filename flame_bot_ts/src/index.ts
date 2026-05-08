@@ -213,6 +213,7 @@ function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
   const fullRows = buildTierCountsWithEmptyInterior(rows);
   const labels = fullRows.map(([tier]) => String(tier));
   const data = fullRows.map(([, count]) => count);
+  const chartFont = { weight: 'bold' as const };
   const chartConfig = {
     type: 'bar',
     data: {
@@ -233,6 +234,8 @@ function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
         x: {
           ticks: {
             color: '#FFFFFF',
+            fontColor: '#FFFFFF',
+            font: chartFont,
           },
           grid: {
             color: 'rgba(255,255,255,0.20)',
@@ -242,6 +245,8 @@ function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
             display: true,
             text: 'City Tier',
             color: '#FFFFFF',
+            fontColor: '#FFFFFF',
+            font: chartFont,
           },
         },
         y: {
@@ -250,6 +255,7 @@ function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
             precision: 0,
             color: '#FFFFFF',
             fontColor: '#FFFFFF',
+            font: chartFont,
           },
           grid: {
             color: 'rgba(255,255,255,0.20)',
@@ -259,6 +265,8 @@ function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
             display: true,
             text: 'Members',
             color: '#FFFFFF',
+            fontColor: '#FFFFFF',
+            font: chartFont,
           },
         },
       },
@@ -487,6 +495,7 @@ function buildAllianceScoreHistoryQuickChartUrl(points: AllianceScoreHistoryPoin
   const chartPoints = buildAllianceScoreHistoryChartPoints(points);
   const labels = chartPoints.map((p) => p.fetchDate.slice(5));
   const data = chartPoints.map((p) => (p.score == null ? null : Math.round(p.score)));
+  const chartFont = { weight: 'bold' as const };
   const chartConfig = {
     type: 'line',
     data: {
@@ -510,6 +519,8 @@ function buildAllianceScoreHistoryQuickChartUrl(points: AllianceScoreHistoryPoin
         x: {
           ticks: {
             color: '#FFFFFF',
+            fontColor: '#FFFFFF',
+            font: chartFont,
           },
           grid: {
             color: 'rgba(255,255,255,0.20)',
@@ -519,12 +530,15 @@ function buildAllianceScoreHistoryQuickChartUrl(points: AllianceScoreHistoryPoin
             display: true,
             text: 'Date (MM-DD)',
             color: '#FFFFFF',
+            fontColor: '#FFFFFF',
+            font: chartFont,
           },
         },
         y: {
           ticks: {
             color: '#FFFFFF',
             fontColor: '#FFFFFF',
+            font: chartFont,
           },
           grid: {
             color: 'rgba(255,255,255,0.20)',
@@ -534,6 +548,8 @@ function buildAllianceScoreHistoryQuickChartUrl(points: AllianceScoreHistoryPoin
             display: true,
             text: 'Score',
             color: '#FFFFFF',
+            fontColor: '#FFFFFF',
+            font: chartFont,
           },
         },
       },
