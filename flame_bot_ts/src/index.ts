@@ -386,7 +386,9 @@ function buildAllianceScoreHistoryChartPoints(points: AllianceScoreHistoryPoint[
   }
 
   const out: AllianceScoreHistoryChartPoint[] = [];
-  for (let cur = new Date(start); cur.getTime() <= end.getTime(); cur.setUTCDate(cur.getUTCDate() + 1)) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  for (let ts = start.getTime(); ts <= end.getTime(); ts += dayMs) {
+    const cur = new Date(ts);
     const key = cur.toISOString().slice(0, 10);
     const point = byDate.get(key);
     out.push({
@@ -2064,8 +2066,7 @@ ${resourceLines}
         const historyChartPoints = buildAllianceScoreHistoryChartPoints(historyPoints);
         const firstHistoryPoint = historyChartPoints[0];
         const lastHistoryPoint = historyChartPoints[historyChartPoints.length - 1];
-        const historyRangeNote = historyChartPoints.length
-          && firstHistoryPoint && lastHistoryPoint
+        const historyRangeNote = firstHistoryPoint && lastHistoryPoint
           ? `\nGraph shows full interior date range (${firstHistoryPoint.fetchDate} to ${lastHistoryPoint.fetchDate}) with missing dates included as empty points.`
           : '';
         const scoreDevEmbed = new EmbedBuilder()
