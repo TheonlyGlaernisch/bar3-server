@@ -193,21 +193,70 @@ function getPrimaryGuild(client: Client): Guild | null {
   return (primaryGuild = client.guilds.cache.first() ?? null);
 }
 
-function renderVerticalTierChart(rows: Array<[number, number]>, maxHeight = 8): string {
-  if (!rows.length) return 'No tier data';
-  const maxValue = Math.max(1, ...rows.map(([, count]) => count));
-  const bars = rows.map(([tier, count]) => ({
-    tier,
-    count,
-    height: Math.max(1, Math.round((count / maxValue) * maxHeight)),
-  }));
-  const lines: string[] = [];
-  for (let y = maxHeight; y >= 1; y -= 1) {
-    lines.push(bars.map((b) => (b.height >= y ? '█' : ' ')).join(' '));
+function buildTierCountsWithEmptyInterior(rows: Array<[number, number]>): Array<[number, number]> {
+  if (!rows.length) return [];
+  const sorted = [...rows].sort((a, b) => a[0] - b[0]);
+  const minEntry = sorted[0];
+  const maxEntry = sorted[sorted.length - 1];
+  if (!minEntry || !maxEntry) return [];
+  const minTier = minEntry[0];
+  const maxTier = maxEntry[0];
+  const byTier = new Map<number, number>(sorted);
+  const fullRange: Array<[number, number]> = [];
+  for (let tier = minTier; tier <= maxTier; tier += 1) {
+    fullRange.push([tier, byTier.get(tier) ?? 0]);
   }
-  lines.push(bars.map(() => '―').join(' '));
-  lines.push(bars.map((b) => String(b.tier).padStart(2, '0')).join(' '));
-  return `\`\`\`\n${lines.join('\n')}\n\`\`\``;
+  return fullRange;
+}
+
+function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
+  const fullRows = buildTierCountsWithEmptyInterior(rows);
+  const labels = fullRows.map(([tier]) => String(tier));
+  const data = fullRows.map(([, count]) => count);
+  const chartConfig = {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Members',
+        data,
+        backgroundColor: '#5865F2',
+        borderColor: '#3E4AA8',
+        borderWidth: 1,
+      }],
+    },
+    options: {
+      plugins: {
+        legend: { display: false },
+      },
+      scales: {
+        x: {
+          title: {
+            display: true,
+            text: 'City Tier',
+          },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: {
+            precision: 0,
+          },
+          title: {
+            display: true,
+            text: 'Members',
+          },
+        },
+      },
+    },
+  };
+  const params = new URLSearchParams({
+    c: JSON.stringify(chartConfig),
+    width: '900',
+    height: '420',
+    format: 'png',
+    backgroundColor: 'transparent',
+  });
+  return `https://quickchart.io/chart?${params.toString()}`;
 }
 
 type AllianceScoreHistoryPoint = {
@@ -313,6 +362,90 @@ function renderAllianceScoreHistoryTable(points: AllianceScoreHistoryPoint[], ma
   });
   const truncationMessage = points.length > rows.length ? `\n... showing last ${rows.length} of ${points.length} entries` : '';
   return `\`\`\`\n${header}\n${body.join('\n')}${truncationMessage}\n\`\`\``;
+}
+
+type AllianceScoreHistoryChartPoint = {
+  fetchDate: string;
+  score: number | null;
+};
+
+function buildAllianceScoreHistoryChartPoints(points: AllianceScoreHistoryPoint[], maxSourcePoints = 120): AllianceScoreHistoryChartPoint[] {
+  if (!points.length) return [];
+  const source = points.slice(-maxSourcePoints);
+  if (!source.length) return [];
+  const byDate = new Map<string, AllianceScoreHistoryPoint>(source.map((p) => [p.fetchDate, p]));
+  const firstPoint = source[0];
+  const lastPoint = source[source.length - 1];
+  const startDateRaw = firstPoint?.fetchDate;
+  const endDateRaw = lastPoint?.fetchDate;
+  if (!startDateRaw || !endDateRaw) return [];
+  const start = new Date(`${startDateRaw}T00:00:00Z`);
+  const end = new Date(`${endDateRaw}T00:00:00Z`);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start.getTime() > end.getTime()) {
+    return source.map((p) => ({ fetchDate: p.fetchDate, score: p.score }));
+  }
+
+  const out: AllianceScoreHistoryChartPoint[] = [];
+  const dayMs = 24 * 60 * 60 * 1000;
+  for (let ts = start.getTime(); ts <= end.getTime(); ts += dayMs) {
+    const cur = new Date(ts);
+    const key = cur.toISOString().slice(0, 10);
+    const point = byDate.get(key);
+    out.push({
+      fetchDate: key,
+      score: point ? point.score : null,
+    });
+  }
+  return out;
+}
+
+function buildAllianceScoreHistoryQuickChartUrl(points: AllianceScoreHistoryPoint[]): string {
+  const chartPoints = buildAllianceScoreHistoryChartPoints(points);
+  const labels = chartPoints.map((p) => p.fetchDate.slice(5));
+  const data = chartPoints.map((p) => (p.score == null ? null : Math.round(p.score)));
+  const chartConfig = {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Score',
+        data,
+        borderColor: '#0F766E',
+        backgroundColor: 'rgba(15,118,110,0.20)',
+        fill: true,
+        spanGaps: false,
+        pointRadius: 0,
+        tension: 0.2,
+      }],
+    },
+    options: {
+      plugins: {
+        legend: { display: false },
+      },
+      scales: {
+        x: {
+          title: {
+            display: true,
+            text: 'Date (MM-DD)',
+          },
+        },
+        y: {
+          title: {
+            display: true,
+            text: 'Score',
+          },
+        },
+      },
+    },
+  };
+  const params = new URLSearchParams({
+    c: JSON.stringify(chartConfig),
+    width: '900',
+    height: '420',
+    format: 'png',
+    backgroundColor: 'transparent',
+  });
+  return `https://quickchart.io/chart?${params.toString()}`;
 }
 
 
@@ -1906,16 +2039,21 @@ ${resourceLines}
         const cityCounts = new Map<number, number>();
         for (const m of lotsMembers) cityCounts.set(m.numCities, (cityCounts.get(m.numCities) ?? 0) + 1);
         const cityRows = [...cityCounts.entries()].sort((a,b)=>a[0]-b[0]);
-        const cityGraph = cityRows.length ? renderVerticalTierChart(cityRows) : '*(no member data)*';
-        const cityLegend = cityRows.length
-          ? cityRows.map(([city, count]) => `\`${String(city).padStart(2)}c\` ${count}`).join(' · ')
+        const cityRowsWithGaps = buildTierCountsWithEmptyInterior(cityRows);
+        const firstCityTier = cityRowsWithGaps[0]?.[0];
+        const lastCityTier = cityRowsWithGaps[cityRowsWithGaps.length - 1]?.[0];
+        const cityLegend = cityRowsWithGaps.length
+          ? cityRowsWithGaps.map(([city, count]) => `\`${String(city).padStart(2)}c\` ${count}`).join(' · ')
           : '';
         const cityEmbed = new EmbedBuilder()
           .setTitle(`${alliance.name} — City Tier Graph`)
           .setURL(allianceUrl(alliance.allianceId, baseUrl))
-          .setDescription(cityRows.length ? `${cityGraph}\n${cityLegend}` : cityGraph)
+          .setDescription(firstCityTier != null && lastCityTier != null
+            ? `QuickChart bar graph with full tier range (${firstCityTier}-${lastCityTier}).\n${cityLegend}`
+            : '*(no member data)*')
           .setColor(0x5865F2)
           .setFooter({ text: 'Page 2 · City tier graph' });
+        if (cityRows.length) cityEmbed.setImage(buildCityTierQuickChartUrl(cityRows));
         pages.push(cityEmbed);
 
         // Page 3: score history table
@@ -1925,12 +2063,19 @@ ${resourceLines}
         } catch (err) {
           logWarn(`alliance score history fetch failed for alliance ${alliance.allianceId}`, err);
         }
+        const historyChartPoints = buildAllianceScoreHistoryChartPoints(historyPoints);
+        const firstHistoryPoint = historyChartPoints[0];
+        const lastHistoryPoint = historyChartPoints[historyChartPoints.length - 1];
+        const historyRangeNote = firstHistoryPoint && lastHistoryPoint
+          ? `\nGraph shows full interior date range (${firstHistoryPoint.fetchDate} to ${lastHistoryPoint.fetchDate}) with missing dates included as empty points.`
+          : '';
         const scoreDevEmbed = new EmbedBuilder()
           .setTitle(`${alliance.name} — Score History`)
           .setURL(allianceUrl(alliance.allianceId, baseUrl))
-          .setDescription(renderAllianceScoreHistoryTable(historyPoints))
+          .setDescription(`${renderAllianceScoreHistoryTable(historyPoints)}${historyRangeNote}`)
           .setColor(0x0F766E)
           .setFooter({ text: 'Page 3 · Alliance score history' });
+        if (historyChartPoints.length) scoreDevEmbed.setImage(buildAllianceScoreHistoryQuickChartUrl(historyPoints));
         pages.push(scoreDevEmbed);
 
         // Pages 4+: extended member list (10 per page)
