@@ -5,11 +5,15 @@
   "main": "./build/src/index.js",
   "bin": "./build/src/index.js",
   "scripts": {
-    "start": "node ./build/src/index.js",
+    "start": "./scripts/run-both.sh",
+    "start:server": "node ./build/src/index.js",
+    "start:bot": "node ./flame_bot_ts/build/src/index.js",
     "dev": "nodemon ./build/src/index.js --debug",
     "verbose": "node ./build/src/index.js --debug",
     "prebuild": "shx rm -rf ./build/*",
-    "build": "tsc",
+    "build": "npm run build:server && npm run build:bot",
+    "build:server": "tsc",
+    "build:bot": "npm --prefix flame_bot_ts install && npm --prefix flame_bot_ts run build",
     "pack": "npm run build && pkg . --target node12-win-x86,node12-linux,node12-macos-x64",
     "postpack": "shx mkdir -p dist && shx mv bar3-server-* dist/",
     "test": "echo \"Error: no test specified\" && exit 1"

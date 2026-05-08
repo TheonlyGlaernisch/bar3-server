@@ -3,9 +3,9 @@ set -euo pipefail
 
 BOT_PID=""
 
-if [[ -f flame_bot/bot.py ]]; then
-  echo "[run-both] Starting Python bot (flame_bot/bot.py)..."
-  python flame_bot/bot.py &
+if [[ -f flame_bot_ts/build/src/index.js ]]; then
+  echo "[run-both] Starting TypeScript bot (flame_bot_ts/build/src/index.js)..."
+  node flame_bot_ts/build/src/index.js &
   BOT_PID=$!
 
   cleanup() {
@@ -13,7 +13,7 @@ if [[ -f flame_bot/bot.py ]]; then
   }
   trap cleanup EXIT INT TERM
 else
-  echo "[run-both] flame_bot/bot.py not found; starting TypeScript server only."
+  echo "[run-both] flame_bot_ts/build/src/index.js not found; starting root server only."
 fi
 
-exec npm run start
+exec node ./build/src/index.js

@@ -38,29 +38,12 @@ Change the location of the files stored by Bar 3
     --workingdir [relative path]
 
 
-# Python Bot (flame_bot)
+# Active bot in this repo
 
-To run the Python Discord bot in `flame_bot/` (there is no separate build step):
+`flame_bot/` (Python) is legacy and is not present in this repository snapshot.  
+The active bot is `flame_bot_ts/` (TypeScript).
 
-    cd flame_bot
-
-    pip install -r requirements.txt
-
-    cp .env.example .env
-
-    python bot.py
-
-To run bot tests:
-
-    cd flame_bot
-
-    pytest tests/ -v
-
-# Run both services together
-
-Use two terminals from the repo root.
-
-Terminal 1 (TypeScript server):
+Use these repo-root commands for the entire project:
 
     npm i
 
@@ -68,15 +51,8 @@ Terminal 1 (TypeScript server):
 
     npm run start
 
-Terminal 2 (Python bot):
-
-    cd flame_bot
-
-    pip install -r requirements.txt
-
-    cp .env.example .env
-
-    python bot.py
+`npm run build` builds both the root server and `flame_bot_ts`.  
+`npm run start` starts both services.
 
 # Running both on Render (single service)
 
@@ -89,11 +65,13 @@ If you must run both components in one Render service, run both processes from o
 
 - Start Command:
 
-    ./scripts/run-both.sh
+    npm run start
 
-This starts `python flame_bot/bot.py` in the background **if that file exists** and then starts the TypeScript server in the foreground (`npm run start`).
+This starts `node flame_bot_ts/build/src/index.js` in the background (if built) and then starts the root TypeScript server in the foreground.
 
-If you removed `flame_bot/`, do **not** run `pip install -r flame_bot/requirements.txt`; it is not needed for the TypeScript service.
+Why you saw `Could not open requirements file ... flame_bot/requirements.txt`:
+- Some old instructions/scripts referenced the legacy Python bot path.
+- In this repo snapshot, `flame_bot/` does not exist, so that pip command always fails.
+- You do not need that Python requirements file to build or run the current TypeScript services.
 
 Important: this is a process-co-location workaround. The recommended production setup is still two services.
-
