@@ -1705,6 +1705,68 @@ function parseWarFromDict(raw: Record<string, unknown>): WarDetail | null {
   };
 }
 
+function getFirstNumber(raw: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    if (key in raw) return n(raw[key]);
+  }
+  return undefined;
+}
+
+function getFirstString(raw: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    if (key in raw) return s(raw[key]);
+  }
+  return undefined;
+}
+
+function parseWarCreateFromSubscription(raw: Record<string, unknown>): WarDetail | null {
+  const warId = getFirstNumber(raw, ['id', 'war_id', 'warId']) ?? 0;
+  if (!warId) return null;
+  const dateStr = getFirstString(raw, ['date', 'created_at', 'createdAt']) || '';
+  const warDate = dateStr ? new Date(dateStr) : new Date();
+  const attacker = (raw['attacker'] as Record<string, unknown>) ?? {};
+  const defender = (raw['defender'] as Record<string, unknown>) ?? {};
+  const attAlliance = (raw['att_alliance'] as Record<string, unknown>) ?? {};
+  const defAlliance = (raw['def_alliance'] as Record<string, unknown>) ?? {};
+  const attackerId = getFirstNumber(raw, ['att_id', 'attacker_id', 'attacker_nation_id', 'attid']) ?? 0;
+  const defenderId = getFirstNumber(raw, ['def_id', 'defender_id', 'defender_nation_id', 'defid']) ?? 0;
+  return {
+    warId,
+    date: isNaN(warDate.getTime()) ? new Date() : warDate,
+    warType: (getFirstString(raw, ['war_type', 'warType', 'declaration_type', 'declaration']) || 'ORDINARY').toUpperCase(),
+    attackerId,
+    attackerName: getFirstString(attacker, ['nation_name', 'name']) || getFirstString(raw, ['attacker_name']) || (attackerId ? String(attackerId) : '?'),
+    attackerLeader: getFirstString(attacker, ['leader_name', 'leader']) || '',
+    attackerAllianceId: getFirstNumber(raw, ['att_alliance_id', 'attacker_alliance_id', 'attallianceid']) ?? 0,
+    attackerAllianceName: getFirstString(attAlliance, ['name']) || getFirstString(raw, ['attacker_alliance_name']) || '',
+    attackerCities: getFirstNumber(attacker, ['num_cities', 'cities']) ?? 0,
+    attackerScore: getFirstNumber(attacker, ['score']) ?? 0,
+    attackerSoldiers: getFirstNumber(attacker, ['soldiers']) ?? 0,
+    attackerTanks: getFirstNumber(attacker, ['tanks']) ?? 0,
+    attackerAircraft: getFirstNumber(attacker, ['aircraft']) ?? 0,
+    attackerShips: getFirstNumber(attacker, ['ships']) ?? 0,
+    attackerMissiles: getFirstNumber(attacker, ['missiles']) ?? 0,
+    attackerNukes: getFirstNumber(attacker, ['nukes']) ?? 0,
+    attackerWarsWon: getFirstNumber(attacker, ['wars_won']) ?? 0,
+    attackerWarsLost: getFirstNumber(attacker, ['wars_lost']) ?? 0,
+    defenderId,
+    defenderName: getFirstString(defender, ['nation_name', 'name']) || getFirstString(raw, ['defender_name']) || (defenderId ? String(defenderId) : '?'),
+    defenderLeader: getFirstString(defender, ['leader_name', 'leader']) || '',
+    defenderAllianceId: getFirstNumber(raw, ['def_alliance_id', 'defender_alliance_id', 'defallianceid']) ?? 0,
+    defenderAllianceName: getFirstString(defAlliance, ['name']) || getFirstString(raw, ['defender_alliance_name']) || '',
+    defenderCities: getFirstNumber(defender, ['num_cities', 'cities']) ?? 0,
+    defenderScore: getFirstNumber(defender, ['score']) ?? 0,
+    defenderSoldiers: getFirstNumber(defender, ['soldiers']) ?? 0,
+    defenderTanks: getFirstNumber(defender, ['tanks']) ?? 0,
+    defenderAircraft: getFirstNumber(defender, ['aircraft']) ?? 0,
+    defenderShips: getFirstNumber(defender, ['ships']) ?? 0,
+    defenderMissiles: getFirstNumber(defender, ['missiles']) ?? 0,
+    defenderNukes: getFirstNumber(defender, ['nukes']) ?? 0,
+    defenderWarsWon: getFirstNumber(defender, ['wars_won']) ?? 0,
+    defenderWarsLost: getFirstNumber(defender, ['wars_lost']) ?? 0,
+  };
+}
+
 type SubscriptionEvent = WarDetail | NationCreateDetail;
 
 export class PnWSubscriptionClient {
@@ -1838,7 +1900,7 @@ export class PnWSubscriptionClient {
           model: 'war',
           event: 'create',
           eventNames: ['WAR_CREATE', 'BULK_WAR_CREATE'],
-          parser: parseWarFromDict,
+          parser: parseWarCreateFromSubscription,
           logPrefix: 'PnW subscription:',
         })) {
           delay = PnWSubscriptionClient.RECONNECT_BASE;

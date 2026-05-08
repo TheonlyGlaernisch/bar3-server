@@ -77,9 +77,9 @@ import {
 } from './config';
 
 export interface RoleConfig {
-  verifiedRoleId?: bigint | null;
-  bar3ClientRoleId?: bigint | null;
-  bar3ServerRoleId?: bigint | null;
+  verifiedRoleId?: string | bigint | null;
+  bar3ClientRoleId?: string | bigint | null;
+  bar3ServerRoleId?: string | bigint | null;
 }
 
 export interface GuildInfo {
