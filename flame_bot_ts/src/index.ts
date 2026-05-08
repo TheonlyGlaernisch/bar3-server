@@ -1092,16 +1092,24 @@ function buildWarAlertEmbed(war: WarDetail, watchedAllianceId: number): EmbedBui
   };
 
   const record = (won: number, lost: number) => `W ${won} / L ${lost}`;
+  const allianceLabel = (allianceId: number, allianceName: string): string => {
+    if (allianceId > 0) {
+      const name = allianceName || `Alliance ${allianceId}`;
+      return `[${name}](${allianceUrl(allianceId)})`;
+    }
+    return 'None';
+  };
 
   const attUrl = nationUrl(war.attackerId);
   const defUrl = nationUrl(war.defenderId);
 
   const embed = new EmbedBuilder().setTitle(title).setColor(color);
   embed.addFields({
-    name: `⚔️ Attacker — [${war.attackerName}](${attUrl})`,
+    name: '⚔️ Attacker',
     value: [
+      `**Nation:** [${war.attackerName}](${attUrl})`,
       `**Leader:** ${war.attackerLeader || '—'}`,
-      `**Alliance:** ${war.attackerAllianceName || 'None'}`,
+      `**Alliance:** ${allianceLabel(war.attackerAllianceId, war.attackerAllianceName)}`,
       `**Cities:** 🏙️ ${war.attackerCities}  **Score:** ${war.attackerScore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       `**Military:** ${mil(war.attackerSoldiers, war.attackerTanks, war.attackerAircraft, war.attackerShips, war.attackerMissiles, war.attackerNukes)}`,
       `**War record:** ${record(war.attackerWarsWon, war.attackerWarsLost)}`,
@@ -1109,10 +1117,11 @@ function buildWarAlertEmbed(war: WarDetail, watchedAllianceId: number): EmbedBui
     inline: false,
   });
   embed.addFields({
-    name: `🛡️ Defender — [${war.defenderName}](${defUrl})`,
+    name: '🛡️ Defender',
     value: [
+      `**Nation:** [${war.defenderName}](${defUrl})`,
       `**Leader:** ${war.defenderLeader || '—'}`,
-      `**Alliance:** ${war.defenderAllianceName || 'None'}`,
+      `**Alliance:** ${allianceLabel(war.defenderAllianceId, war.defenderAllianceName)}`,
       `**Cities:** 🏙️ ${war.defenderCities}  **Score:** ${war.defenderScore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       `**Military:** ${mil(war.defenderSoldiers, war.defenderTanks, war.defenderAircraft, war.defenderShips, war.defenderMissiles, war.defenderNukes)}`,
       `**War record:** ${record(war.defenderWarsWon, war.defenderWarsLost)}`,
