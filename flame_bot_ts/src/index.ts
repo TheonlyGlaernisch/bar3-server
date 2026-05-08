@@ -249,6 +249,7 @@ function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
           ticks: {
             precision: 0,
             color: '#FFFFFF',
+            fontColor: '#FFFFFF',
           },
           grid: {
             color: 'rgba(255,255,255,0.20)',
@@ -523,6 +524,7 @@ function buildAllianceScoreHistoryQuickChartUrl(points: AllianceScoreHistoryPoin
         y: {
           ticks: {
             color: '#FFFFFF',
+            fontColor: '#FFFFFF',
           },
           grid: {
             color: 'rgba(255,255,255,0.20)',
@@ -2163,17 +2165,12 @@ ${resourceLines}
           logWarn(`alliance score history fetch failed for alliance ${alliance.allianceId}`, err);
         }
         const historyChartPoints = buildAllianceScoreHistoryChartPoints(historyPoints);
-        const firstHistoryPoint = historyChartPoints[0];
-        const lastHistoryPoint = historyChartPoints[historyChartPoints.length - 1];
-        const historyRangeNote = firstHistoryPoint && lastHistoryPoint
-          ? `\nGraph shows full interior date range (${firstHistoryPoint.fetchDate} to ${lastHistoryPoint.fetchDate}) with missing dates included as empty points.`
-          : '';
         const scoreDevEmbed = new EmbedBuilder()
           .setTitle(`${alliance.name} — Score History`)
           .setURL(allianceUrl(alliance.allianceId, baseUrl))
-          .setDescription(`${renderAllianceScoreHistoryTable(historyPoints)}${historyRangeNote}`)
           .setColor(0x0F766E)
           .setFooter({ text: 'Page 3 · Alliance score history' });
+        if (!historyChartPoints.length) scoreDevEmbed.setDescription('*(no score history data)*');
         if (historyChartPoints.length) scoreDevEmbed.setImage(buildAllianceScoreHistoryQuickChartUrl(historyPoints));
         pages.push(scoreDevEmbed);
 
