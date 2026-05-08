@@ -193,21 +193,67 @@ function getPrimaryGuild(client: Client): Guild | null {
   return (primaryGuild = client.guilds.cache.first() ?? null);
 }
 
-function renderVerticalTierChart(rows: Array<[number, number]>, maxHeight = 8): string {
-  if (!rows.length) return 'No tier data';
-  const maxValue = Math.max(1, ...rows.map(([, count]) => count));
-  const bars = rows.map(([tier, count]) => ({
-    tier,
-    count,
-    height: Math.max(1, Math.round((count / maxValue) * maxHeight)),
-  }));
-  const lines: string[] = [];
-  for (let y = maxHeight; y >= 1; y -= 1) {
-    lines.push(bars.map((b) => (b.height >= y ? '█' : ' ')).join(' '));
+function buildTierCountsWithEmptyInterior(rows: Array<[number, number]>): Array<[number, number]> {
+  if (!rows.length) return [];
+  const sorted = [...rows].sort((a, b) => a[0] - b[0]);
+  const minTier = sorted[0]![0];
+  const maxTier = sorted[sorted.length - 1]![0];
+  const byTier = new Map<number, number>(sorted);
+  const fullRange: Array<[number, number]> = [];
+  for (let tier = minTier; tier <= maxTier; tier += 1) {
+    fullRange.push([tier, byTier.get(tier) ?? 0]);
   }
-  lines.push(bars.map(() => '―').join(' '));
-  lines.push(bars.map((b) => String(b.tier).padStart(2, '0')).join(' '));
-  return `\`\`\`\n${lines.join('\n')}\n\`\`\``;
+  return fullRange;
+}
+
+function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
+  const fullRows = buildTierCountsWithEmptyInterior(rows);
+  const labels = fullRows.map(([tier]) => String(tier));
+  const data = fullRows.map(([, count]) => count);
+  const chartConfig = {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Members',
+        data,
+        backgroundColor: '#5865F2',
+        borderColor: '#3E4AA8',
+        borderWidth: 1,
+      }],
+    },
+    options: {
+      plugins: {
+        legend: { display: false },
+      },
+      scales: {
+        x: {
+          title: {
+            display: true,
+            text: 'City Count',
+          },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: {
+            precision: 0,
+          },
+          title: {
+            display: true,
+            text: 'Members',
+          },
+        },
+      },
+    },
+  };
+  const params = new URLSearchParams({
+    c: JSON.stringify(chartConfig),
+    width: '900',
+    height: '420',
+    format: 'png',
+    backgroundColor: 'transparent',
+  });
+  return `https://quickchart.io/chart?${params.toString()}`;
 }
 
 type AllianceScoreHistoryPoint = {
@@ -1906,16 +1952,19 @@ ${resourceLines}
         const cityCounts = new Map<number, number>();
         for (const m of lotsMembers) cityCounts.set(m.numCities, (cityCounts.get(m.numCities) ?? 0) + 1);
         const cityRows = [...cityCounts.entries()].sort((a,b)=>a[0]-b[0]);
-        const cityGraph = cityRows.length ? renderVerticalTierChart(cityRows) : '*(no member data)*';
-        const cityLegend = cityRows.length
-          ? cityRows.map(([city, count]) => `\`${String(city).padStart(2)}c\` ${count}`).join(' · ')
+        const cityRowsWithGaps = buildTierCountsWithEmptyInterior(cityRows);
+        const cityLegend = cityRowsWithGaps.length
+          ? cityRowsWithGaps.map(([city, count]) => `\`${String(city).padStart(2)}c\` ${count}`).join(' · ')
           : '';
         const cityEmbed = new EmbedBuilder()
           .setTitle(`${alliance.name} — City Tier Graph`)
           .setURL(allianceUrl(alliance.allianceId, baseUrl))
-          .setDescription(cityRows.length ? `${cityGraph}\n${cityLegend}` : cityGraph)
+          .setDescription(cityRowsWithGaps.length
+            ? `QuickChart bar graph with full tier range (${cityRowsWithGaps[0]![0]}-${cityRowsWithGaps[cityRowsWithGaps.length - 1]![0]}).\n${cityLegend}`
+            : '*(no member data)*')
           .setColor(0x5865F2)
           .setFooter({ text: 'Page 2 · City tier graph' });
+        if (cityRows.length) cityEmbed.setImage(buildCityTierQuickChartUrl(cityRows));
         pages.push(cityEmbed);
 
         // Page 3: score history table
