@@ -25,6 +25,7 @@ import {
   BAR3_CLIENT_ROLE_ID,
   BAR3_SERVER_ROLE_ID,
   DISCORD_TOKEN,
+  DISCORD_ENABLE_GUILD_MEMBERS_INTENT,
   GUILD_ID,
   LOG_LEVEL,
   MONGODB_URI,
@@ -1072,7 +1073,31 @@ async function main(): Promise<void> {
   const pnw = new PnWClient(effectivePnwApiKey);
   const pnwTest = new PnWClient(PNW_TEST_API_KEY, { restUrl: PNW_TEST_REST_URL });
 
-  const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
+  const intents = [GatewayIntentBits.Guilds];
+  if (DISCORD_ENABLE_GUILD_MEMBERS_INTENT) intents.push(GatewayIntentBits.GuildMembers);
+  const client = new Client({ intents });
+  logInfo(
+    `[startup] Discord intents: Guilds${DISCORD_ENABLE_GUILD_MEMBERS_INTENT ? ', GuildMembers' : ''}`
+  );
+  if (!DISCORD_ENABLE_GUILD_MEMBERS_INTENT) {
+    logInfo(
+      '[startup] GuildMembers intent disabled. Set DISCORD_ENABLE_GUILD_MEMBERS_INTENT=true if you need guildMemberAdd events.'
+    );
+  }
+  client.on('error', (err) => {
+    logError('[discord] client error', err);
+  });
+  client.on('shardError', (err) => {
+    logError('[discord] shard error', err);
+  });
+  client.on('shardDisconnect', (event, shardId) => {
+    logWarn(`[discord] shard ${shardId} disconnected (code=${event.code}, reason=${event.reason || 'n/a'}).`);
+    if (event.code === 4013 || event.code === 4014) {
+      logWarn(
+        '[discord] Gateway rejected configured intents. Check Developer Portal privileged intents and/or DISCORD_ENABLE_GUILD_MEMBERS_INTENT.'
+      );
+    }
+  });
   const commandUsage = new Map<string, number>();
   const commandCooldowns = new Map<string, number>();
   // Python grouped command parity matrix (legacy path -> canonical TS command).

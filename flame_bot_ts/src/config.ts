@@ -44,10 +44,22 @@ function _optionalIntList(key: string): Set<bigint> {
   return new Set(ids);
 }
 
+function _optionalBool(key: string, defaultValue = false): boolean {
+  const value = (process.env[key] || '').trim().toLowerCase();
+  if (!value) return defaultValue;
+  if (['1', 'true', 'yes', 'on'].includes(value)) return true;
+  if (['0', 'false', 'no', 'off'].includes(value)) return false;
+  throw new Error(
+    `Environment variable '${key}' must be a boolean-like value ` +
+    "(accepted: true/false, 1/0, yes/no, on/off)."
+  );
+}
+
 export const DISCORD_TOKEN: string = _require('DISCORD_TOKEN');
 export const PNW_API_KEY: string = _require('PNW_API_KEY');
 export const PNW_TEST_API_KEY: string = _require('PNW_TEST_API_KEY');
 export const GUILD_ID: number | null = _optionalInt('GUILD_ID');
+export const DISCORD_ENABLE_GUILD_MEMBERS_INTENT: boolean = _optionalBool('DISCORD_ENABLE_GUILD_MEMBERS_INTENT', false);
 
 export const VERIFIED_ROLE_ID: number | null = _optionalInt('VERIFIED_ROLE_ID');
 export const BAR3_CLIENT_ROLE_ID: number | null = _optionalInt('BAR3_CLIENT_ROLE_ID');
