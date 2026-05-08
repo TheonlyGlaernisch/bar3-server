@@ -229,11 +229,11 @@ function warUrl(warId: number, baseUrl = PNW_BASE_URL): string {
   return `${baseUrl}/nation/war/timeline/war=${warId}`;
 }
 
-function hasRole(i: ChatInputCommandInteraction, roleId: number | null): boolean {
+function hasRole(i: ChatInputCommandInteraction, roleId: string | null): boolean {
   if (!roleId || !i.inGuild() || !i.member) return false;
   const member = i.member as any;
-  if (member?.roles?.cache) return member.roles.cache.has(String(roleId));
-  if (Array.isArray(member?.roles)) return member.roles.includes(String(roleId));
+  if (member?.roles?.cache) return member.roles.cache.has(roleId);
+  if (Array.isArray(member?.roles)) return member.roles.includes(roleId);
   return false;
 }
 
@@ -2548,9 +2548,9 @@ Message: ${cfg.message}`)],
       guildGetter: () => getPrimaryGuild(client),
       apiKey: API_KEY,
       roleConfig: {
-        verifiedRoleId: VERIFIED_ROLE_ID != null ? BigInt(VERIFIED_ROLE_ID) : null,
-        bar3ClientRoleId: BAR3_CLIENT_ROLE_ID != null ? BigInt(BAR3_CLIENT_ROLE_ID) : null,
-        bar3ServerRoleId: BAR3_SERVER_ROLE_ID != null ? BigInt(BAR3_SERVER_ROLE_ID) : null,
+        verifiedRoleId: VERIFIED_ROLE_ID,
+        bar3ClientRoleId: BAR3_CLIENT_ROLE_ID,
+        bar3ServerRoleId: BAR3_SERVER_ROLE_ID,
       },
       guildsGetter: () => [...client.guilds.cache.values()],
       sendToWelcomeFn: sendToAllWelcomeChannels,

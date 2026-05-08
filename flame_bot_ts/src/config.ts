@@ -27,6 +27,15 @@ function _optionalInt(key: string): number | null {
   return parsed;
 }
 
+function _optionalSnowflake(key: string): string | null {
+  const value = (process.env[key] || '').trim();
+  if (!value) return null;
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`Environment variable '${key}' must be a Discord snowflake integer string.`);
+  }
+  return value;
+}
+
 function _optionalIntList(key: string): Set<bigint> {
   const value = process.env[key] || '';
   const ids: bigint[] = [];
@@ -58,12 +67,12 @@ function _optionalBool(key: string, defaultValue = false): boolean {
 export const DISCORD_TOKEN: string = _require('DISCORD_TOKEN');
 export const PNW_API_KEY: string = _require('PNW_API_KEY');
 export const PNW_TEST_API_KEY: string = _require('PNW_TEST_API_KEY');
-export const GUILD_ID: number | null = _optionalInt('GUILD_ID');
+export const GUILD_ID: string | null = _optionalSnowflake('GUILD_ID');
 export const DISCORD_ENABLE_GUILD_MEMBERS_INTENT: boolean = _optionalBool('DISCORD_ENABLE_GUILD_MEMBERS_INTENT', false);
 
-export const VERIFIED_ROLE_ID: number | null = _optionalInt('VERIFIED_ROLE_ID');
-export const BAR3_CLIENT_ROLE_ID: number | null = _optionalInt('BAR3_CLIENT_ROLE_ID');
-export const BAR3_SERVER_ROLE_ID: number | null = _optionalInt('BAR3_SERVER_ROLE_ID');
+export const VERIFIED_ROLE_ID: string | null = _optionalSnowflake('VERIFIED_ROLE_ID');
+export const BAR3_CLIENT_ROLE_ID: string | null = _optionalSnowflake('BAR3_CLIENT_ROLE_ID');
+export const BAR3_SERVER_ROLE_ID: string | null = _optionalSnowflake('BAR3_SERVER_ROLE_ID');
 
 const _MONGODB_PASSWORD: string = _require('MONGODB_PASSWORD');
 export const MONGODB_URI: string =
