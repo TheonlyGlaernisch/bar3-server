@@ -361,6 +361,86 @@ function renderAllianceScoreHistoryTable(points: AllianceScoreHistoryPoint[], ma
   return `\`\`\`\n${header}\n${body.join('\n')}${truncationMessage}\n\`\`\``;
 }
 
+type AllianceScoreHistoryChartPoint = {
+  fetchDate: string;
+  score: number | null;
+};
+
+function buildAllianceScoreHistoryChartPoints(points: AllianceScoreHistoryPoint[], maxSourcePoints = 120): AllianceScoreHistoryChartPoint[] {
+  if (!points.length) return [];
+  const source = points.slice(-maxSourcePoints);
+  if (!source.length) return [];
+  const byDate = new Map<string, AllianceScoreHistoryPoint>(source.map((p) => [p.fetchDate, p]));
+  const startDateRaw = source[0]?.fetchDate;
+  const endDateRaw = source[source.length - 1]?.fetchDate;
+  if (!startDateRaw || !endDateRaw) return [];
+  const start = new Date(`${startDateRaw}T00:00:00Z`);
+  const end = new Date(`${endDateRaw}T00:00:00Z`);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start.getTime() > end.getTime()) {
+    return source.map((p) => ({ fetchDate: p.fetchDate, score: p.score }));
+  }
+
+  const out: AllianceScoreHistoryChartPoint[] = [];
+  for (let cur = new Date(start); cur.getTime() <= end.getTime(); cur.setUTCDate(cur.getUTCDate() + 1)) {
+    const key = cur.toISOString().slice(0, 10);
+    const point = byDate.get(key);
+    out.push({
+      fetchDate: key,
+      score: point ? point.score : null,
+    });
+  }
+  return out;
+}
+
+function buildAllianceScoreHistoryQuickChartUrl(points: AllianceScoreHistoryPoint[]): string {
+  const chartPoints = buildAllianceScoreHistoryChartPoints(points);
+  const labels = chartPoints.map((p) => p.fetchDate.slice(5));
+  const data = chartPoints.map((p) => (p.score == null ? null : Math.round(p.score)));
+  const chartConfig = {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Score',
+        data,
+        borderColor: '#0F766E',
+        backgroundColor: 'rgba(15,118,110,0.20)',
+        fill: true,
+        spanGaps: false,
+        pointRadius: 0,
+        tension: 0.2,
+      }],
+    },
+    options: {
+      plugins: {
+        legend: { display: false },
+      },
+      scales: {
+        x: {
+          title: {
+            display: true,
+            text: 'Date (MM-DD)',
+          },
+        },
+        y: {
+          title: {
+            display: true,
+            text: 'Score',
+          },
+        },
+      },
+    },
+  };
+  const params = new URLSearchParams({
+    c: JSON.stringify(chartConfig),
+    width: '900',
+    height: '420',
+    format: 'png',
+    backgroundColor: 'transparent',
+  });
+  return `https://quickchart.io/chart?${params.toString()}`;
+}
+
 
 
 
@@ -1974,12 +2054,17 @@ ${resourceLines}
         } catch (err) {
           logWarn(`alliance score history fetch failed for alliance ${alliance.allianceId}`, err);
         }
+        const historyChartPoints = buildAllianceScoreHistoryChartPoints(historyPoints);
+        const historyRangeNote = historyChartPoints.length
+          ? `\nGraph shows full interior date range (${historyChartPoints[0]!.fetchDate} to ${historyChartPoints[historyChartPoints.length - 1]!.fetchDate}) with missing dates included as empty points.`
+          : '';
         const scoreDevEmbed = new EmbedBuilder()
           .setTitle(`${alliance.name} — Score History`)
           .setURL(allianceUrl(alliance.allianceId, baseUrl))
-          .setDescription(renderAllianceScoreHistoryTable(historyPoints))
+          .setDescription(`${renderAllianceScoreHistoryTable(historyPoints)}${historyRangeNote}`)
           .setColor(0x0F766E)
           .setFooter({ text: 'Page 3 · Alliance score history' });
+        if (historyChartPoints.length) scoreDevEmbed.setImage(buildAllianceScoreHistoryQuickChartUrl(historyPoints));
         pages.push(scoreDevEmbed);
 
         // Pages 4+: extended member list (10 per page)
