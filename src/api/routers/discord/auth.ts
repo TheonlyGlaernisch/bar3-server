@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import superagent from 'superagent';
+import crypto from 'crypto';
 
 const router = express.Router();
 
@@ -46,6 +47,20 @@ type MobileSession = {
 
 const MOBILE_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const mobileSessions = new Map<string, MobileSession>();
+
+function toBase64Url(input: Buffer): string {
+  return input
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function buildPkcePair(): { codeVerifier: string; codeChallenge: string } {
+  const codeVerifier = toBase64Url(crypto.randomBytes(32));
+  const codeChallenge = toBase64Url(crypto.createHash('sha256').update(codeVerifier).digest());
+  return { codeVerifier, codeChallenge };
+}
 
 function issueMobileToken(session: Omit<MobileSession, 'expiresAt'>): string {
   const token = `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -262,6 +277,10 @@ router.get('/discord', (req: Request, res: Response) => {
     // Only 'identify' is needed — role verification is delegated to flame_bot.
     scope: 'identify',
   });
+  const { codeVerifier, codeChallenge } = buildPkcePair();
+  req.session.discordCodeVerifier = codeVerifier;
+  params.set('code_challenge', codeChallenge);
+  params.set('code_challenge_method', 'S256');
   if (mobile) params.set('state', 'mobile');
   return res.redirect(`https://discord.com/oauth2/authorize?${params.toString()}`);
 });
@@ -274,6 +293,12 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
   }
 
   try {
+    const codeVerifier = req.session.discordCodeVerifier;
+    if (!codeVerifier) {
+      console.error('[Discord Auth] Missing PKCE code_verifier in session during callback.');
+      return res.redirect('/auth/login?error=auth_failed');
+    }
+
     // Exchange authorization code for access token
     const tokenRes = await superagent
       .post('https://discord.com/api/oauth2/token')
@@ -284,7 +309,9 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
         grant_type: 'authorization_code',
         code,
         redirect_uri: DISCORD_REDIRECT_URI,
+        code_verifier: codeVerifier,
       });
+    delete req.session.discordCodeVerifier;
 
     const accessToken: string = tokenRes.body.access_token;
 
