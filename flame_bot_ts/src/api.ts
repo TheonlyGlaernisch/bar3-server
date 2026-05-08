@@ -65,7 +65,7 @@
  * GET /auth/mobile-session?token=<token>
  *     Alias for GET /auth/session (kept for bar3-client compatibility).
  */
-import express, { Application, NextFunction, Request, Response } from 'express';
+import express, { Application, NextFunction, Request, RequestHandler, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { Guild, GuildMember } from 'discord.js';
 import {
@@ -317,7 +317,10 @@ export function createApp(options: CreateAppOptions): Application {
   } = options;
 
   const app = express();
-  app.use(express.json());
+  const jsonBodyParser: RequestHandler = (req, res, next) => {
+    express.json()(req, res, next);
+  };
+  app.use(jsonBodyParser);
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
     if (err instanceof SyntaxError && 'body' in (err as object)) {
       res.status(400).json({ error: 'Invalid JSON body' });
