@@ -1801,16 +1801,14 @@ ${resourceLines}
         const cityCounts = new Map<number, number>();
         for (const m of lotsMembers) cityCounts.set(m.numCities, (cityCounts.get(m.numCities) ?? 0) + 1);
         const cityRows = [...cityCounts.entries()].sort((a,b)=>a[0]-b[0]);
-        const cityGraph = cityRows.length
-          ? (() => {
-              const maxCount = Math.max(...cityRows.map(([,c])=>c));
-              return cityRows.map(([city, c]) => `\`${String(city).padStart(2)}c\` ${'█'.repeat(Math.max(1, Math.round((c/maxCount)*18)))} ${c}`).join('\n');
-            })()
-          : '*(no member data)*';
+        const cityGraph = cityRows.length ? renderVerticalTierChart(cityRows) : '*(no member data)*';
+        const cityLegend = cityRows.length
+          ? cityRows.map(([city, count]) => `\`${String(city).padStart(2)}c\` ${count}`).join(' · ')
+          : '';
         const cityEmbed = new EmbedBuilder()
           .setTitle(`${alliance.name} — City Tier Graph`)
           .setURL(allianceUrl(alliance.allianceId, baseUrl))
-          .setDescription(cityGraph)
+          .setDescription(cityRows.length ? `${cityGraph}\n${cityLegend}` : cityGraph)
           .setColor(0x5865F2)
           .setFooter({ text: 'Page 2 · City tier graph' });
         pages.push(cityEmbed);
@@ -2576,9 +2574,50 @@ Message: ${cfg.message}`)],
   const enrichWarFromApi = async (war: WarDetail): Promise<WarDetail> => {
     try {
       const full = await alertHttpClient.getWarDetail(war.warId);
-      return full ?? war;
+      if (full) return full;
     } catch (err) {
-      logWarn(`war alert enrichment failed for war ${war.warId}`, err);
+      logWarn(`war alert detail fetch failed for war ${war.warId}`, err);
+    }
+    try {
+      const [attackerNation, defenderNation, attackerAlliance, defenderAlliance] = await Promise.all([
+        war.attackerId > 0 ? alertHttpClient.getNation(war.attackerId) : Promise.resolve(null),
+        war.defenderId > 0 ? alertHttpClient.getNation(war.defenderId) : Promise.resolve(null),
+        war.attackerAllianceId > 0 ? alertHttpClient.getAllianceById(war.attackerAllianceId) : Promise.resolve(null),
+        war.defenderAllianceId > 0 ? alertHttpClient.getAllianceById(war.defenderAllianceId) : Promise.resolve(null),
+      ]);
+      return {
+        ...war,
+        attackerName: attackerNation?.nationName || war.attackerName,
+        attackerLeader: attackerNation?.leaderName || war.attackerLeader,
+        attackerAllianceId: attackerNation?.allianceId || war.attackerAllianceId,
+        attackerAllianceName: attackerAlliance?.name || attackerNation?.allianceName || war.attackerAllianceName,
+        attackerCities: attackerNation?.numCities ?? war.attackerCities,
+        attackerScore: attackerNation?.score ?? war.attackerScore,
+        attackerSoldiers: attackerNation?.soldiers ?? war.attackerSoldiers,
+        attackerTanks: attackerNation?.tanks ?? war.attackerTanks,
+        attackerAircraft: attackerNation?.aircraft ?? war.attackerAircraft,
+        attackerShips: attackerNation?.ships ?? war.attackerShips,
+        attackerMissiles: attackerNation?.missiles ?? war.attackerMissiles,
+        attackerNukes: attackerNation?.nukes ?? war.attackerNukes,
+        attackerWarsWon: attackerNation?.warsWon ?? war.attackerWarsWon,
+        attackerWarsLost: attackerNation?.warsLost ?? war.attackerWarsLost,
+        defenderName: defenderNation?.nationName || war.defenderName,
+        defenderLeader: defenderNation?.leaderName || war.defenderLeader,
+        defenderAllianceId: defenderNation?.allianceId || war.defenderAllianceId,
+        defenderAllianceName: defenderAlliance?.name || defenderNation?.allianceName || war.defenderAllianceName,
+        defenderCities: defenderNation?.numCities ?? war.defenderCities,
+        defenderScore: defenderNation?.score ?? war.defenderScore,
+        defenderSoldiers: defenderNation?.soldiers ?? war.defenderSoldiers,
+        defenderTanks: defenderNation?.tanks ?? war.defenderTanks,
+        defenderAircraft: defenderNation?.aircraft ?? war.defenderAircraft,
+        defenderShips: defenderNation?.ships ?? war.defenderShips,
+        defenderMissiles: defenderNation?.missiles ?? war.defenderMissiles,
+        defenderNukes: defenderNation?.nukes ?? war.defenderNukes,
+        defenderWarsWon: defenderNation?.warsWon ?? war.defenderWarsWon,
+        defenderWarsLost: defenderNation?.warsLost ?? war.defenderWarsLost,
+      };
+    } catch (err) {
+      logWarn(`war alert fallback enrichment failed for war ${war.warId}`, err);
       return war;
     }
   };
