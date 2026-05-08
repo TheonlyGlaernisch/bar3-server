@@ -1785,7 +1785,16 @@ ${resourceLines}
           .setFooter({ text: 'Page 2 · City tier graph' });
         pages.push(cityEmbed);
 
-        // Pages 3+: extended member list (10 per page)
+        // Page 3: score development note
+        const scoreDevEmbed = new EmbedBuilder()
+          .setTitle(`${alliance.name} — Score Development`)
+          .setURL(allianceUrl(alliance.allianceId, baseUrl))
+          .setDescription('Historical alliance-score development is not available from the current PnW endpoints used by this bot.')
+          .setColor(0x0F766E)
+          .setFooter({ text: 'Page 3' });
+        pages.push(scoreDevEmbed);
+
+        // Pages 4+: extended member list (10 per page)
         const extSorted = [...lotsMembers].sort((a,b)=>b.score-a.score);
         const extPageSize = 10;
         const extTotalPages = Math.max(1, Math.ceil(extSorted.length/extPageSize));
@@ -1801,7 +1810,7 @@ ${resourceLines}
             .setURL(allianceUrl(alliance.allianceId, baseUrl))
             .setDescription(lines.join('\n') || '*(no members)*')
             .setColor(0xFFD700)
-            .setFooter({ text: `Page ${p+3} · Members page ${p+1}/${extTotalPages} · ${extSorted.length} total` });
+            .setFooter({ text: `Page ${p+4} · Members page ${p+1}/${extTotalPages} · ${extSorted.length} total` });
           pages.push(extEmbed);
         }
 
