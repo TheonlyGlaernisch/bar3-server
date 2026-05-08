@@ -85,13 +85,15 @@ If you must run both components in one Render service, run both processes from o
 - Root Directory: *(leave empty)*
 - Build Command:
 
-    npm install && npm run build && pip install -r flame_bot/requirements.txt
+    npm install && npm run build
 
 - Start Command:
 
     ./scripts/run-both.sh
 
-This starts `python flame_bot/bot.py` in the background and then starts the TypeScript server in the foreground (`npm run start`).
+This starts `python flame_bot/bot.py` in the background **if that file exists** and then starts the TypeScript server in the foreground (`npm run start`).
+
+If you removed `flame_bot/`, do **not** run `pip install -r flame_bot/requirements.txt`; it is not needed for the TypeScript service.
 
 Important: this is a process-co-location workaround. The recommended production setup is still two services.
 
