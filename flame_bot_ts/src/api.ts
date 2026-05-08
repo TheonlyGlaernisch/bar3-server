@@ -317,10 +317,7 @@ export function createApp(options: CreateAppOptions): Application {
   } = options;
 
   const app = express();
-  const jsonBodyParser: RequestHandler = (req, res, next) => {
-    express.json()(req, res, next);
-  };
-  app.use(jsonBodyParser);
+  app.use(express.json() as RequestHandler);
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
     if (err instanceof SyntaxError && 'body' in (err as object)) {
       res.status(400).json({ error: 'Invalid JSON body' });
