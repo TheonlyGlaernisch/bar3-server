@@ -69,6 +69,7 @@ If you must run both components in one Render service, run both processes from o
     npm run start
 
 This starts `node flame_bot_ts/build/src/index.js` in the background (if built) and then starts the root TypeScript server in the foreground.
+If the bot build output is missing, the script starts the root server only; if the bot process crashes immediately after launch, startup fails fast.
 
 Why you saw `Could not open requirements file ... flame_bot/requirements.txt`:
 - Some old instructions/scripts referenced the legacy Python bot path.
