@@ -221,7 +221,7 @@ function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
         label: 'Members',
         data,
         backgroundColor: '#5865F2',
-        borderColor: '#3E4AA8',
+        borderColor: '#FFFFFF',
         borderWidth: 1,
       }],
     },
@@ -231,19 +231,33 @@ function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
       },
       scales: {
         x: {
+          ticks: {
+            color: '#FFFFFF',
+          },
+          grid: {
+            color: 'rgba(255,255,255,0.20)',
+            borderColor: '#FFFFFF',
+          },
           title: {
             display: true,
             text: 'City Tier',
+            color: '#FFFFFF',
           },
         },
         y: {
           beginAtZero: true,
           ticks: {
             precision: 0,
+            color: '#FFFFFF',
+          },
+          grid: {
+            color: 'rgba(255,255,255,0.20)',
+            borderColor: '#FFFFFF',
           },
           title: {
             display: true,
             text: 'Members',
+            color: '#FFFFFF',
           },
         },
       },
@@ -479,7 +493,7 @@ function buildAllianceScoreHistoryQuickChartUrl(points: AllianceScoreHistoryPoin
       datasets: [{
         label: 'Score',
         data,
-        borderColor: '#0F766E',
+        borderColor: '#FFFFFF',
         backgroundColor: 'rgba(15,118,110,0.20)',
         fill: true,
         spanGaps: false,
@@ -493,15 +507,31 @@ function buildAllianceScoreHistoryQuickChartUrl(points: AllianceScoreHistoryPoin
       },
       scales: {
         x: {
+          ticks: {
+            color: '#FFFFFF',
+          },
+          grid: {
+            color: 'rgba(255,255,255,0.20)',
+            borderColor: '#FFFFFF',
+          },
           title: {
             display: true,
             text: 'Date (MM-DD)',
+            color: '#FFFFFF',
           },
         },
         y: {
+          ticks: {
+            color: '#FFFFFF',
+          },
+          grid: {
+            color: 'rgba(255,255,255,0.20)',
+            borderColor: '#FFFFFF',
+          },
           title: {
             display: true,
             text: 'Score',
+            color: '#FFFFFF',
           },
         },
       },
