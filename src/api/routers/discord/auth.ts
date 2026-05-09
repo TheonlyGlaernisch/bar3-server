@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import superagent from 'superagent';
 import crypto from 'crypto';
 
@@ -47,6 +47,20 @@ type MobileSession = {
 
 const MOBILE_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const mobileSessions = new Map<string, MobileSession>();
+const AUTH_CHECK_WINDOW_MS = 60 * 1000;
+const AUTH_CHECK_MAX_REQUESTS = 20;
+const RATE_LIMIT_MAP_CLEANUP_THRESHOLD = 1000;
+const authCheckRateLimit = new Map<string, { count: number; resetAt: number }>();
+
+export type DiscordAuthContext = {
+  discordUserId: string;
+  discordUsername: string;
+  discordRoles: {
+    verified: boolean;
+    bar3_client: boolean;
+    bar3_server: boolean;
+  };
+};
 
 function toBase64Url(input: Buffer): string {
   return input
@@ -62,13 +76,16 @@ function buildPkcePair(): { codeVerifier: string; codeChallenge: string } {
   return { codeVerifier, codeChallenge };
 }
 
-function issueMobileToken(session: Omit<MobileSession, 'expiresAt'>): string {
-  const token = `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+function issueAuthToken(session: DiscordAuthContext): string {
+  let token = toBase64Url(crypto.randomBytes(32));
+  while (mobileSessions.has(token)) {
+    token = toBase64Url(crypto.randomBytes(32));
+  }
   mobileSessions.set(token, { ...session, expiresAt: Date.now() + MOBILE_TOKEN_TTL_MS });
   return token;
 }
 
-export function getMobileSession(token: string): MobileSession | null {
+export function getMobileSession(token: string): DiscordAuthContext | null {
   const session = mobileSessions.get(token);
   if (!session) return null;
   if (session.expiresAt < Date.now()) {
@@ -76,6 +93,97 @@ export function getMobileSession(token: string): MobileSession | null {
     return null;
   }
   return session;
+}
+
+function getBearerToken(req: Request): string | null {
+  const auth = req.headers.authorization;
+  if (!auth) return null;
+  const [scheme, token] = auth.split(' ');
+  if (scheme?.toLowerCase() !== 'bearer' || !token) return null;
+  return token;
+}
+
+function getTokenQueryParam(req: Request): string | null {
+  const directToken = typeof req.query.token === 'string' ? req.query.token : '';
+  if (directToken) return directToken;
+
+  const discordToken = typeof req.query.discordToken === 'string' ? req.query.discordToken : '';
+  if (discordToken) return discordToken;
+
+  const mobileToken = typeof req.query.mobileToken === 'string' ? req.query.mobileToken : '';
+  return mobileToken || null;
+}
+
+export function resolveDiscordAuth(req: Request): DiscordAuthContext | null {
+  if (req.session?.discordAuthenticated === true && req.session.discordUserId) {
+    return {
+      discordUserId: req.session.discordUserId,
+      discordUsername: req.session.discordUsername || '',
+      discordRoles: {
+        verified: req.session.discordRoles?.verified === true,
+        bar3_client: req.session.discordRoles?.bar3_client === true,
+        bar3_server: req.session.discordRoles?.bar3_server === true,
+      },
+    };
+  }
+
+  const token = getBearerToken(req) || getTokenQueryParam(req);
+  if (!token) return null;
+  return getMobileSession(token);
+}
+
+function appendQueryParam(url: string, key: string, value: string): string {
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+}
+
+function buildDiscordRoles(flameBotRoles: Record<string, unknown>): DiscordAuthContext['discordRoles'] {
+  return {
+    verified: flameBotRoles.verified === true,
+    bar3_client: flameBotRoles.bar3_client === true,
+    bar3_server: flameBotRoles.bar3_server === true,
+  };
+}
+
+function getRateLimitKey(req: Request): string {
+  // app.set('trust proxy', 1) is configured in src/index.ts, so req.ip reflects
+  // the client IP from the trusted upstream proxy.
+  return req.ip || 'unknown-ip';
+}
+
+function cleanupRateLimitEntries(now: number): void {
+  for (const [key, value] of authCheckRateLimit) {
+    if (value.resetAt <= now) {
+      authCheckRateLimit.delete(key);
+    }
+  }
+}
+
+function authCheckLimiter(req: Request, res: Response, next: NextFunction): void {
+  const key = getRateLimitKey(req);
+  const now = Date.now();
+  if (authCheckRateLimit.size > RATE_LIMIT_MAP_CLEANUP_THRESHOLD) {
+    cleanupRateLimitEntries(now);
+  }
+  const current = authCheckRateLimit.get(key);
+  if (!current || current.resetAt <= now) {
+    authCheckRateLimit.set(key, { count: 1, resetAt: now + AUTH_CHECK_WINDOW_MS });
+    next();
+    return;
+  }
+
+  current.count += 1;
+  if (current.count > AUTH_CHECK_MAX_REQUESTS) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
+    res.setHeader('Retry-After', retryAfterSeconds.toString());
+    res.status(429).json({
+      error: `Too many authentication checks. Please retry after ${retryAfterSeconds} seconds.`,
+    });
+    return;
+  }
+
+  authCheckRateLimit.set(key, current);
+  next();
 }
 
 /**
@@ -348,8 +456,9 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
     }
 
     // Grant access to users holding either bar3_client or bar3_server role.
+    const discordRoles = buildDiscordRoles(flameBotRoles);
     const hasAccess: boolean =
-      flameBotRoles.bar3_client === true || flameBotRoles.bar3_server === true;
+      discordRoles.bar3_client || discordRoles.bar3_server;
 
     if (!hasAccess) {
       return res.send(ACCESS_DENIED_HTML);
@@ -360,14 +469,10 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       if (!CLIENT_APP_URL) {
         return res.redirect('/auth/login?error=auth_failed');
       }
-      const mobileToken = issueMobileToken({
+      const mobileToken = issueAuthToken({
         discordUserId: discordId,
         discordUsername,
-        discordRoles: {
-          verified: flameBotRoles.verified === true,
-          bar3_client: flameBotRoles.bar3_client === true,
-          bar3_server: flameBotRoles.bar3_server === true,
-        },
+        discordRoles,
       });
       return res.redirect(`${CLIENT_APP_URL}?mobileToken=${encodeURIComponent(mobileToken)}`);
     }
@@ -380,16 +485,23 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
 
     let destination: string;
     if (CLIENT_APP_URL) {
-      // Prefer an explicit client URL to avoid landing on server-side routes
-      // that may not exist in this service deployment.
-      destination = savedReturnTo
-        ? `${CLIENT_APP_URL}${savedReturnTo}`
-        : `${CLIENT_APP_URL}/dashboard`;
+      destination = `${CLIENT_APP_URL}/auth/discord/callback`;
+      const safeSavedReturnTo = normalizeReturnTo(savedReturnTo);
+      if (safeSavedReturnTo) {
+        destination = appendQueryParam(destination, 'returnTo', safeSavedReturnTo);
+      }
     } else if (savedReturnTo) {
       destination = savedReturnTo;
     } else {
       destination = '/';
     }
+
+    const authToken = issueAuthToken({
+      discordUserId: discordId,
+      discordUsername,
+      discordRoles,
+    });
+    destination = appendQueryParam(destination, 'discordToken', authToken);
 
     // Regenerate the session before writing auth data to prevent session
     // fixation attacks and to ensure a fresh session is always issued after
@@ -404,11 +516,7 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       req.session.discordAuthenticated = true;
       req.session.discordUserId = discordId;
       req.session.discordUsername = discordUsername;
-      req.session.discordRoles = {
-        verified: flameBotRoles.verified === true,
-        bar3_client: flameBotRoles.bar3_client === true,
-        bar3_server: flameBotRoles.bar3_server === true,
-      };
+      req.session.discordRoles = discordRoles;
 
       // Save session before redirecting so the cookie is persisted before the
       // browser follows the redirect and the next request arrives.
@@ -432,24 +540,24 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
  *  Returns 200 with authenticated=true when a valid session exists.
  *  Returns 401 with authenticated=false when no valid session exists so that
  *  clients can use response.ok to gate access without parsing the body. */
-router.get('/session', (req: Request, res: Response) => {
-  if (req.session?.discordAuthenticated === true) {
-    const userId = req.session.discordUserId ?? '';
+router.get('/session', authCheckLimiter, (req: Request, res: Response) => {
+  const auth = resolveDiscordAuth(req);
+  if (auth) {
+    const userId = auth.discordUserId;
     return res.json({
       authenticated: true,
       user: {
         id: userId,
-        username: req.session.discordUsername,
+        username: auth.discordUsername,
       },
-      roles: req.session.discordRoles,
+      roles: auth.discordRoles,
       isAdmin: ADMIN_DISCORD_IDS.has(userId),
     });
   }
   return res.status(401).json({ authenticated: false });
 });
 
-/** POST /auth/logout — destroy the server-side session and clear the cookie. */
-router.post('/logout', (req: Request, res: Response) => {
+const destroySession = (req: Request, res: Response) => {
   req.session.destroy((err) => {
     if (err) {
       console.error('[Discord Auth] Session destroy error:', err);
@@ -460,19 +568,23 @@ router.post('/logout', (req: Request, res: Response) => {
     res.clearCookie('connect.sid');
     return res.json({ ok: true });
   });
-});
+};
+
+/** POST /auth/logout — destroy the server-side session and clear the cookie. */
+router.post('/logout', destroySession);
+
+/** GET /auth/logout — compatibility with clients that navigate to this URL. */
+router.get('/logout', destroySession);
 
 
-router.get('/mobile-session', (req: Request, res: Response) => {
-  const token = typeof req.query.token === 'string' ? req.query.token : '';
-  if (!token) return res.status(400).json({ error: 'Missing token' });
-  const session = getMobileSession(token);
-  if (!session) return res.status(401).json({ authenticated: false });
+router.get('/mobile-session', authCheckLimiter, (req: Request, res: Response) => {
+  const auth = resolveDiscordAuth(req);
+  if (!auth) return res.status(401).json({ authenticated: false });
   return res.json({
     authenticated: true,
-    user: { id: session.discordUserId, username: session.discordUsername },
-    roles: session.discordRoles,
-    isAdmin: ADMIN_DISCORD_IDS.has(session.discordUserId),
+    user: { id: auth.discordUserId, username: auth.discordUsername },
+    roles: auth.discordRoles,
+    isAdmin: ADMIN_DISCORD_IDS.has(auth.discordUserId),
   });
 });
 
