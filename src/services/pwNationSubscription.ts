@@ -116,8 +116,10 @@ export class PnWNationSubscriptionClient {
         // Ignore malformed payloads.
       }
     });
-    ws.on('close', () => {
+    ws.on('close', (code: number, reason: Buffer) => {
       closed = true;
+      const reasonText = reason?.length ? reason.toString('utf8') : '';
+      console.warn(`PnW nation subscription WebSocket closed (code=${code}, reason=${reasonText || 'n/a'}).`);
     });
     ws.on('error', () => {
       closed = true;
@@ -152,7 +154,7 @@ export class PnWNationSubscriptionClient {
         }
 
         if (eventName === 'pusher:ping') {
-          ws.send(JSON.stringify({ event: 'pusher:pong', data: '{}' }));
+          ws.send(JSON.stringify({ event: 'pusher:pong', data: {} }));
           continue;
         }
 

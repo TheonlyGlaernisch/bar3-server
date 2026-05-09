@@ -1849,7 +1849,11 @@ export class PnWSubscriptionClient {
         messageQueue.push(JSON.parse(raw.toString()) as Record<string, unknown>);
       } catch { /**/ }
     });
-    ws.on('close', () => { closed = true; });
+    ws.on('close', (code: number, reason: Buffer) => {
+      closed = true;
+      const reasonText = reason?.length ? reason.toString('utf8') : '';
+      console.warn(`${opts.logPrefix} WebSocket closed (code=${code}, reason=${reasonText || 'n/a'}, subscribed=${subscribed}).`);
+    });
     ws.on('error', () => { closed = true; });
 
     const [singleEvent, bulkEvent] = opts.eventNames;
@@ -1890,7 +1894,7 @@ export class PnWSubscriptionClient {
           if (parsed !== null) yield parsed;
         }
       } else if (wsEvent === 'pusher:ping') {
-        ws.send(JSON.stringify({ event: 'pusher:pong', data: '{}' }));
+        ws.send(JSON.stringify({ event: 'pusher:pong', data: {} }));
       } else if (wsEvent === 'pusher:error') {
         console.warn(`${opts.logPrefix} gateway error:`, frame['data']);
         this._channelCache.delete(cacheKey);
