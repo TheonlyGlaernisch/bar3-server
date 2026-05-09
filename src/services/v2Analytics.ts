@@ -7,13 +7,27 @@ function makeId(bytes = 8): string {
   return crypto.randomBytes(bytes).toString('hex');
 }
 
+function normalizeTrackedUrl(url: string): string | null {
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 export async function getOrCreateTrackingLink(accountId: string, url: string): Promise<string> {
+  const normalizedUrl = normalizeTrackedUrl(url);
+  if (!normalizedUrl) return '';
   // Reuse per-account+url
-  const existing = await TrackingLink.findOne({ accountId, url }).exec();
+  const existing = await TrackingLink.findOne({ accountId, url: normalizedUrl }).exec();
   if (existing) return existing.shortId;
 
   const shortId = makeId(9);
-  await TrackingLink.create({ accountId, shortId, url });
+  await TrackingLink.create({ accountId, shortId, url: normalizedUrl });
   return shortId;
 }
 
@@ -56,6 +70,7 @@ export function injectTrackingIntoHtml(opts: {
         const href = link.getAttribute('href');
         if (!href) continue;
         const shortId = await getOrCreateTrackingLink(accountId, href);
+        if (!shortId) continue;
         link.setAttribute('href', `${baseUrl}/analytics/v2/l/${shortId}`);
       }
     }
@@ -74,4 +89,3 @@ export function injectTrackingIntoHtml(opts: {
 
   return work();
 }
-

@@ -5,11 +5,21 @@ import { recordClick, recordView } from '../../../services/v2Analytics';
 
 const router = express.Router();
 
+function isSafeRedirectUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 // Public redirect for tracked links
 router.get('/l/:shortId', async (req: Request, res: Response) => {
   const shortId = req.params.shortId;
   const link = await recordClick(shortId);
   if (!link) return res.status(404).send('Not found');
+  if (!isSafeRedirectUrl(link.url)) return res.status(400).send('Invalid redirect target');
   return res.redirect(302, link.url);
 });
 

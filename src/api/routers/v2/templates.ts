@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { requirePwSession } from '../../middleware/pwAuth';
 import { MessageTemplate } from '../../../interfaces/schemas/MessageTemplateSchema';
+import { sanitizeTemplateCss, sanitizeTemplateHtml } from '../../../utilities/sanitizeTemplateContent';
 
 const router = express.Router();
 router.use(express.json());
@@ -12,8 +13,8 @@ router.get('/', requirePwSession, async (req: Request, res: Response) => {
     templates.map(t => ({
       id: t._id.toString(),
       subject: t.subject,
-      bodyHtml: t.bodyHtml,
-      bodyCss: t.bodyCss,
+      bodyHtml: sanitizeTemplateHtml(t.bodyHtml || ''),
+      bodyCss: sanitizeTemplateCss(t.bodyCss || ''),
       bodyText: t.bodyText,
       currentEditor: t.currentEditor ?? 0,
       createdAt: t.createdAt,
@@ -26,8 +27,8 @@ router.post('/', requirePwSession, async (req: Request, res: Response) => {
   const accountId = req.pwAccount!._id;
   const subject = typeof req.body?.subject === 'string' ? req.body.subject : '';
   const bodyText = typeof req.body?.bodyText === 'string' ? req.body.bodyText : undefined;
-  const bodyHtml = typeof req.body?.bodyHtml === 'string' ? req.body.bodyHtml : undefined;
-  const bodyCss = typeof req.body?.bodyCss === 'string' ? req.body.bodyCss : undefined;
+  const bodyHtml = typeof req.body?.bodyHtml === 'string' ? sanitizeTemplateHtml(req.body.bodyHtml) : undefined;
+  const bodyCss = typeof req.body?.bodyCss === 'string' ? sanitizeTemplateCss(req.body.bodyCss) : undefined;
   const currentEditor = typeof req.body?.currentEditor === 'number' ? req.body.currentEditor : undefined;
 
   // Try to find the latest (by updatedAt) and update it, else create new
@@ -62,8 +63,8 @@ router.put('/:id', requirePwSession, async (req: Request, res: Response) => {
   const id = req.params.id;
   const subject = typeof req.body?.subject === 'string' ? req.body.subject : '';
   const bodyText = typeof req.body?.bodyText === 'string' ? req.body.bodyText : undefined;
-  const bodyHtml = typeof req.body?.bodyHtml === 'string' ? req.body.bodyHtml : undefined;
-  const bodyCss = typeof req.body?.bodyCss === 'string' ? req.body.bodyCss : undefined;
+  const bodyHtml = typeof req.body?.bodyHtml === 'string' ? sanitizeTemplateHtml(req.body.bodyHtml) : undefined;
+  const bodyCss = typeof req.body?.bodyCss === 'string' ? sanitizeTemplateCss(req.body.bodyCss) : undefined;
   const currentEditor = typeof req.body?.currentEditor === 'number' ? req.body.currentEditor : undefined;
 
   const updated = await MessageTemplate.findOneAndUpdate(
@@ -94,4 +95,3 @@ router.put('/:id', requirePwSession, async (req: Request, res: Response) => {
 });
 
 export default router;
-

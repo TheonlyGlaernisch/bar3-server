@@ -6,6 +6,7 @@ import { getDecryptedApiKeyForAccount } from '../../../services/pwAccountService
 import messagesService from '../../../services/messages';
 import { injectTrackingIntoHtml } from '../../../services/v2Analytics';
 import { combineHtmlAndCss } from '../../../utilities/combineHtmlAndCss';
+import { sanitizeTemplateCss, sanitizeTemplateHtml } from '../../../utilities/sanitizeTemplateContent';
 import superagent from 'superagent';
 import { NationAPICall } from '../../../interfaces/types';
 // import AutomationState from '../../../models/AutomationState'; // (Not used here, fine to remove if not needed)
@@ -562,7 +563,10 @@ router.post('/send-active-unallied', requirePwSession, async (req: Request, res:
 
   const configLike = {
     apiKey: pwKey,
-    messageHTML: combineHtmlAndCss(template.bodyHtml || template.bodyText || '', template.bodyCss),
+    messageHTML: combineHtmlAndCss(
+      sanitizeTemplateHtml(template.bodyHtml || template.bodyText || ''),
+      sanitizeTemplateCss(template.bodyCss)
+    ),
     messageSubject: template.subject || '',
     analyticsEnabled: false,
   } as any;
@@ -681,7 +685,10 @@ router.post('/send-active-unallied-discord', requirePwSession, async (req: Reque
 
   const configLike = {
     apiKey: pwKey,
-    messageHTML: combineHtmlAndCss(template.bodyHtml || template.bodyText || '', template.bodyCss),
+    messageHTML: combineHtmlAndCss(
+      sanitizeTemplateHtml(template.bodyHtml || template.bodyText || ''),
+      sanitizeTemplateCss(template.bodyCss)
+    ),
     messageSubject: template.subject || '',
     analyticsEnabled: false,
   } as any;
@@ -804,7 +811,10 @@ const sendByNationIdsHandler = async (req: Request, res: Response) => {
 
   const configLike = {
     apiKey: pwKey,
-    messageHTML: combineHtmlAndCss(template.bodyHtml || template.bodyText || '', template.bodyCss),
+    messageHTML: combineHtmlAndCss(
+      sanitizeTemplateHtml(template.bodyHtml || template.bodyText || ''),
+      sanitizeTemplateCss(template.bodyCss)
+    ),
     messageSubject: template.subject || '',
     analyticsEnabled: false,
   } as any;

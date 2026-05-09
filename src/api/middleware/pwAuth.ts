@@ -21,6 +21,19 @@ function extractBearerToken(req: Request): string | null {
   return token.length ? token : null;
 }
 
+function extractAlternateToken(req: Request): string | null {
+  const headerToken = req.headers['x-auth-token'] || req.headers['x-session-token'];
+  if (typeof headerToken === 'string' && headerToken.trim()) return headerToken.trim();
+
+  const bodyToken = (req.body as any)?.token || (req.body as any)?.sessionToken;
+  if (typeof bodyToken === 'string' && bodyToken.trim()) return bodyToken.trim();
+
+  const queryToken = req.query?.token || req.query?.sessionToken;
+  if (typeof queryToken === 'string' && queryToken.trim()) return queryToken.trim();
+
+  return null;
+}
+
 function extractApiKey(req: Request): string | null {
   const headerKey = req.headers['x-api-key'];
   if (typeof headerKey === 'string' && headerKey.trim()) return headerKey.trim();
@@ -35,11 +48,11 @@ function extractApiKey(req: Request): string | null {
 }
 
 export async function requirePwSession(req: Request, res: Response, next: NextFunction) {
-  const token = extractBearerToken(req);
+  const token = extractBearerToken(req) || extractAlternateToken(req);
   if (!token) {
     const apiKey = extractApiKey(req);
     if (!apiKey) {
-      return res.status(401).json({ error: 'Missing bearer token or x-api-key' });
+      return res.status(401).json({ error: 'Missing auth token or x-api-key' });
     }
 
     const pwApiKeyHash = sha256Hex(apiKey);

@@ -12,6 +12,7 @@ import * as messageService from '../services/messageService';
 import analyticsRouterV2 from './routers/v2/analytics';
 import analyticsRouter from './routers/analytics';
 import { sha256Hex } from '../utilities/cryptoBox';
+import { sanitizeTemplateCss, sanitizeTemplateHtml } from '../utilities/sanitizeTemplateContent';
 import { PwAccount } from '../interfaces/schemas/PwAccountSchema';
 import { MessageTemplate } from '../interfaces/schemas/MessageTemplateSchema';
 
@@ -80,7 +81,7 @@ legacyApiRouter.post('/sendMessage', async (req, res) => {
 
   const messageHTML = req.body.messageHTML;
   if (typeof messageHTML === 'string') {
-    scopedConfig.messageHTML = messageHTML;
+    scopedConfig.messageHTML = sanitizeTemplateHtml(messageHTML);
   }
 
   const messageSubject = req.body.messageSubject;
@@ -148,11 +149,12 @@ legacyApiRouter.get('/config', async (req, res) => {
     if (template) {
       if (template.subject) scopedConfig.messageSubject = template.subject;
       if (template.bodyHtml) {
-        scopedConfig.messageHTML = template.bodyHtml;
-        scopedConfig.advancedRaw.html = template.bodyHtml;
+        const safeBodyHtml = sanitizeTemplateHtml(template.bodyHtml);
+        scopedConfig.messageHTML = safeBodyHtml;
+        scopedConfig.advancedRaw.html = safeBodyHtml;
       }
       if (template.bodyCss) {
-        scopedConfig.advancedRaw.css = template.bodyCss;
+        scopedConfig.advancedRaw.css = sanitizeTemplateCss(template.bodyCss);
       }
       // Restore the editor tab the user was last using.
       if (typeof template.currentEditor === 'number') {
@@ -171,6 +173,17 @@ legacyApiRouter.post('/setConfig', async (req, res) => {
 
   const scopedConfig = getScopedConfig(apiKey);
   const mergedConfig = Object.assign(scopedConfig, req.body.config || {});
+  if (typeof mergedConfig.messageHTML === 'string') {
+    mergedConfig.messageHTML = sanitizeTemplateHtml(mergedConfig.messageHTML);
+  }
+  if (mergedConfig.advancedRaw && typeof mergedConfig.advancedRaw === 'object') {
+    if (typeof mergedConfig.advancedRaw.html === 'string') {
+      mergedConfig.advancedRaw.html = sanitizeTemplateHtml(mergedConfig.advancedRaw.html);
+    }
+    if (typeof mergedConfig.advancedRaw.css === 'string') {
+      mergedConfig.advancedRaw.css = sanitizeTemplateCss(mergedConfig.advancedRaw.css);
+    }
+  }
   ensureSession(apiKey).config = mergedConfig;
 
   // Persist editor message to Mongo for the authenticated api-key user.
