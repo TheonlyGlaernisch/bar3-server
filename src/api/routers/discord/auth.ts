@@ -76,7 +76,10 @@ function buildPkcePair(): { codeVerifier: string; codeChallenge: string } {
 }
 
 function issueMobileToken(session: DiscordAuthContext): string {
-  const token = toBase64Url(crypto.randomBytes(32));
+  let token = toBase64Url(crypto.randomBytes(32));
+  while (mobileSessions.has(token)) {
+    token = toBase64Url(crypto.randomBytes(32));
+  }
   mobileSessions.set(token, { ...session, expiresAt: Date.now() + MOBILE_TOKEN_TTL_MS });
   return token;
 }
@@ -134,12 +137,25 @@ function appendQueryParam(url: string, key: string, value: string): string {
 }
 
 function getRateLimitKey(req: Request): string {
+  // app.set('trust proxy', 1) is configured in src/index.ts, so req.ip reflects
+  // the client IP from the trusted upstream proxy.
   return req.ip || 'unknown-ip';
+}
+
+function cleanupRateLimitEntries(now: number): void {
+  for (const [key, value] of authCheckRateLimit) {
+    if (value.resetAt <= now) {
+      authCheckRateLimit.delete(key);
+    }
+  }
 }
 
 function authCheckLimiter(req: Request, res: Response, next: NextFunction): void {
   const key = getRateLimitKey(req);
   const now = Date.now();
+  if (authCheckRateLimit.size > 1000) {
+    cleanupRateLimitEntries(now);
+  }
   const current = authCheckRateLimit.get(key);
   if (!current || current.resetAt <= now) {
     authCheckRateLimit.set(key, { count: 1, resetAt: now + AUTH_CHECK_WINDOW_MS });
@@ -465,8 +481,9 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
     let destination: string;
     if (CLIENT_APP_URL) {
       destination = `${CLIENT_APP_URL}/auth/discord/callback`;
-      if (savedReturnTo) {
-        destination = appendQueryParam(destination, 'returnTo', savedReturnTo);
+      const safeSavedReturnTo = normalizeReturnTo(savedReturnTo);
+      if (safeSavedReturnTo) {
+        destination = appendQueryParam(destination, 'returnTo', safeSavedReturnTo);
       }
     } else if (savedReturnTo) {
       destination = savedReturnTo;
