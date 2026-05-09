@@ -26,6 +26,10 @@ const ADMIN_DISCORD_IDS: ReadonlySet<string> = new Set(
     .map((id) => id.trim())
     .filter(Boolean),
 );
+const BOT_ROUTE_WINDOW_MS = 60 * 1000;
+const BOT_ROUTE_MAX_REQUESTS = 30;
+const BOT_ROUTE_LIMIT_CLEANUP_THRESHOLD = 1000;
+const botRouteRateLimit = new Map<string, { count: number; resetAt: number }>();
 
 // Trust the first hop from a reverse proxy (Render, Heroku, nginx, etc.) so
 // that req.protocol is 'https' and secure session cookies are sent correctly.
@@ -133,11 +137,43 @@ app.get('/health', (_req: Request, res: Response) => {
 // flame_bot API listener so callers can use the same base URL.
 const FLAME_BOT_INTERNAL_URL = (process.env.FLAME_BOT_API_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
 const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || '';
+const getRateLimitKey = (req: Request): string => req.ip || 'unknown-ip';
+const cleanupBotRouteRateLimitEntries = (now: number): void => {
+  for (const [key, value] of botRouteRateLimit) {
+    if (value.resetAt <= now) {
+      botRouteRateLimit.delete(key);
+    }
+  }
+};
+const botRouteLimiter = (req: Request, res: Response, next: NextFunction) => {
+  const key = getRateLimitKey(req);
+  const now = Date.now();
+  if (botRouteRateLimit.size > BOT_ROUTE_LIMIT_CLEANUP_THRESHOLD) {
+    cleanupBotRouteRateLimitEntries(now);
+  }
+  const current = botRouteRateLimit.get(key);
+  if (!current || current.resetAt <= now) {
+    botRouteRateLimit.set(key, { count: 1, resetAt: now + BOT_ROUTE_WINDOW_MS });
+    next();
+    return;
+  }
+  current.count += 1;
+  if (current.count > BOT_ROUTE_MAX_REQUESTS) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
+    res.setHeader('Retry-After', retryAfterSeconds.toString());
+    res.status(429).json({
+      error: `Too many bot API requests. Please retry after ${retryAfterSeconds} seconds.`,
+    });
+    return;
+  }
+  botRouteRateLimit.set(key, current);
+  next();
+};
 const requireDiscordAdmin = (req: Request, res: Response, next: NextFunction) => {
   const authDiscordId = (res.locals.discordAuth as { discordUserId?: string } | undefined)?.discordUserId;
   const sessionDiscordId = req.session?.discordUserId || authDiscordId;
   if (!sessionDiscordId || !ADMIN_DISCORD_IDS.has(sessionDiscordId)) {
-    res.status(403).json({ error: 'Forbidden' });
+    res.status(403).json({ error: 'Admin access required' });
     return;
   }
   next();
@@ -154,12 +190,8 @@ const proxyBotApi = async (req: Request, res: Response, method: 'get' | 'post', 
       if (path === '/api/bot/send') {
         const authDiscordId = (res.locals.discordAuth as { discordUserId?: string } | undefined)?.discordUserId;
         const sessionDiscordId = req.session?.discordUserId || authDiscordId;
-        if (typeof sessionDiscordId === 'string' && sessionDiscordId.trim()) {
-          // Always use the authenticated Discord ID and ignore any caller-provided discord_id.
-          payload.discord_id = sessionDiscordId.trim();
-        } else {
-          return res.status(401).json({ error: 'Discord authentication required' });
-        }
+        // Always use the authenticated Discord ID and ignore any caller-provided discord_id.
+        payload.discord_id = typeof sessionDiscordId === 'string' ? sessionDiscordId.trim() : '';
         if (!payload.message) {
           const fallbackMessage = payload.content ?? payload.text;
           if (typeof fallbackMessage === 'string') {
@@ -184,11 +216,11 @@ const proxyBotApi = async (req: Request, res: Response, method: 'get' | 'post', 
   }
 };
 
-app.get('/api/bot/servers', requireDiscordAuth, requireDiscordAdmin, async (req: Request, res: Response) =>
+app.get('/api/bot/servers', botRouteLimiter, requireDiscordAuth, requireDiscordAdmin, async (req: Request, res: Response) =>
   proxyBotApi(req, res, 'get', '/api/bot/servers'));
-app.get('/api/bot/commands/usage', requireDiscordAuth, requireDiscordAdmin, async (req: Request, res: Response) =>
+app.get('/api/bot/commands/usage', botRouteLimiter, requireDiscordAuth, requireDiscordAdmin, async (req: Request, res: Response) =>
   proxyBotApi(req, res, 'get', '/api/bot/commands/usage'));
-app.post('/api/bot/send', requireDiscordAuth, requireDiscordAdmin, async (req: Request, res: Response) =>
+app.post('/api/bot/send', botRouteLimiter, requireDiscordAuth, requireDiscordAdmin, async (req: Request, res: Response) =>
   proxyBotApi(req, res, 'post', '/api/bot/send'));
 
 // Discord OAuth routes — must be mounted BEFORE the auth guard so the login
