@@ -1,17 +1,56 @@
 import { parse, HTMLElement } from 'node-html-parser';
 
-const FORBIDDEN_TAGS = new Set(['script', 'iframe', 'object', 'embed', 'link', 'meta']);
+const FORBIDDEN_TAGS = new Set([
+  'script',
+  'iframe',
+  'object',
+  'embed',
+  'meta',
+  'base',
+  'link',
+  'form',
+  'input',
+  'button',
+  'textarea',
+  'select',
+]);
 const EVENT_HANDLER_ATTR = /^on/i;
-const SAFE_URL_PROTOCOL = /^(https?:|mailto:|tel:|\/|#|\.\/|\.\.\/)/i;
-const SAFE_DATA_IMAGE = /^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+$/i;
+const URL_ATTRIBUTES = new Set(['href', 'src', 'xlink:href', 'srcdoc', 'action', 'formaction']);
+const SAFE_DATA_IMAGE = /^data:image\/(?:png|gif|jpe?g|webp|avif|bmp);base64,[a-z0-9+/=]+$/i;
 
-function sanitizeUrlLike(value: string): string {
+function sanitizeUrlLike(attributeName: string, value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return '';
-  if (SAFE_URL_PROTOCOL.test(trimmed) || SAFE_DATA_IMAGE.test(trimmed)) {
-    return trimmed;
+  const normalized = trimmed
+    .split('')
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code > 31 && code !== 127 && !/\s/.test(char);
+    })
+    .join('')
+    .toLowerCase();
+
+  const isUnsafeProtocol = normalized.startsWith('javascript:')
+    || normalized.startsWith('vbscript:')
+    || normalized.startsWith('data:text/html');
+  if (isUnsafeProtocol) return '';
+
+  const isDataUrl = normalized.startsWith('data:');
+  if (isDataUrl) {
+    const isSafeImageData = (attributeName === 'src' || attributeName === 'xlink:href') && SAFE_DATA_IMAGE.test(normalized);
+    return isSafeImageData ? trimmed : '';
   }
-  return '';
+
+  return trimmed;
+}
+
+function sanitizeInlineStyle(value: string): string {
+  return value
+    .replace(/expression\s*\([^)]*\)/gi, '')
+    .replace(/url\s*\(\s*["']?\s*javascript:[^)]*\)/gi, '')
+    .replace(/behavior\s*:[^;]+;?/gi, '')
+    .replace(/-moz-binding\s*:[^;]+;?/gi, '')
+    .trim();
 }
 
 function sanitizeNodeAttributes(node: HTMLElement): void {
@@ -23,8 +62,18 @@ function sanitizeNodeAttributes(node: HTMLElement): void {
     }
 
     const lowerKey = key.toLowerCase();
-    if (lowerKey === 'href' || lowerKey === 'src' || lowerKey === 'xlink:href') {
-      const safe = sanitizeUrlLike(value);
+    if (lowerKey === 'style') {
+      const cleanedStyle = sanitizeInlineStyle(value);
+      if (!cleanedStyle) {
+        node.removeAttribute(key);
+      } else if (cleanedStyle !== value) {
+        node.setAttribute(key, cleanedStyle);
+      }
+      continue;
+    }
+
+    if (URL_ATTRIBUTES.has(lowerKey)) {
+      const safe = sanitizeUrlLike(lowerKey, value);
       if (!safe) {
         node.removeAttribute(key);
       } else if (safe !== value) {
