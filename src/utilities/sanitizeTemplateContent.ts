@@ -103,9 +103,20 @@ export function sanitizeTemplateCss(input?: string): string {
   const css = (input || '').trim();
   if (!css) return '';
 
-  return css
-    // Remove @import rules to prevent loading active content.
-    .replace(/@import[\s\S]*?;/gi, '')
+  // Remove @import rules to prevent loading active content (linear scan).
+  let withoutImports = '';
+  const lower = css.toLowerCase();
+  for (let i = 0; i < css.length; i += 1) {
+    if (lower.startsWith('@import', i)) {
+      let j = i + 7;
+      while (j < css.length && css[j] !== ';') j += 1;
+      i = j;
+      continue;
+    }
+    withoutImports += css[i];
+  }
+
+  return withoutImports
     // Strip javascript: URLs and old IE expression() style execution.
     .replace(/url\s*\(\s*(['"]?)\s*javascript:[\s\S]*?\1\s*\)/gi, 'url()')
     .replace(/expression\s*\([\s\S]*?\)/gi, '');
