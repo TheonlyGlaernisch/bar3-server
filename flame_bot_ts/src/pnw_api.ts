@@ -1790,37 +1790,36 @@ export class PnWSubscriptionClient {
     this._apiKey = apiKey;
   }
 
-  private _serializeChannelQuery(query?: SubscriptionQuery): string {
-    if (!query) return '';
-    const pairs: string[] = [];
+  private _normalizedChannelQueryEntries(query?: SubscriptionQuery): [string, string][] {
+    if (!query) return [];
+    const entries: [string, string][] = [];
     const keys = Object.keys(query).sort();
     for (const key of keys) {
       const value = query[key];
       if (Array.isArray(value)) {
-        const joined = value
+        const filtered = value
           .map((item) => String(item))
-          .filter((item) => item.length > 0)
-          .join(',');
-        pairs.push(`${key}=${joined}`);
+          .filter((item) => item.length > 0);
+        if (!filtered.length) continue;
+        entries.push([key, filtered.join(',')]);
       } else {
-        pairs.push(`${key}=${String(value)}`);
+        entries.push([key, String(value)]);
       }
     }
-    return pairs.join('&');
+    return entries;
+  }
+
+  private _serializeChannelQuery(query?: SubscriptionQuery): string {
+    return this._normalizedChannelQueryEntries(query)
+      .map(([key, value]) => `${key}=${value}`)
+      .join('&');
   }
 
   private async _getChannel(model: string, event: string, query?: SubscriptionQuery): Promise<string> {
     const url = new URL(PNW_SUBSCRIPTION_URL.replace('{model}', model).replace('{event}', event));
     url.searchParams.set('api_key', this._apiKey);
-    if (query) {
-      for (const [key, value] of Object.entries(query)) {
-        if (Array.isArray(value)) {
-          const filtered = value.map((item) => String(item)).filter((item) => item.length > 0);
-          if (filtered.length) url.searchParams.set(key, filtered.join(','));
-        } else {
-          url.searchParams.set(key, String(value));
-        }
-      }
+    for (const [key, value] of this._normalizedChannelQueryEntries(query)) {
+      url.searchParams.set(key, value);
     }
     const resp = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     const data = await resp.json() as Record<string, unknown>;
