@@ -118,7 +118,7 @@ export class PnWNationSubscriptionClient {
     });
     ws.on('close', (code: number, reason: Buffer) => {
       closed = true;
-      const reasonText = reason?.length ? reason.toString('utf8') : '';
+      const reasonText = reason.length ? reason.toString('utf8') : '';
       console.warn(`PnW nation subscription WebSocket closed (code=${code}, reason=${reasonText || 'n/a'}).`);
     });
     ws.on('error', () => {

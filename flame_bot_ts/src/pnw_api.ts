@@ -1851,7 +1851,7 @@ export class PnWSubscriptionClient {
     });
     ws.on('close', (code: number, reason: Buffer) => {
       closed = true;
-      const reasonText = reason?.length ? reason.toString('utf8') : '';
+      const reasonText = reason.length ? reason.toString('utf8') : '';
       console.warn(`${opts.logPrefix} WebSocket closed (code=${code}, reason=${reasonText || 'n/a'}, subscribed=${subscribed}).`);
     });
     ws.on('error', () => { closed = true; });
