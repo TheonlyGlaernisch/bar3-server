@@ -48,6 +48,16 @@ type MobileSession = {
 const MOBILE_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const mobileSessions = new Map<string, MobileSession>();
 
+export type DiscordAuthContext = {
+  discordUserId: string;
+  discordUsername: string;
+  discordRoles: {
+    verified: boolean;
+    bar3_client: boolean;
+    bar3_server: boolean;
+  };
+};
+
 function toBase64Url(input: Buffer): string {
   return input
     .toString('base64')
@@ -62,13 +72,13 @@ function buildPkcePair(): { codeVerifier: string; codeChallenge: string } {
   return { codeVerifier, codeChallenge };
 }
 
-function issueMobileToken(session: Omit<MobileSession, 'expiresAt'>): string {
-  const token = `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+function issueMobileToken(session: DiscordAuthContext): string {
+  const token = toBase64Url(crypto.randomBytes(32));
   mobileSessions.set(token, { ...session, expiresAt: Date.now() + MOBILE_TOKEN_TTL_MS });
   return token;
 }
 
-export function getMobileSession(token: string): MobileSession | null {
+export function getMobileSession(token: string): DiscordAuthContext | null {
   const session = mobileSessions.get(token);
   if (!session) return null;
   if (session.expiresAt < Date.now()) {
@@ -76,6 +86,48 @@ export function getMobileSession(token: string): MobileSession | null {
     return null;
   }
   return session;
+}
+
+function getBearerToken(req: Request): string | null {
+  const auth = req.headers.authorization;
+  if (!auth) return null;
+  const [scheme, token] = auth.split(' ');
+  if (scheme?.toLowerCase() !== 'bearer' || !token) return null;
+  return token;
+}
+
+function getTokenQueryParam(req: Request): string | null {
+  const directToken = typeof req.query.token === 'string' ? req.query.token : '';
+  if (directToken) return directToken;
+
+  const discordToken = typeof req.query.discordToken === 'string' ? req.query.discordToken : '';
+  if (discordToken) return discordToken;
+
+  const mobileToken = typeof req.query.mobileToken === 'string' ? req.query.mobileToken : '';
+  return mobileToken || null;
+}
+
+export function resolveDiscordAuth(req: Request): DiscordAuthContext | null {
+  if (req.session?.discordAuthenticated === true && req.session.discordUserId) {
+    return {
+      discordUserId: req.session.discordUserId,
+      discordUsername: req.session.discordUsername || '',
+      discordRoles: {
+        verified: req.session.discordRoles?.verified === true,
+        bar3_client: req.session.discordRoles?.bar3_client === true,
+        bar3_server: req.session.discordRoles?.bar3_server === true,
+      },
+    };
+  }
+
+  const token = getBearerToken(req) || getTokenQueryParam(req);
+  if (!token) return null;
+  return getMobileSession(token);
+}
+
+function appendQueryParam(url: string, key: string, value: string): string {
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
 }
 
 /**
@@ -348,8 +400,13 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
     }
 
     // Grant access to users holding either bar3_client or bar3_server role.
+    const discordRoles = {
+      verified: flameBotRoles.verified === true,
+      bar3_client: flameBotRoles.bar3_client === true,
+      bar3_server: flameBotRoles.bar3_server === true,
+    };
     const hasAccess: boolean =
-      flameBotRoles.bar3_client === true || flameBotRoles.bar3_server === true;
+      discordRoles.bar3_client || discordRoles.bar3_server;
 
     if (!hasAccess) {
       return res.send(ACCESS_DENIED_HTML);
@@ -363,11 +420,7 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       const mobileToken = issueMobileToken({
         discordUserId: discordId,
         discordUsername,
-        discordRoles: {
-          verified: flameBotRoles.verified === true,
-          bar3_client: flameBotRoles.bar3_client === true,
-          bar3_server: flameBotRoles.bar3_server === true,
-        },
+        discordRoles,
       });
       return res.redirect(`${CLIENT_APP_URL}?mobileToken=${encodeURIComponent(mobileToken)}`);
     }
@@ -380,16 +433,22 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
 
     let destination: string;
     if (CLIENT_APP_URL) {
-      // Prefer an explicit client URL to avoid landing on server-side routes
-      // that may not exist in this service deployment.
-      destination = savedReturnTo
-        ? `${CLIENT_APP_URL}${savedReturnTo}`
-        : `${CLIENT_APP_URL}/dashboard`;
+      destination = `${CLIENT_APP_URL}/auth/discord/callback`;
+      if (savedReturnTo) {
+        destination = appendQueryParam(destination, 'returnTo', savedReturnTo);
+      }
     } else if (savedReturnTo) {
       destination = savedReturnTo;
     } else {
       destination = '/';
     }
+
+    const browserAuthToken = issueMobileToken({
+      discordUserId: discordId,
+      discordUsername,
+      discordRoles,
+    });
+    destination = appendQueryParam(destination, 'discordToken', browserAuthToken);
 
     // Regenerate the session before writing auth data to prevent session
     // fixation attacks and to ensure a fresh session is always issued after
@@ -404,11 +463,7 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       req.session.discordAuthenticated = true;
       req.session.discordUserId = discordId;
       req.session.discordUsername = discordUsername;
-      req.session.discordRoles = {
-        verified: flameBotRoles.verified === true,
-        bar3_client: flameBotRoles.bar3_client === true,
-        bar3_server: flameBotRoles.bar3_server === true,
-      };
+      req.session.discordRoles = discordRoles;
 
       // Save session before redirecting so the cookie is persisted before the
       // browser follows the redirect and the next request arrives.
@@ -433,23 +488,23 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
  *  Returns 401 with authenticated=false when no valid session exists so that
  *  clients can use response.ok to gate access without parsing the body. */
 router.get('/session', (req: Request, res: Response) => {
-  if (req.session?.discordAuthenticated === true) {
-    const userId = req.session.discordUserId ?? '';
+  const auth = resolveDiscordAuth(req);
+  if (auth) {
+    const userId = auth.discordUserId;
     return res.json({
       authenticated: true,
       user: {
         id: userId,
-        username: req.session.discordUsername,
+        username: auth.discordUsername,
       },
-      roles: req.session.discordRoles,
+      roles: auth.discordRoles,
       isAdmin: ADMIN_DISCORD_IDS.has(userId),
     });
   }
   return res.status(401).json({ authenticated: false });
 });
 
-/** POST /auth/logout — destroy the server-side session and clear the cookie. */
-router.post('/logout', (req: Request, res: Response) => {
+const destroySession = (req: Request, res: Response) => {
   req.session.destroy((err) => {
     if (err) {
       console.error('[Discord Auth] Session destroy error:', err);
@@ -460,19 +515,23 @@ router.post('/logout', (req: Request, res: Response) => {
     res.clearCookie('connect.sid');
     return res.json({ ok: true });
   });
-});
+};
+
+/** POST /auth/logout — destroy the server-side session and clear the cookie. */
+router.post('/logout', destroySession);
+
+/** GET /auth/logout — compatibility with clients that navigate to this URL. */
+router.get('/logout', destroySession);
 
 
 router.get('/mobile-session', (req: Request, res: Response) => {
-  const token = typeof req.query.token === 'string' ? req.query.token : '';
-  if (!token) return res.status(400).json({ error: 'Missing token' });
-  const session = getMobileSession(token);
-  if (!session) return res.status(401).json({ authenticated: false });
+  const auth = resolveDiscordAuth(req);
+  if (!auth) return res.status(401).json({ authenticated: false });
   return res.json({
     authenticated: true,
-    user: { id: session.discordUserId, username: session.discordUsername },
-    roles: session.discordRoles,
-    isAdmin: ADMIN_DISCORD_IDS.has(session.discordUserId),
+    user: { id: auth.discordUserId, username: auth.discordUsername },
+    roles: auth.discordRoles,
+    isAdmin: ADMIN_DISCORD_IDS.has(auth.discordUserId),
   });
 });
 

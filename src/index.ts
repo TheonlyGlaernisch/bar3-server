@@ -129,7 +129,8 @@ const proxyBotApi = async (req: Request, res: Response, method: 'get' | 'post', 
     if (method === 'post') {
       const payload: Record<string, unknown> = { ...(req.body ?? {}) };
       if (path === '/api/bot/send') {
-        const sessionDiscordId = req.session?.discordUserId;
+        const authDiscordId = (res.locals.discordAuth as { discordUserId?: string } | undefined)?.discordUserId;
+        const sessionDiscordId = req.session?.discordUserId || authDiscordId;
         if (!payload.discord_id && typeof sessionDiscordId === 'string' && sessionDiscordId.trim()) {
           payload.discord_id = sessionDiscordId.trim();
         }
