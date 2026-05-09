@@ -3007,14 +3007,42 @@ Message: ${cfg.message}`)],
       return nation;
     }
   };
+  const getRelevantWarAlertAllianceIds = async (): Promise<number[]> => {
+    const subs = await db.getAllWarAlertSubscriptions();
+    if (!subs.length) return [];
+    const ids = new Set<number>();
+    const seenGuilds = new Set<string>();
+    for (const sub of subs) {
+      if (seenGuilds.has(sub.guild_id)) continue;
+      seenGuilds.add(sub.guild_id);
+      let guildId: bigint;
+      try {
+        guildId = BigInt(sub.guild_id);
+      } catch {
+        continue;
+      }
+      const allianceId = await db.getAllianceId(guildId);
+      if (allianceId && allianceId > 0) ids.add(allianceId);
+    }
+    return [...ids];
+  };
   const warLoopTask = (async () => {
-    for await (const war of warSubClient.iterWarCreates()) {
+    for await (const war of warSubClient.iterWarCreates({ getAllianceIds: getRelevantWarAlertAllianceIds, idleDelaySeconds: 60 })) {
       if (warLoopStopped) break;
       try {
         const fullWar = await enrichWarFromApi(war);
         const subs = await db.getAllWarAlertSubscriptions();
+        const allianceByGuild = new Map<string, number | null>();
         for (const sub of subs) {
-          const allianceId = await db.getAllianceId(BigInt(sub.guild_id));
+          let allianceId = allianceByGuild.get(sub.guild_id);
+          if (allianceId === undefined) {
+            try {
+              allianceId = await db.getAllianceId(BigInt(sub.guild_id));
+            } catch {
+              allianceId = null;
+            }
+            allianceByGuild.set(sub.guild_id, allianceId);
+          }
           if (!allianceId) continue;
           const involvesAlliance = fullWar.attackerAllianceId === allianceId || fullWar.defenderAllianceId === allianceId;
           if (!involvesAlliance) continue;

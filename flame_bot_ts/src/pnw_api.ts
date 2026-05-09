@@ -1776,6 +1776,8 @@ function parseWarCreateFromSubscription(raw: Record<string, unknown>): WarDetail
 }
 
 type SubscriptionEvent = WarDetail | NationCreateDetail;
+type SubscriptionQueryValue = string | number | boolean;
+type SubscriptionQuery = Record<string, SubscriptionQueryValue | SubscriptionQueryValue[]>;
 
 export class PnWSubscriptionClient {
   private static readonly RECONNECT_BASE = 15;
@@ -1788,8 +1790,38 @@ export class PnWSubscriptionClient {
     this._apiKey = apiKey;
   }
 
-  private async _getChannel(model: string, event: string): Promise<string> {
-    const url = `${PNW_SUBSCRIPTION_URL.replace('{model}', model).replace('{event}', event)}?api_key=${this._apiKey}`;
+  private _serializeChannelQuery(query?: SubscriptionQuery): string {
+    if (!query) return '';
+    const pairs: string[] = [];
+    const keys = Object.keys(query).sort();
+    for (const key of keys) {
+      const value = query[key];
+      if (Array.isArray(value)) {
+        const joined = value
+          .map((item) => String(item))
+          .filter((item) => item.length > 0)
+          .join(',');
+        pairs.push(`${key}=${joined}`);
+      } else {
+        pairs.push(`${key}=${String(value)}`);
+      }
+    }
+    return pairs.join('&');
+  }
+
+  private async _getChannel(model: string, event: string, query?: SubscriptionQuery): Promise<string> {
+    const url = new URL(PNW_SUBSCRIPTION_URL.replace('{model}', model).replace('{event}', event));
+    url.searchParams.set('api_key', this._apiKey);
+    if (query) {
+      for (const [key, value] of Object.entries(query)) {
+        if (Array.isArray(value)) {
+          const filtered = value.map((item) => String(item)).filter((item) => item.length > 0);
+          if (filtered.length) url.searchParams.set(key, filtered.join(','));
+        } else {
+          url.searchParams.set(key, String(value));
+        }
+      }
+    }
     const resp = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     const data = await resp.json() as Record<string, unknown>;
     if (data['error']) throw new Error(`PnW subscription API error: ${data['error']}`);
@@ -1821,12 +1853,14 @@ export class PnWSubscriptionClient {
     eventNames: [string, string];
     parser: (raw: Record<string, unknown>) => T | null;
     logPrefix: string;
+    channelQuery?: SubscriptionQuery;
+    disableChannelCache?: boolean;
   }): AsyncGenerator<T> {
-    const cacheKey = `${opts.model}:${opts.event}`;
-    let channel = this._channelCache.get(cacheKey);
+    const cacheKey = `${opts.model}:${opts.event}:${this._serializeChannelQuery(opts.channelQuery)}`;
+    let channel = opts.disableChannelCache ? undefined : this._channelCache.get(cacheKey);
     if (!channel) {
-      channel = await this._getChannel(opts.model, opts.event);
-      this._channelCache.set(cacheKey, channel);
+      channel = await this._getChannel(opts.model, opts.event, opts.channelQuery);
+      if (!opts.disableChannelCache) this._channelCache.set(cacheKey, channel);
     }
     console.info(`${opts.logPrefix} obtained channel ${channel}.`);
 
@@ -1904,16 +1938,31 @@ export class PnWSubscriptionClient {
     }
   }
 
-  async *iterWarCreates(): AsyncGenerator<WarDetail> {
+  async *iterWarCreates(opts?: {
+    getAllianceIds?: () => Promise<number[]>;
+    idleDelaySeconds?: number;
+  }): AsyncGenerator<WarDetail> {
     let delay = PnWSubscriptionClient.RECONNECT_BASE;
     while (true) {
       try {
+        const dynamicAllianceIds = opts?.getAllianceIds
+          ? await opts.getAllianceIds()
+          : [];
+        const allianceIds = [...new Set(dynamicAllianceIds.filter((id) => Number.isInteger(id) && id > 0))];
+        if (opts?.getAllianceIds && !allianceIds.length) {
+          const idleDelay = Math.max(5, opts.idleDelaySeconds ?? 60);
+          await new Promise((r) => setTimeout(r, idleDelay * 1000));
+          delay = PnWSubscriptionClient.RECONNECT_BASE;
+          continue;
+        }
         for await (const war of this._streamSubscription({
           model: 'war',
           event: 'create',
           eventNames: ['WAR_CREATE', 'BULK_WAR_CREATE'],
           parser: parseWarCreateFromSubscription,
           logPrefix: 'PnW subscription:',
+          channelQuery: allianceIds.length ? { alliance_id: allianceIds } : undefined,
+          disableChannelCache: !!opts?.getAllianceIds,
         })) {
           delay = PnWSubscriptionClient.RECONNECT_BASE;
           yield war;
