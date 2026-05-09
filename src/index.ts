@@ -20,6 +20,12 @@ import './interfaces/session';
 mongoose.set('strictQuery', true);
 
 const app: Express = express();
+const ADMIN_DISCORD_IDS: ReadonlySet<string> = new Set(
+  (process.env.ADMIN_DISCORD_IDS || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean),
+);
 
 // Trust the first hop from a reverse proxy (Render, Heroku, nginx, etc.) so
 // that req.protocol is 'https' and secure session cookies are sent correctly.
@@ -127,6 +133,15 @@ app.get('/health', (_req: Request, res: Response) => {
 // flame_bot API listener so callers can use the same base URL.
 const FLAME_BOT_INTERNAL_URL = (process.env.FLAME_BOT_API_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
 const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || '';
+const requireDiscordAdmin = (req: Request, res: Response, next: NextFunction) => {
+  const authDiscordId = (res.locals.discordAuth as { discordUserId?: string } | undefined)?.discordUserId;
+  const sessionDiscordId = req.session?.discordUserId || authDiscordId;
+  if (!sessionDiscordId || !ADMIN_DISCORD_IDS.has(sessionDiscordId)) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  next();
+};
 const proxyBotApi = async (req: Request, res: Response, method: 'get' | 'post', path: string) => {
   try {
     let requestBuilder = method === 'get'
@@ -139,8 +154,11 @@ const proxyBotApi = async (req: Request, res: Response, method: 'get' | 'post', 
       if (path === '/api/bot/send') {
         const authDiscordId = (res.locals.discordAuth as { discordUserId?: string } | undefined)?.discordUserId;
         const sessionDiscordId = req.session?.discordUserId || authDiscordId;
-        if (!payload.discord_id && typeof sessionDiscordId === 'string' && sessionDiscordId.trim()) {
+        if (typeof sessionDiscordId === 'string' && sessionDiscordId.trim()) {
+          // Always use the authenticated Discord ID and ignore any caller-provided discord_id.
           payload.discord_id = sessionDiscordId.trim();
+        } else {
+          return res.status(401).json({ error: 'Discord authentication required' });
         }
         if (!payload.message) {
           const fallbackMessage = payload.content ?? payload.text;
@@ -166,11 +184,11 @@ const proxyBotApi = async (req: Request, res: Response, method: 'get' | 'post', 
   }
 };
 
-app.get('/api/bot/servers', async (req: Request, res: Response) =>
+app.get('/api/bot/servers', requireDiscordAuth, requireDiscordAdmin, async (req: Request, res: Response) =>
   proxyBotApi(req, res, 'get', '/api/bot/servers'));
-app.get('/api/bot/commands/usage', async (req: Request, res: Response) =>
+app.get('/api/bot/commands/usage', requireDiscordAuth, requireDiscordAdmin, async (req: Request, res: Response) =>
   proxyBotApi(req, res, 'get', '/api/bot/commands/usage'));
-app.post('/api/bot/send', async (req: Request, res: Response) =>
+app.post('/api/bot/send', requireDiscordAuth, requireDiscordAdmin, async (req: Request, res: Response) =>
   proxyBotApi(req, res, 'post', '/api/bot/send'));
 
 // Discord OAuth routes — must be mounted BEFORE the auth guard so the login
