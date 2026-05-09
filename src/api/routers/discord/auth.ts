@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import superagent from 'superagent';
 import crypto from 'crypto';
 
@@ -48,7 +48,7 @@ type MobileSession = {
 const MOBILE_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const mobileSessions = new Map<string, MobileSession>();
 const AUTH_CHECK_WINDOW_MS = 60 * 1000;
-const AUTH_CHECK_MAX_REQUESTS = 60;
+const AUTH_CHECK_MAX_REQUESTS = 20;
 const authCheckRateLimit = new Map<string, { count: number; resetAt: number }>();
 
 export type DiscordAuthContext = {
@@ -134,32 +134,31 @@ function appendQueryParam(url: string, key: string, value: string): string {
 }
 
 function getRateLimitKey(req: Request): string {
-  const forwardedFor = req.headers['x-forwarded-for'];
-  if (typeof forwardedFor === 'string' && forwardedFor.trim()) {
-    return forwardedFor.split(',')[0].trim();
-  }
   return req.ip || 'unknown-ip';
 }
 
-function authCheckLimiter(req: Request, res: Response): boolean {
+function authCheckLimiter(req: Request, res: Response, next: NextFunction): void {
   const key = getRateLimitKey(req);
   const now = Date.now();
   const current = authCheckRateLimit.get(key);
   if (!current || current.resetAt <= now) {
     authCheckRateLimit.set(key, { count: 1, resetAt: now + AUTH_CHECK_WINDOW_MS });
-    return false;
+    next();
+    return;
   }
 
   current.count += 1;
   if (current.count > AUTH_CHECK_MAX_REQUESTS) {
     const retryAfterSeconds = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
     res.setHeader('Retry-After', retryAfterSeconds.toString());
-    res.status(429).json({ error: 'Too many authentication checks. Try again shortly.' });
-    return true;
+    res.status(429).json({
+      error: `Too many authentication checks. Please retry after ${retryAfterSeconds} seconds.`,
+    });
+    return;
   }
 
   authCheckRateLimit.set(key, current);
-  return false;
+  next();
 }
 
 /**
@@ -519,8 +518,7 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
  *  Returns 200 with authenticated=true when a valid session exists.
  *  Returns 401 with authenticated=false when no valid session exists so that
  *  clients can use response.ok to gate access without parsing the body. */
-router.get('/session', (req: Request, res: Response) => {
-  if (authCheckLimiter(req, res)) return;
+router.get('/session', authCheckLimiter, (req: Request, res: Response) => {
   const auth = resolveDiscordAuth(req);
   if (auth) {
     const userId = auth.discordUserId;
@@ -557,8 +555,7 @@ router.post('/logout', destroySession);
 router.get('/logout', destroySession);
 
 
-router.get('/mobile-session', (req: Request, res: Response) => {
-  if (authCheckLimiter(req, res)) return;
+router.get('/mobile-session', authCheckLimiter, (req: Request, res: Response) => {
   const auth = resolveDiscordAuth(req);
   if (!auth) return res.status(401).json({ authenticated: false });
   return res.json({
