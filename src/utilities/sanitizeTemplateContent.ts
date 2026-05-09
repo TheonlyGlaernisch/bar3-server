@@ -165,7 +165,10 @@ export function sanitizeTemplateCss(input?: string): string {
       const end = j;
       const rawInside = withoutImports.slice(i + 'url('.length, Math.max(i + 'url('.length, end - 1));
       const normalizedInside = toLowerNoSpaceControl(trimMatchingQuotes(rawInside));
-      if (normalizedInside.startsWith('javascript:')) {
+      const hasUnsafeScheme = normalizedInside.startsWith('javascript:')
+        || normalizedInside.startsWith('vbscript:')
+        || normalizedInside.startsWith('data:');
+      if (hasUnsafeScheme) {
         sanitized += 'url()';
       } else {
         sanitized += withoutImports.slice(i, end);
