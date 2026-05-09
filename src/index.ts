@@ -102,6 +102,14 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+// Basic response hardening headers.
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
 // Suppress browser favicon 404s — there is no icon file to serve.
 app.get('/favicon.ico', (_req: Request, res: Response) => res.status(204).end());
 

@@ -589,8 +589,17 @@ router.get('/mobile-session', authCheckLimiter, (req: Request, res: Response) =>
 });
 
 export default router;
+
+function escapeHtmlAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function sendPostAuthBridge(res: Response, destination: string): void {
-  const escaped = destination.replace(/"/g, '&quot;');
+  const escaped = escapeHtmlAttr(destination);
   res.status(200).send(`<!doctype html>
 <html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${escaped}"></head>
 <body><script>window.location.replace(${JSON.stringify(destination)});</script></body></html>`);

@@ -5,6 +5,7 @@ import { getDecryptedApiKeyForAccount } from '../../../services/pwAccountService
 import messagesService from '../../../services/messages';
 import { injectTrackingIntoHtml } from '../../../services/v2Analytics';
 import { combineHtmlAndCss } from '../../../utilities/combineHtmlAndCss';
+import { sanitizeTemplateCss, sanitizeTemplateHtml } from '../../../utilities/sanitizeTemplateContent';
 
 const router = express.Router();
 router.use(express.json());
@@ -29,7 +30,10 @@ router.post('/', requirePwSession, async (req: Request, res: Response) => {
 
   const configLike = {
     apiKey: pwKey,
-    messageHTML: combineHtmlAndCss(template.bodyHtml || template.bodyText || '', template.bodyCss),
+    messageHTML: combineHtmlAndCss(
+      sanitizeTemplateHtml(template.bodyHtml || template.bodyText || ''),
+      sanitizeTemplateCss(template.bodyCss)
+    ),
     messageSubject: template.subject || '',
     analyticsEnabled: false,
   } as any;
@@ -60,4 +64,3 @@ router.post('/', requirePwSession, async (req: Request, res: Response) => {
 });
 
 export default router;
-
