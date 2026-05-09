@@ -49,6 +49,7 @@ const MOBILE_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const mobileSessions = new Map<string, MobileSession>();
 const AUTH_CHECK_WINDOW_MS = 60 * 1000;
 const AUTH_CHECK_MAX_REQUESTS = 20;
+const RATE_LIMIT_MAP_CLEANUP_THRESHOLD = 1000;
 const authCheckRateLimit = new Map<string, { count: number; resetAt: number }>();
 
 export type DiscordAuthContext = {
@@ -75,7 +76,7 @@ function buildPkcePair(): { codeVerifier: string; codeChallenge: string } {
   return { codeVerifier, codeChallenge };
 }
 
-function issueMobileToken(session: DiscordAuthContext): string {
+function issueAuthToken(session: DiscordAuthContext): string {
   let token = toBase64Url(crypto.randomBytes(32));
   while (mobileSessions.has(token)) {
     token = toBase64Url(crypto.randomBytes(32));
@@ -136,6 +137,14 @@ function appendQueryParam(url: string, key: string, value: string): string {
   return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
 }
 
+function buildDiscordRoles(flameBotRoles: Record<string, unknown>): DiscordAuthContext['discordRoles'] {
+  return {
+    verified: flameBotRoles.verified === true,
+    bar3_client: flameBotRoles.bar3_client === true,
+    bar3_server: flameBotRoles.bar3_server === true,
+  };
+}
+
 function getRateLimitKey(req: Request): string {
   // app.set('trust proxy', 1) is configured in src/index.ts, so req.ip reflects
   // the client IP from the trusted upstream proxy.
@@ -153,7 +162,7 @@ function cleanupRateLimitEntries(now: number): void {
 function authCheckLimiter(req: Request, res: Response, next: NextFunction): void {
   const key = getRateLimitKey(req);
   const now = Date.now();
-  if (authCheckRateLimit.size > 1000) {
+  if (authCheckRateLimit.size > RATE_LIMIT_MAP_CLEANUP_THRESHOLD) {
     cleanupRateLimitEntries(now);
   }
   const current = authCheckRateLimit.get(key);
@@ -447,11 +456,7 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
     }
 
     // Grant access to users holding either bar3_client or bar3_server role.
-    const discordRoles = {
-      verified: flameBotRoles.verified === true,
-      bar3_client: flameBotRoles.bar3_client === true,
-      bar3_server: flameBotRoles.bar3_server === true,
-    };
+    const discordRoles = buildDiscordRoles(flameBotRoles);
     const hasAccess: boolean =
       discordRoles.bar3_client || discordRoles.bar3_server;
 
@@ -464,7 +469,7 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       if (!CLIENT_APP_URL) {
         return res.redirect('/auth/login?error=auth_failed');
       }
-      const mobileToken = issueMobileToken({
+      const mobileToken = issueAuthToken({
         discordUserId: discordId,
         discordUsername,
         discordRoles,
@@ -491,12 +496,12 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       destination = '/';
     }
 
-    const browserAuthToken = issueMobileToken({
+    const authToken = issueAuthToken({
       discordUserId: discordId,
       discordUsername,
       discordRoles,
     });
-    destination = appendQueryParam(destination, 'discordToken', browserAuthToken);
+    destination = appendQueryParam(destination, 'discordToken', authToken);
 
     // Regenerate the session before writing auth data to prevent session
     // fixation attacks and to ensure a fresh session is always issued after
