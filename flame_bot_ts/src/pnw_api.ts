@@ -1918,6 +1918,14 @@ export class PnWSubscriptionClient {
     ws.on('pong', () => {
       lastActivityAt = Date.now();
     });
+    ws.on('ping', () => {
+      lastActivityAt = Date.now();
+      try {
+        ws.pong();
+      } catch {
+        // Ignore keepalive send failures; close/error handlers drive reconnect.
+      }
+    });
     ws.on('close', (code: number, reason: Buffer) => {
       closed = true;
       if (keepaliveTimer) {
@@ -1991,7 +1999,21 @@ export class PnWSubscriptionClient {
           if (parsed !== null) yield parsed;
         }
       } else if (wsEvent === 'pusher:ping') {
-        ws.send(JSON.stringify({ event: 'pusher:pong', data: {} }));
+        const pusherPingData = frame['data'];
+        let pongData: Record<string, unknown> = {};
+        if (typeof pusherPingData === 'string') {
+          try {
+            const parsed = JSON.parse(pusherPingData);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              pongData = parsed as Record<string, unknown>;
+            }
+          } catch {
+            // Fall back to an empty object.
+          }
+        } else if (pusherPingData && typeof pusherPingData === 'object' && !Array.isArray(pusherPingData)) {
+          pongData = pusherPingData as Record<string, unknown>;
+        }
+        ws.send(JSON.stringify({ event: 'pusher:pong', data: pongData }));
       } else if (wsEvent === 'pusher:error') {
         console.warn(`${opts.logPrefix} gateway error:`, frame['data']);
         for (const entry of channelEntries) this._channelCache.delete(entry.cacheKey);
