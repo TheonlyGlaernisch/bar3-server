@@ -1853,20 +1853,30 @@ export class PnWSubscriptionClient {
     parser: (raw: Record<string, unknown>) => T | null;
     logPrefix: string;
     channelQuery?: SubscriptionQuery;
+    channelQueries?: SubscriptionQuery[];
     disableChannelCache?: boolean;
   }): AsyncGenerator<T> {
-    const cacheKey = `${opts.model}:${opts.event}:${this._serializeChannelQuery(opts.channelQuery)}`;
-    let channel = opts.disableChannelCache ? undefined : this._channelCache.get(cacheKey);
-    if (!channel) {
-      channel = await this._getChannel(opts.model, opts.event, opts.channelQuery);
-      if (!opts.disableChannelCache) this._channelCache.set(cacheKey, channel);
+    const queryList = opts.channelQueries?.length ? opts.channelQueries : [opts.channelQuery ?? {}];
+    const channelEntries: { cacheKey: string; channel: string; }[] = [];
+    for (const query of queryList) {
+      const cacheKey = `${opts.model}:${opts.event}:${this._serializeChannelQuery(query)}`;
+      let channel = opts.disableChannelCache ? undefined : this._channelCache.get(cacheKey);
+      if (!channel) {
+        channel = await this._getChannel(opts.model, opts.event, query);
+        if (!opts.disableChannelCache) this._channelCache.set(cacheKey, channel);
+      }
+      channelEntries.push({ cacheKey, channel });
     }
-    console.info(`${opts.logPrefix} obtained channel ${channel}.`);
+    const channels = [...new Set(channelEntries.map((entry) => entry.channel))];
+    if (!channels.length) {
+      return;
+    }
+    console.info(`${opts.logPrefix} obtained channels ${channels.join(', ')}.`);
 
     const ws = new WebSocket(PNW_PUSHER_URL);
     const messageQueue: Record<string, unknown>[] = [];
     let socketId: string | null = null;
-    let subscribed = false;
+    const subscribedChannels = new Set<string>();
     let closed = false;
 
     await new Promise<void>((resolve) => {
@@ -1885,7 +1895,7 @@ export class PnWSubscriptionClient {
     ws.on('close', (code: number, reason: Buffer) => {
       closed = true;
       const reasonText = reason.length ? reason.toString('utf8') : '';
-      console.warn(`${opts.logPrefix} WebSocket closed (code=${code}, reason=${reasonText || 'n/a'}, subscribed=${subscribed}).`);
+      console.warn(`${opts.logPrefix} WebSocket closed (code=${code}, reason=${reasonText || 'n/a'}, subscribed=${subscribedChannels.size}/${channels.length}).`);
     });
     ws.on('error', () => { closed = true; });
 
@@ -1909,11 +1919,14 @@ export class PnWSubscriptionClient {
           return;
         }
         console.info(`${opts.logPrefix} connection established (socket_id=${socketId}).`);
-        const auth = await this._getAuth(channel, socketId);
-        ws.send(JSON.stringify({ event: 'pusher:subscribe', data: { auth, channel } }));
+        for (const channel of channels) {
+          const auth = await this._getAuth(channel, socketId);
+          ws.send(JSON.stringify({ event: 'pusher:subscribe', data: { auth, channel } }));
+        }
       } else if (wsEvent === 'pusher_internal:subscription_succeeded') {
-        subscribed = true;
-        console.info(`${opts.logPrefix} subscribed to channel ${channel}.`);
+        const eventChannel = s(frame['channel']);
+        if (eventChannel) subscribedChannels.add(eventChannel);
+        console.info(`${opts.logPrefix} subscribed to channel ${eventChannel || 'unknown'} (${subscribedChannels.size}/${channels.length}).`);
       } else if (wsEvent === singleEvent || wsEvent === bulkEvent) {
         let rawData = frame['data'];
         if (typeof rawData === 'string') {
@@ -1930,7 +1943,7 @@ export class PnWSubscriptionClient {
         ws.send(JSON.stringify({ event: 'pusher:pong', data: {} }));
       } else if (wsEvent === 'pusher:error') {
         console.warn(`${opts.logPrefix} gateway error:`, frame['data']);
-        this._channelCache.delete(cacheKey);
+        for (const entry of channelEntries) this._channelCache.delete(entry.cacheKey);
         ws.close();
         return;
       }
@@ -1942,6 +1955,7 @@ export class PnWSubscriptionClient {
     idleDelaySeconds?: number;
   }): AsyncGenerator<WarDetail> {
     let delay = PnWSubscriptionClient.RECONNECT_BASE;
+    const recentlyEmittedWarIds = new Map<number, number>();
     while (true) {
       try {
         const dynamicAllianceIds = opts?.getAllianceIds
@@ -1954,15 +1968,30 @@ export class PnWSubscriptionClient {
           delay = PnWSubscriptionClient.RECONNECT_BASE;
           continue;
         }
+        const now = Date.now();
+        for (const [warId, seenAt] of recentlyEmittedWarIds) {
+          if (now - seenAt > 10 * 60_000) recentlyEmittedWarIds.delete(warId);
+        }
         for await (const war of this._streamSubscription({
           model: 'war',
           event: 'create',
           eventNames: ['WAR_CREATE', 'BULK_WAR_CREATE'],
           parser: parseWarCreateFromSubscription,
           logPrefix: 'PnW subscription:',
-          channelQuery: allianceIds.length ? { alliance_id: allianceIds } : undefined,
+          channelQueries: allianceIds.length
+            ? [{ att_alliance_id: allianceIds }, { def_alliance_id: allianceIds }]
+            : undefined,
           disableChannelCache: !!opts?.getAllianceIds,
         })) {
+          const warId = Number.isInteger(war.warId) ? war.warId : 0;
+          if (warId > 0) {
+            const seenAt = recentlyEmittedWarIds.get(warId);
+            const nowMs = Date.now();
+            if (seenAt && nowMs - seenAt < 60_000) {
+              continue;
+            }
+            recentlyEmittedWarIds.set(warId, nowMs);
+          }
           delay = PnWSubscriptionClient.RECONNECT_BASE;
           yield war;
         }
