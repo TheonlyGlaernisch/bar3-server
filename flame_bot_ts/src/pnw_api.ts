@@ -1811,7 +1811,7 @@ type SubscriptionQuery = Record<string, SubscriptionQueryValue | SubscriptionQue
 export class PnWSubscriptionClient {
   private static readonly MS_PER_SECOND = 1_000;
   private static readonly SECONDS_PER_MINUTE = 60;
-  private static readonly KEEPALIVE_INTERVAL_SECONDS = 25;
+  private static readonly KEEPALIVE_INTERVAL_SECONDS = 18;
   private static readonly GATEWAY_RESET_INTERVAL_MINUTES = 55;
   private static readonly RECONNECT_BASE = 15;
   private static readonly RECONNECT_MAX = 300;
@@ -1996,7 +1996,7 @@ export class PnWSubscriptionClient {
     keepaliveTimer = setInterval(() => {
       if (ws.readyState !== WebSocket.OPEN) return;
       try {
-        ws.ping();
+        ws.send(JSON.stringify({ event: 'pusher:ping', data: {} }));
       } catch {
         // Ignore keepalive send failures; close/error handlers drive reconnect.
       }
@@ -2133,6 +2133,7 @@ export class PnWSubscriptionClient {
           eventNames: ['NATION_CREATE', 'BULK_NATION_CREATE'],
           parser: parseNationCreateDetail,
           logPrefix: 'PnW recruiter subscription:',
+          disableChannelCache: true,
         })) {
           delay = PnWSubscriptionClient.RECONNECT_BASE;
           yield nation;
