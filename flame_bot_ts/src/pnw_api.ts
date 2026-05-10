@@ -1780,8 +1780,20 @@ type SubscriptionQueryValue = string | number | boolean;
 type SubscriptionQuery = Record<string, SubscriptionQueryValue | SubscriptionQueryValue[]>;
 
 export class PnWSubscriptionClient {
+  private static readonly MS_PER_SECOND = 1_000;
+  private static readonly SECONDS_PER_MINUTE = 60;
   private static readonly RECONNECT_BASE = 15;
   private static readonly RECONNECT_MAX = 300;
+  private static readonly MIN_IDLE_RECONNECT_DELAY_SECONDS = 5;
+  private static readonly WAR_DEDUPE_WINDOW_MINUTES = 10;
+  private static readonly WAR_DEDUPE_COOLDOWN_SECONDS = 60;
+  private static readonly WAR_DEDUPE_WINDOW_MS =
+    PnWSubscriptionClient.WAR_DEDUPE_WINDOW_MINUTES
+    * PnWSubscriptionClient.SECONDS_PER_MINUTE
+    * PnWSubscriptionClient.MS_PER_SECOND;
+  private static readonly WAR_DEDUPE_COOLDOWN_MS =
+    PnWSubscriptionClient.WAR_DEDUPE_COOLDOWN_SECONDS
+    * PnWSubscriptionClient.MS_PER_SECOND;
 
   private _apiKey: string;
   private _channelCache = new Map<string, string>();
@@ -1868,9 +1880,6 @@ export class PnWSubscriptionClient {
       channelEntries.push({ cacheKey, channel });
     }
     const channels = [...new Set(channelEntries.map((entry) => entry.channel))];
-    if (!channels.length) {
-      return;
-    }
     console.info(`${opts.logPrefix} obtained channels ${channels.join(', ')}.`);
 
     const ws = new WebSocket(PNW_PUSHER_URL);
@@ -1963,14 +1972,14 @@ export class PnWSubscriptionClient {
           : [];
         const allianceIds = [...new Set(dynamicAllianceIds.filter((id) => Number.isInteger(id) && id > 0))];
         if (opts?.getAllianceIds && !allianceIds.length) {
-          const idleDelay = Math.max(5, opts.idleDelaySeconds ?? 60);
+          const idleDelay = Math.max(PnWSubscriptionClient.MIN_IDLE_RECONNECT_DELAY_SECONDS, opts.idleDelaySeconds ?? 60);
           await new Promise((r) => setTimeout(r, idleDelay * 1000));
           delay = PnWSubscriptionClient.RECONNECT_BASE;
           continue;
         }
-        const now = Date.now();
+        const nowMs = Date.now();
         for (const [warId, seenAt] of recentlyEmittedWarIds) {
-          if (now - seenAt > 10 * 60_000) recentlyEmittedWarIds.delete(warId);
+          if (nowMs - seenAt > PnWSubscriptionClient.WAR_DEDUPE_WINDOW_MS) recentlyEmittedWarIds.delete(warId);
         }
         for await (const war of this._streamSubscription({
           model: 'war',
@@ -1987,7 +1996,7 @@ export class PnWSubscriptionClient {
           if (warId > 0) {
             const seenAt = recentlyEmittedWarIds.get(warId);
             const nowMs = Date.now();
-            if (seenAt && nowMs - seenAt < 60_000) {
+            if (seenAt && nowMs - seenAt < PnWSubscriptionClient.WAR_DEDUPE_COOLDOWN_MS) {
               continue;
             }
             recentlyEmittedWarIds.set(warId, nowMs);
