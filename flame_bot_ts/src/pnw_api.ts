@@ -1932,6 +1932,10 @@ export class PnWSubscriptionClient {
           ws.send(JSON.stringify({ event: 'pusher:pong', data: pongData }));
           return;
         }
+        if (wsEvent === 'pusher:pong') {
+          // Server responded to our keepalive ping; activity already updated above.
+          return;
+        }
         messageQueue.push(frame);
       } catch { /**/ }
     });
@@ -1967,7 +1971,10 @@ export class PnWSubscriptionClient {
     keepaliveTimer = setInterval(() => {
       if (ws.readyState !== WebSocket.OPEN) return;
       try {
-        ws.ping();
+        // Send an application-level pusher:ping to reset Pusher's activity timer.
+        // A WS-level ping frame is not counted as Pusher protocol activity and
+        // would not prevent the server from closing with code 4201 (pong timeout).
+        ws.send(JSON.stringify({ event: 'pusher:ping', data: {} }));
       } catch {
         // Ignore keepalive send failures; close/error handlers drive reconnect.
       }
