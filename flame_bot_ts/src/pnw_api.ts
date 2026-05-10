@@ -1912,7 +1912,27 @@ export class PnWSubscriptionClient {
     ws.on('message', (raw) => {
       try {
         lastActivityAt = Date.now();
-        messageQueue.push(JSON.parse(raw.toString()) as Record<string, unknown>);
+        const frame = JSON.parse(raw.toString()) as Record<string, unknown>;
+        const wsEvent = s(frame['event']);
+        if (wsEvent === 'pusher:ping') {
+          const pusherPingData = frame['data'];
+          let pongData: Record<string, unknown> = {};
+          if (typeof pusherPingData === 'string') {
+            try {
+              const parsed = JSON.parse(pusherPingData);
+              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                pongData = parsed as Record<string, unknown>;
+              }
+            } catch {
+              // Fall back to an empty object.
+            }
+          } else if (pusherPingData && typeof pusherPingData === 'object' && !Array.isArray(pusherPingData)) {
+            pongData = pusherPingData as Record<string, unknown>;
+          }
+          ws.send(JSON.stringify({ event: 'pusher:pong', data: pongData }));
+          return;
+        }
+        messageQueue.push(frame);
       } catch { /**/ }
     });
     ws.on('pong', () => {
@@ -1998,22 +2018,6 @@ export class PnWSubscriptionClient {
           const parsed = opts.parser(item);
           if (parsed !== null) yield parsed;
         }
-      } else if (wsEvent === 'pusher:ping') {
-        const pusherPingData = frame['data'];
-        let pongData: Record<string, unknown> = {};
-        if (typeof pusherPingData === 'string') {
-          try {
-            const parsed = JSON.parse(pusherPingData);
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-              pongData = parsed as Record<string, unknown>;
-            }
-          } catch {
-            // Fall back to an empty object.
-          }
-        } else if (pusherPingData && typeof pusherPingData === 'object' && !Array.isArray(pusherPingData)) {
-          pongData = pusherPingData as Record<string, unknown>;
-        }
-        ws.send(JSON.stringify({ event: 'pusher:pong', data: pongData }));
       } else if (wsEvent === 'pusher:error') {
         console.warn(`${opts.logPrefix} gateway error:`, frame['data']);
         for (const entry of channelEntries) this._channelCache.delete(entry.cacheKey);
