@@ -1782,6 +1782,7 @@ type SubscriptionQuery = Record<string, SubscriptionQueryValue | SubscriptionQue
 export class PnWSubscriptionClient {
   private static readonly MS_PER_SECOND = 1_000;
   private static readonly SECONDS_PER_MINUTE = 60;
+  private static readonly KEEPALIVE_INTERVAL_SECONDS = 25;
   private static readonly GATEWAY_RESET_INTERVAL_MINUTES = 55;
   private static readonly RECONNECT_BASE = 15;
   private static readonly RECONNECT_MAX = 300;
@@ -1791,6 +1792,9 @@ export class PnWSubscriptionClient {
   private static readonly GATEWAY_RESET_INTERVAL_MS =
     PnWSubscriptionClient.GATEWAY_RESET_INTERVAL_MINUTES
     * PnWSubscriptionClient.SECONDS_PER_MINUTE
+    * PnWSubscriptionClient.MS_PER_SECOND;
+  private static readonly KEEPALIVE_INTERVAL_MS =
+    PnWSubscriptionClient.KEEPALIVE_INTERVAL_SECONDS
     * PnWSubscriptionClient.MS_PER_SECOND;
   private static readonly WAR_DEDUPE_WINDOW_MS =
     PnWSubscriptionClient.WAR_DEDUPE_WINDOW_MINUTES
@@ -1894,6 +1898,8 @@ export class PnWSubscriptionClient {
     let closed = false;
     let intentionalCloseReason = '';
     const gatewayResetAt = Date.now() + PnWSubscriptionClient.GATEWAY_RESET_INTERVAL_MS;
+    let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+    let lastActivityAt = Date.now();
 
     await new Promise<void>((resolve) => {
       ws.on('open', () => resolve());
@@ -1905,14 +1911,23 @@ export class PnWSubscriptionClient {
 
     ws.on('message', (raw) => {
       try {
+        lastActivityAt = Date.now();
         messageQueue.push(JSON.parse(raw.toString()) as Record<string, unknown>);
       } catch { /**/ }
     });
+    ws.on('pong', () => {
+      lastActivityAt = Date.now();
+    });
     ws.on('close', (code: number, reason: Buffer) => {
       closed = true;
+      if (keepaliveTimer) {
+        clearInterval(keepaliveTimer);
+        keepaliveTimer = null;
+      }
       const reasonText = reason.length ? reason.toString('utf8') : '';
+      const idleSeconds = Math.max(0, Math.floor((Date.now() - lastActivityAt) / 1000));
       const closeSummary =
-        `${opts.logPrefix} WebSocket closed (code=${code}, reason=${reasonText || 'n/a'}, subscribed=${subscribedChannels.size}/${channels.length}).`;
+        `${opts.logPrefix} WebSocket closed (code=${code}, reason=${reasonText || 'n/a'}, subscribed=${subscribedChannels.size}/${channels.length}, idle=${idleSeconds}s).`;
       if (intentionalCloseReason) {
         console.info(`${closeSummary} ${intentionalCloseReason}.`);
       } else {
@@ -1921,6 +1936,14 @@ export class PnWSubscriptionClient {
       }
     });
     ws.on('error', () => { closed = true; });
+    keepaliveTimer = setInterval(() => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.ping();
+      } catch {
+        // Ignore keepalive send failures; close/error handlers drive reconnect.
+      }
+    }, PnWSubscriptionClient.KEEPALIVE_INTERVAL_MS);
 
     const [singleEvent, bulkEvent] = opts.eventNames;
 
@@ -1975,6 +1998,10 @@ export class PnWSubscriptionClient {
         ws.close();
         return;
       }
+    }
+    if (keepaliveTimer) {
+      clearInterval(keepaliveTimer);
+      keepaliveTimer = null;
     }
   }
 

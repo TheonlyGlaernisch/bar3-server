@@ -9,6 +9,8 @@ const RECONNECT_BASE_SECONDS = 5;
 const RECONNECT_MAX_SECONDS = 120;
 const GATEWAY_RESET_INTERVAL_MINUTES = 55;
 const GATEWAY_RESET_INTERVAL_MS = GATEWAY_RESET_INTERVAL_MINUTES * 60 * 1000;
+const WS_KEEPALIVE_INTERVAL_SECONDS = 25;
+const WS_KEEPALIVE_INTERVAL_MS = WS_KEEPALIVE_INTERVAL_SECONDS * 1000;
 
 export interface NationCreateEvent {
   nationId: number;
@@ -105,6 +107,8 @@ export class PnWNationSubscriptionClient {
     let socketId = '';
     const gatewayResetAt = Date.now() + GATEWAY_RESET_INTERVAL_MS;
     let intentionalCloseReason = '';
+    let lastActivityAt = Date.now();
+    let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
 
     await new Promise<void>((resolve, reject) => {
       ws.once('open', () => resolve());
@@ -113,15 +117,24 @@ export class PnWNationSubscriptionClient {
 
     ws.on('message', (raw: any) => {
       try {
+        lastActivityAt = Date.now();
         queue.push(JSON.parse(raw.toString()) as Record<string, unknown>);
       } catch {
         // Ignore malformed payloads.
       }
     });
+    ws.on('pong', () => {
+      lastActivityAt = Date.now();
+    });
     ws.on('close', (code: number, reason: Buffer) => {
       closed = true;
+      if (keepaliveTimer) {
+        clearInterval(keepaliveTimer);
+        keepaliveTimer = null;
+      }
       const reasonText = reason.length ? reason.toString('utf8') : '';
-      const closeSummary = `PnW nation subscription WebSocket closed (code=${code}, reason=${reasonText || 'n/a'}).`;
+      const idleSeconds = Math.max(0, Math.floor((Date.now() - lastActivityAt) / 1000));
+      const closeSummary = `PnW nation subscription WebSocket closed (code=${code}, reason=${reasonText || 'n/a'}, idle=${idleSeconds}s).`;
       if (intentionalCloseReason) {
         console.info(`${closeSummary} ${intentionalCloseReason}.`);
       } else {
@@ -131,6 +144,14 @@ export class PnWNationSubscriptionClient {
     ws.on('error', () => {
       closed = true;
     });
+    keepaliveTimer = setInterval(() => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.ping();
+      } catch {
+        // Ignore keepalive send failures; close/error handlers drive reconnect.
+      }
+    }, WS_KEEPALIVE_INTERVAL_MS);
 
     try {
       while (!closed) {
@@ -188,6 +209,10 @@ export class PnWNationSubscriptionClient {
         }
       }
     } finally {
+      if (keepaliveTimer) {
+        clearInterval(keepaliveTimer);
+        keepaliveTimer = null;
+      }
       ws.close();
     }
   }
