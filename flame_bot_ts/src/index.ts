@@ -741,7 +741,7 @@ function nationEmbed(n: Nation, registeredDiscord?: string | null, note?: string
     const hasNuclearLaunchFacility = n.projectsBuilt.includes('NLF');
     const hasNuclearResearchFacility = n.projectsBuilt.includes('NRF');
     const hasSpySatellite = n.projectsBuilt.includes('SS');
-    const hasCentralIntelligenceAgency = n.projectsBuilt.includes('CIA');
+    const hasCentralIntelligenceAgency = n.projectsBuilt.includes('IA');
     const dailyCapMissiles = hasSpaceProgram ? 3 : (hasMissileLaunchPad ? 2 : 0);
     const dailyCapNukes = hasNuclearLaunchFacility ? 2 : (hasNuclearResearchFacility ? 1 : 0);
     const dailyCapSpies = hasSpySatellite ? 3 : (hasCentralIntelligenceAgency ? 2 : 1);
