@@ -126,6 +126,14 @@ export class PnWNationSubscriptionClient {
     ws.on('pong', () => {
       lastActivityAt = Date.now();
     });
+    ws.on('ping', () => {
+      lastActivityAt = Date.now();
+      try {
+        ws.pong();
+      } catch {
+        // Ignore keepalive send failures; close/error handlers drive reconnect.
+      }
+    });
     ws.on('close', (code: number, reason: Buffer) => {
       closed = true;
       if (keepaliveTimer) {
@@ -183,7 +191,7 @@ export class PnWNationSubscriptionClient {
         }
 
         if (eventName === 'pusher:ping') {
-          ws.send(JSON.stringify({ event: 'pusher:pong', data: {} }));
+          ws.send(JSON.stringify({ event: 'pusher:pong', data: '{}' }));
           continue;
         }
 
