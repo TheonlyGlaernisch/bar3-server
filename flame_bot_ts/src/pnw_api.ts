@@ -1776,10 +1776,24 @@ function parseWarCreateFromSubscription(raw: Record<string, unknown>): WarDetail
 }
 
 type SubscriptionEvent = WarDetail | NationCreateDetail;
+type SubscriptionQueryValue = string | number | boolean;
+type SubscriptionQuery = Record<string, SubscriptionQueryValue | SubscriptionQueryValue[]>;
 
 export class PnWSubscriptionClient {
+  private static readonly MS_PER_SECOND = 1_000;
+  private static readonly SECONDS_PER_MINUTE = 60;
   private static readonly RECONNECT_BASE = 15;
   private static readonly RECONNECT_MAX = 300;
+  private static readonly MIN_IDLE_RECONNECT_DELAY_SECONDS = 5;
+  private static readonly WAR_DEDUPE_WINDOW_MINUTES = 10;
+  private static readonly WAR_DEDUPE_COOLDOWN_SECONDS = 60;
+  private static readonly WAR_DEDUPE_WINDOW_MS =
+    PnWSubscriptionClient.WAR_DEDUPE_WINDOW_MINUTES
+    * PnWSubscriptionClient.SECONDS_PER_MINUTE
+    * PnWSubscriptionClient.MS_PER_SECOND;
+  private static readonly WAR_DEDUPE_COOLDOWN_MS =
+    PnWSubscriptionClient.WAR_DEDUPE_COOLDOWN_SECONDS
+    * PnWSubscriptionClient.MS_PER_SECOND;
 
   private _apiKey: string;
   private _channelCache = new Map<string, string>();
@@ -1788,8 +1802,37 @@ export class PnWSubscriptionClient {
     this._apiKey = apiKey;
   }
 
-  private async _getChannel(model: string, event: string): Promise<string> {
-    const url = `${PNW_SUBSCRIPTION_URL.replace('{model}', model).replace('{event}', event)}?api_key=${this._apiKey}`;
+  private _normalizedChannelQueryEntries(query?: SubscriptionQuery): [string, string][] {
+    if (!query) return [];
+    const entries: [string, string][] = [];
+    const keys = Object.keys(query).sort();
+    for (const key of keys) {
+      const value = query[key];
+      if (Array.isArray(value)) {
+        const filtered = value
+          .map((item) => String(item))
+          .filter((item) => item.length > 0);
+        if (!filtered.length) continue;
+        entries.push([key, filtered.join(',')]);
+      } else {
+        entries.push([key, String(value)]);
+      }
+    }
+    return entries;
+  }
+
+  private _serializeChannelQuery(query?: SubscriptionQuery): string {
+    return this._normalizedChannelQueryEntries(query)
+      .map(([key, value]) => `${key}=${value}`)
+      .join('&');
+  }
+
+  private async _getChannel(model: string, event: string, query?: SubscriptionQuery): Promise<string> {
+    const url = new URL(PNW_SUBSCRIPTION_URL.replace('{model}', model).replace('{event}', event));
+    url.searchParams.set('api_key', this._apiKey);
+    for (const [key, value] of this._normalizedChannelQueryEntries(query)) {
+      url.searchParams.set(key, value);
+    }
     const resp = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     const data = await resp.json() as Record<string, unknown>;
     if (data['error']) throw new Error(`PnW subscription API error: ${data['error']}`);
@@ -1821,19 +1864,28 @@ export class PnWSubscriptionClient {
     eventNames: [string, string];
     parser: (raw: Record<string, unknown>) => T | null;
     logPrefix: string;
+    channelQuery?: SubscriptionQuery;
+    channelQueries?: SubscriptionQuery[];
+    disableChannelCache?: boolean;
   }): AsyncGenerator<T> {
-    const cacheKey = `${opts.model}:${opts.event}`;
-    let channel = this._channelCache.get(cacheKey);
-    if (!channel) {
-      channel = await this._getChannel(opts.model, opts.event);
-      this._channelCache.set(cacheKey, channel);
+    const queryList = opts.channelQueries?.length ? opts.channelQueries : [opts.channelQuery ?? {}];
+    const channelEntries: { cacheKey: string; channel: string; }[] = [];
+    for (const query of queryList) {
+      const cacheKey = `${opts.model}:${opts.event}:${this._serializeChannelQuery(query)}`;
+      let channel = opts.disableChannelCache ? undefined : this._channelCache.get(cacheKey);
+      if (!channel) {
+        channel = await this._getChannel(opts.model, opts.event, query);
+        if (!opts.disableChannelCache) this._channelCache.set(cacheKey, channel);
+      }
+      channelEntries.push({ cacheKey, channel });
     }
-    console.info(`${opts.logPrefix} obtained channel ${channel}.`);
+    const channels = [...new Set(channelEntries.map((entry) => entry.channel))];
+    console.info(`${opts.logPrefix} obtained channels ${channels.join(', ')}.`);
 
     const ws = new WebSocket(PNW_PUSHER_URL);
     const messageQueue: Record<string, unknown>[] = [];
     let socketId: string | null = null;
-    let subscribed = false;
+    const subscribedChannels = new Set<string>();
     let closed = false;
 
     await new Promise<void>((resolve) => {
@@ -1852,7 +1904,7 @@ export class PnWSubscriptionClient {
     ws.on('close', (code: number, reason: Buffer) => {
       closed = true;
       const reasonText = reason.length ? reason.toString('utf8') : '';
-      console.warn(`${opts.logPrefix} WebSocket closed (code=${code}, reason=${reasonText || 'n/a'}, subscribed=${subscribed}).`);
+      console.warn(`${opts.logPrefix} WebSocket closed (code=${code}, reason=${reasonText || 'n/a'}, subscribed=${subscribedChannels.size}/${channels.length}).`);
     });
     ws.on('error', () => { closed = true; });
 
@@ -1876,11 +1928,14 @@ export class PnWSubscriptionClient {
           return;
         }
         console.info(`${opts.logPrefix} connection established (socket_id=${socketId}).`);
-        const auth = await this._getAuth(channel, socketId);
-        ws.send(JSON.stringify({ event: 'pusher:subscribe', data: { auth, channel } }));
+        for (const channel of channels) {
+          const auth = await this._getAuth(channel, socketId);
+          ws.send(JSON.stringify({ event: 'pusher:subscribe', data: { auth, channel } }));
+        }
       } else if (wsEvent === 'pusher_internal:subscription_succeeded') {
-        subscribed = true;
-        console.info(`${opts.logPrefix} subscribed to channel ${channel}.`);
+        const eventChannel = s(frame['channel']);
+        if (eventChannel) subscribedChannels.add(eventChannel);
+        console.info(`${opts.logPrefix} subscribed to channel ${eventChannel || 'unknown'} (${subscribedChannels.size}/${channels.length}).`);
       } else if (wsEvent === singleEvent || wsEvent === bulkEvent) {
         let rawData = frame['data'];
         if (typeof rawData === 'string') {
@@ -1897,24 +1952,55 @@ export class PnWSubscriptionClient {
         ws.send(JSON.stringify({ event: 'pusher:pong', data: {} }));
       } else if (wsEvent === 'pusher:error') {
         console.warn(`${opts.logPrefix} gateway error:`, frame['data']);
-        this._channelCache.delete(cacheKey);
+        for (const entry of channelEntries) this._channelCache.delete(entry.cacheKey);
         ws.close();
         return;
       }
     }
   }
 
-  async *iterWarCreates(): AsyncGenerator<WarDetail> {
+  async *iterWarCreates(opts?: {
+    getAllianceIds?: () => Promise<number[]>;
+    idleDelaySeconds?: number;
+  }): AsyncGenerator<WarDetail> {
     let delay = PnWSubscriptionClient.RECONNECT_BASE;
+    const recentlyEmittedWarIds = new Map<number, number>();
     while (true) {
       try {
+        const dynamicAllianceIds = opts?.getAllianceIds
+          ? await opts.getAllianceIds()
+          : [];
+        const allianceIds = [...new Set(dynamicAllianceIds.filter((id) => Number.isInteger(id) && id > 0))];
+        if (opts?.getAllianceIds && !allianceIds.length) {
+          const idleDelay = Math.max(PnWSubscriptionClient.MIN_IDLE_RECONNECT_DELAY_SECONDS, opts.idleDelaySeconds ?? 60);
+          await new Promise((r) => setTimeout(r, idleDelay * 1000));
+          delay = PnWSubscriptionClient.RECONNECT_BASE;
+          continue;
+        }
+        const nowMs = Date.now();
+        for (const [warId, seenAt] of recentlyEmittedWarIds) {
+          if (nowMs - seenAt > PnWSubscriptionClient.WAR_DEDUPE_WINDOW_MS) recentlyEmittedWarIds.delete(warId);
+        }
         for await (const war of this._streamSubscription({
           model: 'war',
           event: 'create',
           eventNames: ['WAR_CREATE', 'BULK_WAR_CREATE'],
           parser: parseWarCreateFromSubscription,
           logPrefix: 'PnW subscription:',
+          channelQueries: allianceIds.length
+            ? [{ att_alliance_id: allianceIds }, { def_alliance_id: allianceIds }]
+            : undefined,
+          disableChannelCache: !!opts?.getAllianceIds,
         })) {
+          const warId = Number.isInteger(war.warId) ? war.warId : 0;
+          if (warId > 0) {
+            const seenAt = recentlyEmittedWarIds.get(warId);
+            const nowMs = Date.now();
+            if (seenAt && nowMs - seenAt < PnWSubscriptionClient.WAR_DEDUPE_COOLDOWN_MS) {
+              continue;
+            }
+            recentlyEmittedWarIds.set(warId, nowMs);
+          }
           delay = PnWSubscriptionClient.RECONNECT_BASE;
           yield war;
         }
