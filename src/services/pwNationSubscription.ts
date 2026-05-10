@@ -7,7 +7,8 @@ const PNW_SUBSCRIPTION_URL = 'https://api.politicsandwar.com/subscriptions/v1/su
 const PNW_SUBSCRIPTION_AUTH_URL = 'https://api.politicsandwar.com/subscriptions/v1/auth';
 const RECONNECT_BASE_SECONDS = 5;
 const RECONNECT_MAX_SECONDS = 120;
-const GATEWAY_RESET_INTERVAL_MS = 55 * 60 * 1000;
+const GATEWAY_RESET_INTERVAL_MINUTES = 55;
+const GATEWAY_RESET_INTERVAL_MS = GATEWAY_RESET_INTERVAL_MINUTES * 60 * 1000;
 
 export interface NationCreateEvent {
   nationId: number;
@@ -134,8 +135,8 @@ export class PnWNationSubscriptionClient {
     try {
       while (!closed) {
         if (Date.now() >= gatewayResetAt) {
-          intentionalCloseReason = 'Scheduled reconnect after 55 minutes';
-          console.info('PnW nation subscription: resetting gateway connection after 55 minutes.');
+          intentionalCloseReason = `Scheduled reconnect after ${GATEWAY_RESET_INTERVAL_MINUTES} minutes`;
+          console.info(`PnW nation subscription: resetting gateway connection after ${GATEWAY_RESET_INTERVAL_MINUTES} minutes.`);
           ws.close();
           break;
         }
