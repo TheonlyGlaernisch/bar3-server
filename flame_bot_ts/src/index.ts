@@ -2117,12 +2117,29 @@ ${resourceLines}
         const useTestApi = commandName === 'test_alliance_lots_of_info';
         const apiClient = useTestApi ? new PnWClient(PNW_TEST_API_KEY, { restUrl: PNW_TEST_REST_URL }) : pnw;
         const baseUrl = useTestApi ? PNW_TEST_BASE_URL : PNW_BASE_URL;
+        const MENTION_RE = /^<@!?(\d+)>$/;
+        const mentionMatch = MENTION_RE.exec(query);
         let alliance: AllianceInfo | null;
         let lotsMembers: Nation[];
         try {
-          alliance = /^\d+$/.test(query)
-            ? await apiClient.getAllianceById(parseInt(query, 10))
-            : await apiClient.getAllianceByName(query);
+          if (mentionMatch) {
+            const targetId = mentionMatch[1]!;
+            const row = await db.getByDiscordId(BigInt(targetId));
+            let nation: Nation | null = null;
+            if (row) {
+              try { nation = await apiClient.getNation(Number(row.nation_id)); } catch { nation = null; }
+            }
+            if (!nation) nation = await resolveMentionedNationViaApi(interaction, apiClient, targetId);
+            if (!nation || !nation.allianceId) {
+              await interaction.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ Could not resolve <@${targetId}> to an alliance.`).setColor(0x3498DB)] });
+              return;
+            }
+            alliance = await apiClient.getAllianceById(nation.allianceId);
+          } else {
+            alliance = /^\d+$/.test(query)
+              ? await apiClient.getAllianceById(parseInt(query, 10))
+              : await apiClient.getAllianceByName(query);
+          }
           if (!alliance) {
             await interaction.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ No alliance found for \`${query}\`.`).setColor(0x3498DB)] });
             return;
