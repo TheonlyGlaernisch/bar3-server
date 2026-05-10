@@ -2123,11 +2123,16 @@ ${resourceLines}
         let lotsMembers: Nation[];
         try {
           if (mentionMatch) {
-            const targetId = mentionMatch[1]!;
+            const targetId = query.replace(/^<@!?|>$/g, '');
             const row = await db.getByDiscordId(BigInt(targetId));
             let nation: Nation | null = null;
             if (row) {
-              try { nation = await apiClient.getNation(Number(row.nation_id)); } catch { nation = null; }
+              try {
+                nation = await apiClient.getNation(Number(row.nation_id));
+              } catch (err) {
+                nation = null;
+                logWarn(`alliance_lots_of_info failed to load registered nation ${row.nation_id}`, err);
+              }
             }
             if (!nation) nation = await resolveMentionedNationViaApi(interaction, apiClient, targetId);
             if (!nation || !nation.allianceId) {
