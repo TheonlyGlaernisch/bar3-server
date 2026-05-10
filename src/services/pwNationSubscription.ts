@@ -192,7 +192,19 @@ export class PnWNationSubscriptionClient {
 
         if (eventName === 'pusher:ping') {
           const pingData = frame.data;
-          const pongData = typeof pingData === 'string' ? pingData : {};
+          let pongData: Record<string, unknown> = {};
+          if (typeof pingData === 'string') {
+            try {
+              const parsed = JSON.parse(pingData);
+              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                pongData = parsed as Record<string, unknown>;
+              }
+            } catch {
+              // Fall back to an empty object.
+            }
+          } else if (pingData && typeof pingData === 'object' && !Array.isArray(pingData)) {
+            pongData = pingData as Record<string, unknown>;
+          }
           ws.send(JSON.stringify({ event: 'pusher:pong', data: pongData }));
           continue;
         }
