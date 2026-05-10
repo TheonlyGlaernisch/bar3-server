@@ -118,7 +118,27 @@ export class PnWNationSubscriptionClient {
     ws.on('message', (raw: any) => {
       try {
         lastActivityAt = Date.now();
-        queue.push(JSON.parse(raw.toString()) as Record<string, unknown>);
+        const frame = JSON.parse(raw.toString()) as Record<string, unknown>;
+        const eventName = asString(frame.event);
+        if (eventName === 'pusher:ping') {
+          const pusherPingData = frame.data;
+          let pongData: Record<string, unknown> = {};
+          if (typeof pusherPingData === 'string') {
+            try {
+              const parsed = JSON.parse(pusherPingData);
+              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                pongData = parsed as Record<string, unknown>;
+              }
+            } catch {
+              // Fall back to an empty object.
+            }
+          } else if (pusherPingData && typeof pusherPingData === 'object' && !Array.isArray(pusherPingData)) {
+            pongData = pusherPingData as Record<string, unknown>;
+          }
+          ws.send(JSON.stringify({ event: 'pusher:pong', data: pongData }));
+          return;
+        }
+        queue.push(frame);
       } catch {
         // Ignore malformed payloads.
       }
@@ -187,25 +207,6 @@ export class PnWNationSubscriptionClient {
           if (!socketId) throw new Error('PnW subscription connection did not provide socket_id.');
           const auth = await this.getAuth(channel, socketId);
           ws.send(JSON.stringify({ event: 'pusher:subscribe', data: { auth, channel } }));
-          continue;
-        }
-
-        if (eventName === 'pusher:ping') {
-          const pusherPingData = frame.data;
-          let pongData: Record<string, unknown> = {};
-          if (typeof pusherPingData === 'string') {
-            try {
-              const parsed = JSON.parse(pusherPingData);
-              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                pongData = parsed as Record<string, unknown>;
-              }
-            } catch {
-              // Fall back to an empty object.
-            }
-          } else if (pusherPingData && typeof pusherPingData === 'object' && !Array.isArray(pusherPingData)) {
-            pongData = pusherPingData as Record<string, unknown>;
-          }
-          ws.send(JSON.stringify({ event: 'pusher:pong', data: pongData }));
           continue;
         }
 
