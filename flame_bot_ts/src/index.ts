@@ -1800,6 +1800,12 @@ async function main(): Promise<void> {
     const commandName = resolveCanonicalCommandNameFromInteraction(interaction);
     commandUsage.set(commandName, (commandUsage.get(commandName) ?? 0) + 1);
     try {
+      const replyEphemeral = async (content: string) => {
+        if (interaction.deferred) return await interaction.editReply({ content });
+        if (interaction.replied) return await interaction.followUp({ content, ephemeral: true });
+        return await interaction.reply({ content, ephemeral: true });
+      };
+
       if (commandName === 'register') {
         return await handleRegister(interaction, db, pnw);
       }
@@ -2898,10 +2904,10 @@ Message: ${cfg.message}`)],
         const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         if (interaction.guildId) {
           await rest.put(Routes.applicationGuildCommands(appId, interaction.guildId), { body: commands });
-          return void interaction.reply({ content: 'Guild commands synced.', ephemeral: true });
+          return void (await replyEphemeral('Guild commands synced.'));
         }
         await rest.put(Routes.applicationCommands(appId), { body: commands });
-        return void interaction.reply({ content: 'Global commands synced.', ephemeral: true });
+        return void (await replyEphemeral('Global commands synced.'));
       }
       if (commandName === 'admin_clear_guild_commands') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
@@ -2910,7 +2916,7 @@ Message: ${cfg.message}`)],
         if (!appId) return void interaction.reply({ content: 'Application not ready.', ephemeral: true });
         const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         await rest.put(Routes.applicationGuildCommands(appId, interaction.guildId), { body: [] });
-        return void interaction.reply({ content: 'Cleared guild commands for this server.', ephemeral: true });
+        return void (await replyEphemeral('Cleared guild commands for this server.'));
       }
 
       if (commandName === 'help') {
