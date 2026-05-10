@@ -166,6 +166,9 @@ export class PnWNationSubscriptionClient {
       if (intentionalCloseReason) {
         console.info(`${closeSummary} ${intentionalCloseReason}.`);
       } else {
+        if (code === 4201) {
+          this.channel = null;
+        }
         console.warn(closeSummary);
       }
     });
@@ -207,6 +210,30 @@ export class PnWNationSubscriptionClient {
           if (!socketId) throw new Error('PnW subscription connection did not provide socket_id.');
           const auth = await this.getAuth(channel, socketId);
           ws.send(JSON.stringify({ event: 'pusher:subscribe', data: { auth, channel } }));
+          continue;
+        }
+        if (eventName === 'pusher:error') {
+          let errPayload: Record<string, unknown> = {};
+          if (typeof frame.data === 'string') {
+            try {
+              const parsed = JSON.parse(frame.data);
+              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                errPayload = parsed as Record<string, unknown>;
+              }
+            } catch {
+              // Ignore malformed payloads.
+            }
+          } else if (frame.data && typeof frame.data === 'object' && !Array.isArray(frame.data)) {
+            errPayload = frame.data as Record<string, unknown>;
+          }
+          const pusherCode = asNumber(errPayload.code);
+          if (pusherCode === 4201) {
+            this.channel = null;
+            intentionalCloseReason = 'Pusher auth error 4201; clearing cached channel and reconnecting';
+          }
+          const msg = asString(errPayload.message) || 'unknown pusher error';
+          console.warn(`PnW nation subscription pusher:error code=${pusherCode || 'n/a'} message=${msg}`);
+          ws.close();
           continue;
         }
 
