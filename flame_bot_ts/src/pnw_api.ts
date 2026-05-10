@@ -65,12 +65,19 @@ export interface Nation {
   lastActiveUnix: number;
   minutesSinceActive: number;
   soldiers: number;
+  soldiersToday: number;
   tanks: number;
+  tanksToday: number;
   aircraft: number;
+  aircraftToday: number;
   ships: number;
+  shipsToday: number;
   missiles: number;
+  missilesToday: number;
   nukes: number;
+  nukesToday: number;
   spies: number;         // -1 = unknown
+  spiesToday: number;
   projectsBuilt: string[];
   numProjects: number;
   allianceId: number;
@@ -283,6 +290,13 @@ const NATION_FIELDS = `
     wars_won
     wars_lost
     spies
+    soldiers_today
+    tanks_today
+    aircraft_today
+    ships_today
+    missiles_today
+    nukes_today
+    spies_today
     iron_works
     bauxite_works
     arms_stockpile
@@ -464,14 +478,21 @@ function parseNationDict(raw: Record<string, unknown>): Nation {
     lastActiveUnix: parseLastActiveUnix(laStr),
     minutesSinceActive: 0,
     soldiers: n(raw['soldiers']),
+    soldiersToday: n(raw['soldiers_today']),
     tanks: n(raw['tanks']),
+    tanksToday: n(raw['tanks_today']),
     aircraft: n(raw['aircraft']),
+    aircraftToday: n(raw['aircraft_today']),
     ships: n(raw['ships']),
+    shipsToday: n(raw['ships_today']),
     missiles: n(raw['missiles']),
+    missilesToday: n(raw['missiles_today']),
     nukes: n(raw['nukes']),
+    nukesToday: n(raw['nukes_today']),
     warsWon: n(raw['wars_won']),
     warsLost: n(raw['wars_lost']),
     spies: raw['spies'] == null ? -1 : n(raw['spies']),
+    spiesToday: n(raw['spies_today']),
     projectsBuilt,
     numProjects: projectsBuilt.length,
     allianceId: n(raw['alliance_id']),
@@ -507,14 +528,21 @@ function parseNationFromNationsList(raw: Record<string, unknown>): Nation {
     lastActiveUnix: 0,
     minutesSinceActive: minutes,
     soldiers: 0,
+    soldiersToday: 0,
     tanks: 0,
+    tanksToday: 0,
     aircraft: 0,
+    aircraftToday: 0,
     ships: 0,
+    shipsToday: 0,
     missiles: 0,
+    missilesToday: 0,
     nukes: 0,
+    nukesToday: 0,
     warsWon: n(raw['warson']),
     warsLost: n(raw['warslost']),
     spies: -1,
+    spiesToday: 0,
     projectsBuilt: [],
     numProjects: 0,
     allianceId: n(raw['allianceid']),
@@ -1063,8 +1091,9 @@ export class PnWClient {
       lastActive: minutes ? `${minutes} minutes ago` : '',
       lastActiveUnix: 0,
       minutesSinceActive: minutes,
-      soldiers: 0, tanks: 0, aircraft: 0, ships: 0, missiles: 0, nukes: 0,
-      warsWon: 0, warsLost: 0, spies: -1, projectsBuilt: [], numProjects: 0,
+      soldiers: 0, soldiersToday: 0, tanks: 0, tanksToday: 0, aircraft: 0, aircraftToday: 0,
+      ships: 0, shipsToday: 0, missiles: 0, missilesToday: 0, nukes: 0, nukesToday: 0,
+      warsWon: 0, warsLost: 0, spies: -1, spiesToday: 0, projectsBuilt: [], numProjects: 0,
       allianceId: 0, allianceName: '', alliancePosition: '', allianceSeniority: 0,
       beigeTurns: 0, color: '', rank: 0, continent: '', warPolicy: '',
       offensiveWars: 0, defensiveWars: 0, population: 0, domesticPolicy: '',
