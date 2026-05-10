@@ -191,7 +191,9 @@ export class PnWNationSubscriptionClient {
         }
 
         if (eventName === 'pusher:ping') {
-          ws.send(JSON.stringify({ event: 'pusher:pong', data: '{}' }));
+          const pingData = frame.data;
+          const pongData = typeof pingData === 'string' ? pingData : {};
+          ws.send(JSON.stringify({ event: 'pusher:pong', data: pongData }));
           continue;
         }
 

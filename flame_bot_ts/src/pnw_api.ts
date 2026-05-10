@@ -1999,7 +1999,9 @@ export class PnWSubscriptionClient {
           if (parsed !== null) yield parsed;
         }
       } else if (wsEvent === 'pusher:ping') {
-        ws.send(JSON.stringify({ event: 'pusher:pong', data: '{}' }));
+        const pingData = frame['data'];
+        const pongData = typeof pingData === 'string' ? pingData : {};
+        ws.send(JSON.stringify({ event: 'pusher:pong', data: pongData }));
       } else if (wsEvent === 'pusher:error') {
         console.warn(`${opts.logPrefix} gateway error:`, frame['data']);
         for (const entry of channelEntries) this._channelCache.delete(entry.cacheKey);
