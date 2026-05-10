@@ -103,6 +103,7 @@ export class PnWNationSubscriptionClient {
     let closed = false;
     let socketId = '';
     const gatewayResetAt = Date.now() + GATEWAY_RESET_INTERVAL_MS;
+    let intentionalCloseReason = '';
 
     await new Promise<void>((resolve, reject) => {
       ws.once('open', () => resolve());
@@ -119,7 +120,12 @@ export class PnWNationSubscriptionClient {
     ws.on('close', (code: number, reason: Buffer) => {
       closed = true;
       const reasonText = reason.length ? reason.toString('utf8') : '';
-      console.warn(`PnW nation subscription WebSocket closed (code=${code}, reason=${reasonText || 'n/a'}).`);
+      const closeSummary = `PnW nation subscription WebSocket closed (code=${code}, reason=${reasonText || 'n/a'}).`;
+      if (intentionalCloseReason) {
+        console.info(`${closeSummary} ${intentionalCloseReason}.`);
+      } else {
+        console.warn(closeSummary);
+      }
     });
     ws.on('error', () => {
       closed = true;
@@ -128,6 +134,7 @@ export class PnWNationSubscriptionClient {
     try {
       while (!closed) {
         if (Date.now() >= gatewayResetAt) {
+          intentionalCloseReason = 'Scheduled reconnect after 55 minutes';
           console.info('PnW nation subscription: resetting gateway connection after 55 minutes.');
           ws.close();
           break;

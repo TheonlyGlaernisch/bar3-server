@@ -1782,11 +1782,16 @@ type SubscriptionQuery = Record<string, SubscriptionQueryValue | SubscriptionQue
 export class PnWSubscriptionClient {
   private static readonly MS_PER_SECOND = 1_000;
   private static readonly SECONDS_PER_MINUTE = 60;
+  private static readonly GATEWAY_RESET_INTERVAL_MINUTES = 55;
   private static readonly RECONNECT_BASE = 15;
   private static readonly RECONNECT_MAX = 300;
   private static readonly MIN_IDLE_RECONNECT_DELAY_SECONDS = 5;
   private static readonly WAR_DEDUPE_WINDOW_MINUTES = 10;
   private static readonly WAR_DEDUPE_COOLDOWN_SECONDS = 60;
+  private static readonly GATEWAY_RESET_INTERVAL_MS =
+    PnWSubscriptionClient.GATEWAY_RESET_INTERVAL_MINUTES
+    * PnWSubscriptionClient.SECONDS_PER_MINUTE
+    * PnWSubscriptionClient.MS_PER_SECOND;
   private static readonly WAR_DEDUPE_WINDOW_MS =
     PnWSubscriptionClient.WAR_DEDUPE_WINDOW_MINUTES
     * PnWSubscriptionClient.SECONDS_PER_MINUTE
@@ -1887,6 +1892,8 @@ export class PnWSubscriptionClient {
     let socketId: string | null = null;
     const subscribedChannels = new Set<string>();
     let closed = false;
+    let intentionalCloseReason = '';
+    const gatewayResetAt = Date.now() + PnWSubscriptionClient.GATEWAY_RESET_INTERVAL_MS;
 
     await new Promise<void>((resolve) => {
       ws.on('open', () => resolve());
@@ -1904,13 +1911,25 @@ export class PnWSubscriptionClient {
     ws.on('close', (code: number, reason: Buffer) => {
       closed = true;
       const reasonText = reason.length ? reason.toString('utf8') : '';
-      console.warn(`${opts.logPrefix} WebSocket closed (code=${code}, reason=${reasonText || 'n/a'}, subscribed=${subscribedChannels.size}/${channels.length}).`);
+      const closeSummary =
+        `${opts.logPrefix} WebSocket closed (code=${code}, reason=${reasonText || 'n/a'}, subscribed=${subscribedChannels.size}/${channels.length}).`;
+      if (intentionalCloseReason) {
+        console.info(`${closeSummary} ${intentionalCloseReason}.`);
+      } else {
+        for (const entry of channelEntries) this._channelCache.delete(entry.cacheKey);
+        console.warn(closeSummary);
+      }
     });
     ws.on('error', () => { closed = true; });
 
     const [singleEvent, bulkEvent] = opts.eventNames;
 
     while (!closed) {
+      if (Date.now() >= gatewayResetAt) {
+        intentionalCloseReason = `Scheduled reconnect after ${PnWSubscriptionClient.GATEWAY_RESET_INTERVAL_MINUTES} minutes`;
+        ws.close();
+        break;
+      }
       const frame = messageQueue.shift();
       if (!frame) {
         await new Promise((r) => setTimeout(r, 50));
