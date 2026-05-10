@@ -9,7 +9,7 @@ const RECONNECT_BASE_SECONDS = 5;
 const RECONNECT_MAX_SECONDS = 120;
 const GATEWAY_RESET_INTERVAL_MINUTES = 55;
 const GATEWAY_RESET_INTERVAL_MS = GATEWAY_RESET_INTERVAL_MINUTES * 60 * 1000;
-const WS_KEEPALIVE_INTERVAL_SECONDS = 25;
+const WS_KEEPALIVE_INTERVAL_SECONDS = 18;
 const WS_KEEPALIVE_INTERVAL_MS = WS_KEEPALIVE_INTERVAL_SECONDS * 1000;
 
 export interface NationCreateEvent {
@@ -178,7 +178,7 @@ export class PnWNationSubscriptionClient {
     keepaliveTimer = setInterval(() => {
       if (ws.readyState !== WebSocket.OPEN) return;
       try {
-        ws.ping();
+        ws.send(JSON.stringify({ event: 'pusher:ping', data: {} }));
       } catch {
         // Ignore keepalive send failures; close/error handlers drive reconnect.
       }
