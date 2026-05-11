@@ -736,22 +736,6 @@ function nationEmbed(n: Nation, registeredDiscord?: string | null, note?: string
     const dailyCapTan = Math.floor(DAILY_BUY_TANKS_PER_CITY * n.numCities * dailyBuyMultiplier);
     const dailyCapAir = Math.floor(DAILY_BUY_AIRCRAFT_PER_CITY * n.numCities * dailyBuyMultiplier);
     const dailyCapShi = Math.floor(DAILY_BUY_SHIPS_PER_CITY * n.numCities * dailyBuyMultiplier);
-    const hasSpaceProgram = n.projectsBuilt.includes('SP');
-    const hasMissileLaunchPad = n.projectsBuilt.includes('MLP');
-    const hasNuclearLaunchFacility = n.projectsBuilt.includes('NLF');
-    const hasNuclearResearchFacility = n.projectsBuilt.includes('NRF');
-    const hasSpySatellite = n.projectsBuilt.includes('SS');
-    const hasCentralIntelligenceAgency = n.projectsBuilt.includes('IA');
-    const dailyCapMissiles = hasSpaceProgram ? 3 : (hasMissileLaunchPad ? 2 : 0);
-    const dailyCapNukes = hasNuclearLaunchFacility ? 2 : (hasNuclearResearchFacility ? 1 : 0);
-    const dailyCapSpies = hasSpySatellite ? 3 : (hasCentralIntelligenceAgency ? 2 : 1);
-    const remSol = Math.max(0, dailyCapSol - n.soldiersToday);
-    const remTan = Math.max(0, dailyCapTan - n.tanksToday);
-    const remAir = Math.max(0, dailyCapAir - n.aircraftToday);
-    const remShi = Math.max(0, dailyCapShi - n.shipsToday);
-    const remMissiles = Math.max(0, dailyCapMissiles - n.missilesToday);
-    const remNukes = Math.max(0, dailyCapNukes - n.nukesToday);
-    const remSpies = Math.max(0, dailyCapSpies - n.spiesToday);
     const pct = (val: number, cap: number) =>
       cap === 0 ? `${val.toLocaleString()} (—)` : `${val.toLocaleString()} (${((val / cap) * 100).toFixed(1)}%)`;
     const militaryText = [
@@ -763,16 +747,6 @@ function nationEmbed(n: Nation, registeredDiscord?: string | null, note?: string
       `☢️ Nukes:    ${n.nukes.toLocaleString()}`,
     ].join('\n');
     embed.addFields({ name: 'Military', value: militaryText, inline: false });
-    const remainingBuysText = [
-      `🪖 Soldiers: ${remSol.toLocaleString()} left (${n.soldiersToday.toLocaleString()}/${dailyCapSol.toLocaleString()} used)`,
-      `⚔️ Tanks:    ${remTan.toLocaleString()} left (${n.tanksToday.toLocaleString()}/${dailyCapTan.toLocaleString()} used)`,
-      `✈️ Aircraft: ${remAir.toLocaleString()} left (${n.aircraftToday.toLocaleString()}/${dailyCapAir.toLocaleString()} used)`,
-      `🚢 Ships:    ${remShi.toLocaleString()} left (${n.shipsToday.toLocaleString()}/${dailyCapShi.toLocaleString()} used)`,
-      `🚀 Missiles: ${remMissiles.toLocaleString()} left (${n.missilesToday.toLocaleString()}/${dailyCapMissiles.toLocaleString()} used)`,
-      `☢️ Nukes:    ${remNukes.toLocaleString()} left (${n.nukesToday.toLocaleString()}/${dailyCapNukes.toLocaleString()} used)`,
-      `🕵️ Spies:    ${remSpies.toLocaleString()} left (${n.spiesToday.toLocaleString()}/${dailyCapSpies.toLocaleString()} used)`,
-    ].join('\n');
-    embed.addFields({ name: 'Remaining Buys (Today)', value: remainingBuysText, inline: false });
   }
 
   if (registeredDiscord) {
@@ -1738,9 +1712,11 @@ async function main(): Promise<void> {
     }
   };
 
-  const sendToAllWelcomeChannels = async (message: string): Promise<{ sent: number; skipped: number }> => {
+  const sendToAllWelcomeChannels = async (message: string, customMessage?: string): Promise<{ sent: number; skipped: number }> => {
     let sent = 0;
     let skipped = 0;
+    const trimmedMessage = message.trim();
+    const trimmedCustomMessage = (customMessage ?? '').trim();
     for (const guild of client.guilds.cache.values()) {
       const cfg = await db.getWelcomeConfig(BigInt(guild.id));
       const channelId = cfg.channel_id;
@@ -1758,7 +1734,12 @@ async function main(): Promise<void> {
         continue;
       }
       try {
-        await channel.send(message);
+        const embedBody = trimmedCustomMessage || trimmedMessage;
+        const embed = new EmbedBuilder()
+          .setTitle('Announcement')
+          .setDescription(embedBody)
+          .setColor(0x5865F2);
+        await channel.send({ embeds: [embed] });
         sent += 1;
       } catch {
         skipped += 1;
