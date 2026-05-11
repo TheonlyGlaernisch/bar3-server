@@ -1736,7 +1736,7 @@ async function main(): Promise<void> {
       try {
         const embedBody = trimmedCustomMessage || trimmedMessage;
         const embed = new EmbedBuilder()
-          .setTitle('Announcement')
+          .setTitle('Bot update or smth, idk')
           .setDescription(embedBody)
           .setColor(0x5865F2);
         await channel.send({ embeds: [embed] });
