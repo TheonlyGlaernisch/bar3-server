@@ -35,11 +35,6 @@ import { normalizeReturnTo } from '@/utilities/serverUrls';
 @Component
 export default class DiscordCallback extends Vue {
   async created() {
-    const discordToken = this.$route.query.discordToken;
-    if (typeof discordToken === 'string' && discordToken.trim()) {
-      discordAuth.setSessionToken(discordToken);
-    }
-
     const authed = await discordAuth.isAuthed();
 
     if (!authed) {

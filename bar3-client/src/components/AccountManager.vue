@@ -50,8 +50,6 @@ export default class AccountManager extends Vue {
     this.statusMessage = null;
     try {
       await v2Api.loginWithPwApiKey(this.apiKey);
-      localStorage.removeItem('pwSessionToken');
-      localStorage.removeItem('pwAccountId');
       localStorage.setItem('apiKey', this.apiKey);
       this.v2Session = hasV2Credentials();
       this.$store.commit('setLoggedIn', true);
@@ -70,12 +68,12 @@ export default class AccountManager extends Vue {
     }
   }
 
-  logoutV2() {
+  async logoutV2() {
+    await fetch('/api/v2/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+    }).catch(() => undefined);
     clearV2Token();
-    localStorage.removeItem('pwSessionToken');
-    localStorage.removeItem('pwToken');
-    localStorage.removeItem('v2SessionToken');
-    localStorage.removeItem('pwAccountId');
     localStorage.removeItem('apiKey');
     this.apiKey = '';
     this.v2Session = false;

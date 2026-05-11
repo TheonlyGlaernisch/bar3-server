@@ -1,10 +1,4 @@
 import { AUTH_BASE_URL, normalizeReturnTo } from '@/utilities/serverUrls';
-import {
-  clearDiscordToken,
-  getDiscordAuthHeaders,
-  getDiscordToken,
-  setDiscordToken,
-} from '@/utilities/discordToken';
 
 interface SessionData {
   authenticated: boolean;
@@ -15,11 +9,6 @@ interface SessionData {
 let sessionCache: SessionData | null = null;
 
 export const discordAuth = {
-  setSessionToken(token: string): void {
-    setDiscordToken(token);
-    sessionCache = null;
-  },
-
   /**
    * Redirect the browser to the server-controlled Discord OAuth start.
    * The server handles PKCE/secret exchange and sets a session cookie on return.
@@ -46,9 +35,6 @@ export const discordAuth = {
     try {
       const res = await fetch(`${AUTH_BASE_URL}/auth/session`, {
         credentials: 'include',
-        headers: {
-          ...getDiscordAuthHeaders(),
-        },
       });
       if (res.ok) {
         const data = await res.json();
@@ -66,10 +52,9 @@ export const discordAuth = {
           authenticated: data?.authenticated === true,
           isAdmin: data?.isAdmin === true || roleBasedAdmin,
         };
-      } else if (res.status === 429 && !!getDiscordToken()) {
-        // Rate-limited auth checks should not force a hard logged-out state
-        // when we already have a valid token-based auth flow in progress.
-        sessionCache = { authenticated: true, isAdmin: false };
+      } else if (res.status === 429) {
+        // Preserve current auth state on temporary rate-limit responses.
+        sessionCache = sessionCache || { authenticated: false, isAdmin: false };
       } else {
         sessionCache = { authenticated: false, isAdmin: false };
       }
@@ -92,7 +77,6 @@ export const discordAuth = {
    */
   logout(): void {
     sessionCache = null;
-    clearDiscordToken();
     window.location.href = `${AUTH_BASE_URL}/auth/logout`;
   },
 };

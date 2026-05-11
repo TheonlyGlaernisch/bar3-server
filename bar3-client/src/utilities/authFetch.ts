@@ -1,5 +1,4 @@
 import { API_BASE_URL } from '@/utilities/serverUrls';
-import { getDiscordAuthHeaders } from '@/utilities/discordToken';
 
 type JsonValue = Record<string, unknown> | unknown[] | string | number | boolean | null;
 
@@ -11,7 +10,6 @@ export async function apiFetch(
   const apiKey = localStorage.getItem('apiKey') || '';
 
   const headers: Record<string, string> = {
-    ...getDiscordAuthHeaders(),
     ...(init.headers as Record<string, string> || {}),
   };
 

@@ -1,5 +1,4 @@
 import { AUTH_BASE_URL } from '@/utilities/serverUrls';
-import { getDiscordAuthHeaders } from '@/utilities/discordToken';
 
 async function botFetch(path: string, init: RequestInit = {}, body?: unknown) {
   const existingHeaders = init.headers;
@@ -14,7 +13,6 @@ async function botFetch(path: string, init: RequestInit = {}, body?: unknown) {
   }
 
   if (body !== undefined) extraHeaders['Content-Type'] = 'application/json';
-  Object.assign(extraHeaders, getDiscordAuthHeaders());
   return fetch(`${AUTH_BASE_URL}${path}`, {
     ...init,
     credentials: 'include',

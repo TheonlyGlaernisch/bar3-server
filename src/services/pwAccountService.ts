@@ -1,7 +1,5 @@
-import crypto from 'crypto';
 import superagent from 'superagent';
 import { PwAccount } from '../interfaces/schemas/PwAccountSchema';
-import { PwSession } from '../interfaces/schemas/PwSessionSchema';
 import { decryptString, encryptString, sha256Hex } from '../utilities/cryptoBox';
 
 async function validatePoliticsAndWarApiKey(apiKey: string): Promise<boolean> {
@@ -35,7 +33,6 @@ async function validatePoliticsAndWarApiKey(apiKey: string): Promise<boolean> {
 }
 
 export type LoginResult = {
-  token: string;
   accountId: string;
 };
 
@@ -59,17 +56,7 @@ export async function loginWithPwApiKey(pwApiKey: string): Promise<LoginResult> 
     { upsert: true, new: true, setDefaultsOnInsert: true }
   ).exec();
 
-  // Use hex to stay compatible with older Node/types used in deployments.
-  const token = crypto.randomBytes(32).toString('hex');
-  const tokenHash = sha256Hex(token);
-
-  await PwSession.create({
-    accountId: account._id,
-    tokenHash,
-    lastUsedAt: new Date(),
-  });
-
-  return { token, accountId: account._id.toString() };
+  return { accountId: account._id.toString() };
 }
 
 export async function getDecryptedApiKeyForAccount(accountId: string): Promise<string> {
@@ -77,4 +64,3 @@ export async function getDecryptedApiKeyForAccount(accountId: string): Promise<s
   if (!account) throw new Error('Account not found');
   return decryptString(account.pwApiKeyEnc);
 }
-

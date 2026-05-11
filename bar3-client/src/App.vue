@@ -65,7 +65,6 @@ export default class App extends Vue {
       // Avoid hitting protected API endpoints with stale local tokens when the
       // Discord session cookie is not authenticated.
       clearV2Token();
-      localStorage.removeItem('pwSessionToken');
       return;
     }
 

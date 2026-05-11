@@ -34,19 +34,6 @@ const ADMIN_DISCORD_IDS: ReadonlySet<string> = new Set(
     .filter(Boolean),
 );
 
-type MobileSession = {
-  expiresAt: number;
-  discordUserId: string;
-  discordUsername: string;
-  discordRoles: {
-    verified: boolean;
-    bar3_client: boolean;
-    bar3_server: boolean;
-  };
-};
-
-const MOBILE_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
-const mobileSessions = new Map<string, MobileSession>();
 const AUTH_CHECK_WINDOW_MS = 60 * 1000;
 const AUTH_CHECK_MAX_REQUESTS = 20;
 const RATE_LIMIT_MAP_CLEANUP_THRESHOLD = 1000;
@@ -76,44 +63,6 @@ function buildPkcePair(): { codeVerifier: string; codeChallenge: string } {
   return { codeVerifier, codeChallenge };
 }
 
-function issueAuthToken(session: DiscordAuthContext): string {
-  let token = toBase64Url(crypto.randomBytes(32));
-  while (mobileSessions.has(token)) {
-    token = toBase64Url(crypto.randomBytes(32));
-  }
-  mobileSessions.set(token, { ...session, expiresAt: Date.now() + MOBILE_TOKEN_TTL_MS });
-  return token;
-}
-
-export function getMobileSession(token: string): DiscordAuthContext | null {
-  const session = mobileSessions.get(token);
-  if (!session) return null;
-  if (session.expiresAt < Date.now()) {
-    mobileSessions.delete(token);
-    return null;
-  }
-  return session;
-}
-
-function getBearerToken(req: Request): string | null {
-  const auth = req.headers.authorization;
-  if (!auth) return null;
-  const [scheme, token] = auth.split(' ');
-  if (scheme?.toLowerCase() !== 'bearer' || !token) return null;
-  return token;
-}
-
-function getTokenQueryParam(req: Request): string | null {
-  const directToken = typeof req.query.token === 'string' ? req.query.token : '';
-  if (directToken) return directToken;
-
-  const discordToken = typeof req.query.discordToken === 'string' ? req.query.discordToken : '';
-  if (discordToken) return discordToken;
-
-  const mobileToken = typeof req.query.mobileToken === 'string' ? req.query.mobileToken : '';
-  return mobileToken || null;
-}
-
 export function resolveDiscordAuth(req: Request): DiscordAuthContext | null {
   if (req.session?.discordAuthenticated === true && req.session.discordUserId) {
     return {
@@ -126,10 +75,7 @@ export function resolveDiscordAuth(req: Request): DiscordAuthContext | null {
       },
     };
   }
-
-  const token = getBearerToken(req) || getTokenQueryParam(req);
-  if (!token) return null;
-  return getMobileSession(token);
+  return null;
 }
 
 function appendQueryParam(url: string, key: string, value: string): string {
@@ -377,7 +323,6 @@ router.get('/discord', (req: Request, res: Response) => {
   if (returnTo) {
     req.session.discordReturnTo = returnTo;
   }
-  const mobile = req.query.mobile === '1';
   const params = new URLSearchParams({
     client_id: DISCORD_CLIENT_ID,
     redirect_uri: DISCORD_REDIRECT_URI,
@@ -389,7 +334,6 @@ router.get('/discord', (req: Request, res: Response) => {
   req.session.discordCodeVerifier = codeVerifier;
   params.set('code_challenge', codeChallenge);
   params.set('code_challenge_method', 'S256');
-  if (mobile) params.set('state', 'mobile');
   return res.redirect(`https://discord.com/oauth2/authorize?${params.toString()}`);
 });
 
@@ -464,19 +408,6 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       return res.send(ACCESS_DENIED_HTML);
     }
 
-    const isMobileFlow = req.query.state === 'mobile';
-    if (isMobileFlow) {
-      if (!CLIENT_APP_URL) {
-        return res.redirect('/auth/login?error=auth_failed');
-      }
-      const mobileToken = issueAuthToken({
-        discordUserId: discordId,
-        discordUsername,
-        discordRoles,
-      });
-      return res.redirect(`${CLIENT_APP_URL}?mobileToken=${encodeURIComponent(mobileToken)}`);
-    }
-
     // Determine where to send the browser after a successful login.
     // Priority: CLIENT_APP_URL env var > validated discordReturnTo > '/'
     // Read discordReturnTo into a local variable now, before session
@@ -495,13 +426,6 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
     } else {
       destination = '/';
     }
-
-    const authToken = issueAuthToken({
-      discordUserId: discordId,
-      discordUsername,
-      discordRoles,
-    });
-    destination = appendQueryParam(destination, 'discordToken', authToken);
 
     // Regenerate the session before writing auth data to prevent session
     // fixation attacks and to ensure a fresh session is always issued after

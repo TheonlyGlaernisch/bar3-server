@@ -6,11 +6,13 @@ Vue.use(Vuex)
 
 import analytics from './modules/analytics';
 
+const DEFAULT_SERVER_ORIGIN =
+  typeof window !== 'undefined' ? window.location.origin : '';
+
 export default new Vuex.Store({
   state: {
     isApplicationOn: false,
-    // serverIP: 'http://'+location.hostname+':'+location.port,
-    serverIP: process.env.VUE_APP_API_URL || process.env.VUE_APP_SERVER_URL || 'https://bar3-server.onrender.com',
+    serverIP: process.env.VUE_APP_API_URL || process.env.VUE_APP_SERVER_URL || DEFAULT_SERVER_ORIGIN,
     sentMessages: [],
     lastRefreshed: 0,
     packageVersion: process.env.PACKAGE_VERSION || '0',
@@ -20,7 +22,7 @@ export default new Vuex.Store({
       max: 0,
     },
     newUpdate: null as null | GitHubRelease,
-    isLoggedIn: !!(localStorage.getItem('pwSessionToken') || localStorage.getItem('apiKey')),
+    isLoggedIn: !!localStorage.getItem('apiKey'),
     isDiscordAuthed: false,
     isAdmin: false,
     isBotAuthed: false
