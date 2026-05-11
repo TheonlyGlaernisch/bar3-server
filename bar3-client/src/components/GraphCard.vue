@@ -1,0 +1,137 @@
+<template>
+  <v-card
+    outlined
+    width="400px"
+    height="380px"
+    class="graph-card"
+  >
+    <template v-if="graphType == 'messagesSentOverTime'">
+      <v-card-title class="card-title-orange">
+        Message Sending Activity
+      </v-card-title>
+      <div
+        class="pa-4"
+      >
+        <line-chart :height="300" v-if="loaded" :data="chartData"/>
+      </div>
+    </template>
+    <template v-if="graphType == 'apiRequests'">
+      <v-card-title class="card-title-orange">
+        API Requests
+      </v-card-title>
+      <v-card-text>
+        <h4>
+          Your Used API Requests
+        </h4>
+        <h2>
+          {{ APIRequests.used }} / {{ APIRequests.max }}
+        </h2>
+      </v-card-text>
+      <div
+        class="pa-4 d-flex"
+      >
+          <v-progress-circular
+            :size="200"
+            :width="30"
+            :value="((APIRequests.used / APIRequests.max) * 100) || 0"
+            color="primary"
+            class="ml-auto mr-auto"
+          >
+            {{ (((APIRequests.used / APIRequests.max) * 100) || 0).toFixed(2) }}%
+          </v-progress-circular>
+      </div>
+    </template>
+  </v-card>
+</template>
+
+<script lang="ts">
+  import { Component, Prop, Vue, Watch } from 'vue-property-decorator';
+  import { Message, VueLineChart } from '@/types';
+  import LineChart from '@/components/LineChart.vue';
+
+  @Component({
+    components: {
+      LineChart
+    },
+  })
+  export default class GraphCard extends Vue {
+    loaded = false;
+    chartData = new VueLineChart.ChartData();
+
+    @Prop(String) graphType!: string;
+
+    get sentMessages(): Message[] {
+      return this.$store.getters.sentMessages;
+    }
+
+    get APIRequests(): {max: number; used: number} {
+      return this.$store.getters.apiDetails;
+    }
+
+    generateSentMessagesChartData() {
+      const dataset = new VueLineChart.Dataset();
+      dataset.label = 'Message Count';
+      dataset.borderColor = `rgb(255, 107, 0)`;
+      dataset.fill = false;
+
+      if (this.sentMessages.length == 0) {
+        this.chartData.datasets.push(dataset);
+        this.loaded = true;
+        return;
+      }
+
+      const firstMessage = this.sentMessages[0];
+
+      const twoHours = 7200000;
+      const totalIncrements = Math.ceil((Date.now() - firstMessage.sentTimeMilliseconds) / twoHours);
+
+      let lastMessageIndex = 0;
+
+      /**
+       * Go through all of the two hour increments, find the amount of messages in them, and then push it to the graph
+       */
+      for (let i = 1; i <= totalIncrements; i++) {
+        let messagesAtIncrement = 0;
+        while(this.sentMessages[lastMessageIndex] && this.sentMessages[lastMessageIndex].sentTimeMilliseconds < (i * twoHours) + firstMessage.sentTimeMilliseconds) {
+          messagesAtIncrement++;
+          lastMessageIndex++;
+        }
+
+        dataset.data.push({ x: (new Date((i * twoHours) + firstMessage.sentTimeMilliseconds).toLocaleDateString('en-US')), y: messagesAtIncrement });
+      }
+
+      this.chartData.datasets.push(dataset);
+      this.loaded = true;
+    }
+
+    generateData() {
+      if (this.graphType == 'messagesSentOverTime') {
+        this.generateSentMessagesChartData();
+      }
+    }
+
+    @Watch('sentMessages')
+    onSentMessagesChanged() {
+      if (this.graphType === 'messagesSentOverTime') {
+        this.chartData = new VueLineChart.ChartData();
+        this.loaded = false;
+        this.generateSentMessagesChartData();
+      }
+    }
+
+    mounted() {
+      this.generateData();
+    }
+  }
+</script>
+
+<style scoped>
+  .graph-card {
+    border-radius: 12px !important;
+  }
+
+  .card-title-orange {
+    color: #FF6B00;
+    font-weight: 600;
+  }
+</style>

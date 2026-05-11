@@ -211,11 +211,11 @@ legacyApiRouter.post('/setApplicationState', async (req, res) => {
 export const mountLegacyUiAndApi = (app: Express ) => {
   app.use('/api', legacyApiRouter);
   app.use('/analytics', analyticsRouter);
-  // Compatibility alias: the client calls /analytics/v2/me but the canonical path is
-  // /api/v2/analytics/me (mounted in src/index.ts). Mount it here too so both work.
   app.use('/analytics/v2', analyticsRouterV2);
 
-  const indexPath = join(__dirname, '../../..', 'public/index.html');
+  const clientIndexPath = join(__dirname, '../../..', 'bar3-client/dist/index.html');
+  const legacyIndexPath = join(__dirname, '../../..', 'public/index.html');
+  const indexPath = existsSync(clientIndexPath) ? clientIndexPath : legacyIndexPath;
 
   app.get('*', async (req, res) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/analytics')) {
@@ -225,7 +225,7 @@ export const mountLegacyUiAndApi = (app: Express ) => {
     if (!existsSync(indexPath)) {
       return res.status(404).json({
         error: 'UI build not found',
-        hint: 'Deploy the client separately or include public/index.html in this service',
+        hint: 'Build bar3-client (or include public/index.html) in this service',
       });
     }
 
