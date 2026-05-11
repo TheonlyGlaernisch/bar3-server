@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { PwAccount, IPwAccount } from '../../interfaces/schemas/PwAccountSchema';
 import { sha256Hex } from '../../utilities/cryptoBox';
+import { isTrustedOrigin } from './sameOrigin';
 
 declare global {
   namespace Express {
@@ -23,11 +24,19 @@ function extractApiKey(req: Request): string | null {
   return null;
 }
 
+function isUnsafeMethod(req: Request): boolean {
+  const method = req.method.toUpperCase();
+  return method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
+}
+
 export async function requirePwSession(req: Request, res: Response, next: NextFunction) {
   const sessionAccountId = typeof req.session?.pwAccountId === 'string'
     ? req.session.pwAccountId.trim()
     : '';
   if (sessionAccountId) {
+    if (isUnsafeMethod(req) && !isTrustedOrigin(req)) {
+      return res.status(403).json({ error: 'Blocked by same-origin policy' });
+    }
     const accountBySession = await PwAccount.findById(sessionAccountId).exec();
     if (accountBySession) {
       accountBySession.lastUsedAt = new Date();

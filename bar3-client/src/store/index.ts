@@ -5,14 +5,12 @@ import Vuex from 'vuex'
 Vue.use(Vuex)
 
 import analytics from './modules/analytics';
-
-const DEFAULT_SERVER_ORIGIN =
-  typeof window !== 'undefined' ? window.location.origin : '';
+import { API_BASE_URL } from '@/utilities/serverUrls';
 
 export default new Vuex.Store({
   state: {
     isApplicationOn: false,
-    serverIP: process.env.VUE_APP_API_URL || process.env.VUE_APP_SERVER_URL || DEFAULT_SERVER_ORIGIN,
+    serverIP: API_BASE_URL,
     sentMessages: [],
     lastRefreshed: 0,
     packageVersion: process.env.PACKAGE_VERSION || '0',

@@ -1,5 +1,5 @@
 const FALLBACK_SERVER_URL =
-  typeof window !== 'undefined' ? window.location.origin : '';
+  typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
 
 function normalizeBaseUrl(value: string): string {
   // Keep URL joining predictable by removing trailing slashes.

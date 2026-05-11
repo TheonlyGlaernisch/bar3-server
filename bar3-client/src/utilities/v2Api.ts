@@ -8,10 +8,6 @@ export function hasV2Credentials(): boolean {
   return !!(localStorage.getItem('apiKey') || '').trim();
 }
 
-export function clearV2Token(): void {
-  // no-op: v2 authentication now relies on HTTP-only cookie sessions
-}
-
 async function v2Fetch(path: string, init: RequestInit = {}, body?: JsonValue) {
   const headers: Record<string, string> = {
     ...(init.headers as Record<string, string> || {}),
