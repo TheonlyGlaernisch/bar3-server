@@ -39,15 +39,6 @@ const router = new VueRouter({
 })
 
 router.beforeEach(async (to, _from, next) => {
-  const queryDiscordToken = to.query.discordToken;
-  if (typeof queryDiscordToken === 'string' && queryDiscordToken.trim()) {
-    discordAuth.setSessionToken(queryDiscordToken);
-    const cleanedQuery = { ...to.query };
-    delete cleanedQuery.discordToken;
-    next({ path: to.path, query: cleanedQuery, replace: true });
-    return;
-  }
-
   if (DISCORD_PUBLIC_PATHS.includes(to.path)) {
     next();
     return;

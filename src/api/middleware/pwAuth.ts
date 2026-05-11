@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import { PwSession } from '../../interfaces/schemas/PwSessionSchema';
 import { PwAccount, IPwAccount } from '../../interfaces/schemas/PwAccountSchema';
 import { sha256Hex } from '../../utilities/cryptoBox';
+import { isTrustedOrigin } from './sameOrigin';
 
 declare global {
   namespace Express {
@@ -9,29 +9,6 @@ declare global {
       pwAccount?: IPwAccount;
     }
   }
-}
-
-function extractBearerToken(req: Request): string | null {
-  const auth = req.headers['authorization'];
-  if (!auth || typeof auth !== 'string') return null;
-  const parts = auth.split(' ');
-  if (parts.length !== 2) return null;
-  if (parts[0].toLowerCase() !== 'bearer') return null;
-  const token = parts[1].trim();
-  return token.length ? token : null;
-}
-
-function extractAlternateToken(req: Request): string | null {
-  const headerToken = req.headers['x-auth-token'] || req.headers['x-session-token'];
-  if (typeof headerToken === 'string' && headerToken.trim()) return headerToken.trim();
-
-  const bodyToken = (req.body as any)?.token || (req.body as any)?.sessionToken;
-  if (typeof bodyToken === 'string' && bodyToken.trim()) return bodyToken.trim();
-
-  const queryToken = req.query?.token || req.query?.sessionToken;
-  if (typeof queryToken === 'string' && queryToken.trim()) return queryToken.trim();
-
-  return null;
 }
 
 function extractApiKey(req: Request): string | null {
@@ -47,42 +24,41 @@ function extractApiKey(req: Request): string | null {
   return null;
 }
 
+function isUnsafeMethod(req: Request): boolean {
+  const method = req.method.toUpperCase();
+  return method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
+}
+
 export async function requirePwSession(req: Request, res: Response, next: NextFunction) {
-  const token = extractBearerToken(req) || extractAlternateToken(req);
-  if (!token) {
-    const apiKey = extractApiKey(req);
-    if (!apiKey) {
-      return res.status(401).json({ error: 'Missing auth token or x-api-key' });
+  const sessionAccountId = typeof req.session?.pwAccountId === 'string'
+    ? req.session.pwAccountId.trim()
+    : '';
+  if (sessionAccountId) {
+    if (isUnsafeMethod(req) && !isTrustedOrigin(req)) {
+      return res.status(403).json({ error: 'Blocked by same-origin policy' });
     }
-
-    const pwApiKeyHash = sha256Hex(apiKey);
-    const accountByApiKey = await PwAccount.findOne({ pwApiKeyHash }).exec();
-    if (!accountByApiKey) {
-      return res.status(401).json({ error: 'Invalid API key' });
+    const accountBySession = await PwAccount.findById(sessionAccountId).exec();
+    if (accountBySession) {
+      accountBySession.lastUsedAt = new Date();
+      await accountBySession.save().catch(() => undefined);
+      req.pwAccount = accountBySession;
+      return next();
     }
-
-    accountByApiKey.lastUsedAt = new Date();
-    await accountByApiKey.save().catch(() => undefined);
-    req.pwAccount = accountByApiKey;
-    return next();
   }
 
-  const tokenHash = sha256Hex(token);
-  const session = await PwSession.findOne({ tokenHash }).exec();
-  if (!session) {
-    return res.status(401).json({ error: 'Invalid session' });
+  const apiKey = extractApiKey(req);
+  if (!apiKey) {
+    return res.status(401).json({ error: 'Missing authenticated session or x-api-key' });
   }
 
-  const account = await PwAccount.findById(session.accountId).exec();
-  if (!account) {
-    return res.status(401).json({ error: 'Session account not found' });
+  const pwApiKeyHash = sha256Hex(apiKey);
+  const accountByApiKey = await PwAccount.findOne({ pwApiKeyHash }).exec();
+  if (!accountByApiKey) {
+    return res.status(401).json({ error: 'Invalid API key' });
   }
 
-  session.lastUsedAt = new Date();
-  await session.save().catch(() => undefined);
-  account.lastUsedAt = new Date();
-  await account.save().catch(() => undefined);
-
-  req.pwAccount = account;
+  accountByApiKey.lastUsedAt = new Date();
+  await accountByApiKey.save().catch(() => undefined);
+  req.pwAccount = accountByApiKey;
   return next();
 }

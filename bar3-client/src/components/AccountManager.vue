@@ -36,7 +36,8 @@
 
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator';
-import { clearV2Token, hasV2Credentials, v2Api } from '../utilities/v2Api';
+import { hasV2Credentials, v2Api } from '../utilities/v2Api';
+import { API_BASE_URL } from '@/utilities/serverUrls';
 
 @Component
 export default class AccountManager extends Vue {
@@ -50,8 +51,6 @@ export default class AccountManager extends Vue {
     this.statusMessage = null;
     try {
       await v2Api.loginWithPwApiKey(this.apiKey);
-      localStorage.removeItem('pwSessionToken');
-      localStorage.removeItem('pwAccountId');
       localStorage.setItem('apiKey', this.apiKey);
       this.v2Session = hasV2Credentials();
       this.$store.commit('setLoggedIn', true);
@@ -62,7 +61,6 @@ export default class AccountManager extends Vue {
       const state = await v2Api.getAutomationState().catch(() => null);
       if (state) this.$store.commit('setApplicationState', !!state.enabled);
     } catch (e) {
-      clearV2Token();
       const maybeMessage =
         typeof e === 'object' && e !== null && 'message' in e ? (e as any).message : undefined;
       this.error = maybeMessage || 'Login failed';
@@ -70,12 +68,11 @@ export default class AccountManager extends Vue {
     }
   }
 
-  logoutV2() {
-    clearV2Token();
-    localStorage.removeItem('pwSessionToken');
-    localStorage.removeItem('pwToken');
-    localStorage.removeItem('v2SessionToken');
-    localStorage.removeItem('pwAccountId');
+  async logoutV2() {
+    await fetch(`${API_BASE_URL}/api/v2/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+    }).catch(() => undefined);
     localStorage.removeItem('apiKey');
     this.apiKey = '';
     this.v2Session = false;

@@ -20,5 +20,7 @@ declare module 'express-session' {
     discordCodeVerifier?: string;
     /** Set to true once the admin has authenticated with ADMIN_PASSWORD. */
     adminAuthenticated?: boolean;
+    /** Authenticated Politics & War account id for v2 cookie-based auth. */
+    pwAccountId?: string;
   }
 }

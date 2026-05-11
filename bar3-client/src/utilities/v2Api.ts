@@ -1,49 +1,18 @@
 import { apiFetch } from '@/utilities/authFetch';
 import getAppData from '@/actions/getAppData';
 import { API_BASE_URL } from '@/utilities/serverUrls';
-import { getDiscordAuthHeaders } from '@/utilities/discordToken';
 
 type JsonValue = Record<string, unknown> | unknown[] | string | number | boolean | null;
-let inMemorySessionToken = '';
-
-function normalizeToken(raw: string): string {
-  return raw.replace(/^Bearer\s+/i, '').trim();
-}
-
-export function getV2Token(): string {
-  const raw = inMemorySessionToken || (
-    localStorage.getItem('pwSessionToken') ||
-    localStorage.getItem('pwToken') ||
-    localStorage.getItem('v2SessionToken') ||
-    ''
-  );
-  return normalizeToken(raw);
-}
 
 export function hasV2Credentials(): boolean {
-  return !!(getV2Token() || (localStorage.getItem('apiKey') || '').trim());
-}
-
-export function clearV2Token(): void {
-  inMemorySessionToken = '';
-}
-
-function getToken(): string {
-  return getV2Token();
+  return !!(localStorage.getItem('apiKey') || '').trim();
 }
 
 async function v2Fetch(path: string, init: RequestInit = {}, body?: JsonValue) {
   const headers: Record<string, string> = {
-    ...getDiscordAuthHeaders(),
     ...(init.headers as Record<string, string> || {}),
   };
 
-  const hasAuthorizationHeader = !!headers.Authorization;
-  const token = getToken();
-  if (token) {
-    headers['x-session-token'] = token;
-    if (!hasAuthorizationHeader) headers['Authorization'] = `Bearer ${token}`;
-  }
   const apiKey = (localStorage.getItem('apiKey') || '').trim();
   if (apiKey) headers['x-api-key'] = apiKey;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -57,24 +26,17 @@ async function v2Fetch(path: string, init: RequestInit = {}, body?: JsonValue) {
 }
 
 export const v2Api = {
-  async loginWithPwApiKey(apiKey: string): Promise<{ token: string; accountId: string }> {
+  async loginWithPwApiKey(apiKey: string): Promise<{ accountId: string }> {
     const res = await v2Fetch('/api/v2/auth/login', { method: 'POST' }, { apiKey });
     if (res.status !== 200) throw new Error((await res.json().catch(() => ({} as any)))?.error || 'Login failed');
     const data = await res.json();
-    const token = normalizeToken(String(
-      data?.token ||
-      data?.sessionToken ||
-      data?.accessToken ||
-      ''
-    ));
     const accountId = String(
       data?.accountId ||
       data?.account?.id ||
       data?.user?.accountId ||
       ''
     ).trim();
-    inMemorySessionToken = token;
-    return { token, accountId };
+    return { accountId };
   },
 
   async getAutomationState(): Promise<{ enabled: boolean }> {
