@@ -7,6 +7,8 @@ const PUBLIC_PREFIXES = [
   '/auth/discord',
   '/auth/session',
   '/auth/logout',
+  '/api/v2/auth/login',
+  '/api/v2/auth/logout',
   '/health',
   '/favicon.ico',
 ];
