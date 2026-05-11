@@ -1,8 +1,7 @@
 <template>
   <div>
-    <!-- Desktop sidebar (md and above) -->
+    <!-- Sidebar -->
     <v-navigation-drawer
-      v-if="!$vuetify.breakpoint.smAndDown"
       permanent
       app
       dark
@@ -56,29 +55,6 @@
       </v-list>
     </v-navigation-drawer>
 
-    <!-- Mobile bottom navigation (sm and below) - always visible, never collapses -->
-    <v-bottom-navigation
-      v-if="$vuetify.breakpoint.smAndDown"
-      app
-      fixed
-      dark
-      color="primary"
-      background-color="#1A1A1A"
-      :value="selectedItem"
-    >
-      <v-btn
-        v-for="(item, index) in items"
-        :key="item.title"
-        :value="index"
-        :disabled="disabled"
-        @click="goto(item.path)"
-        text
-        small
-      >
-        <span style="font-size: 11px;">{{ item.title }}</span>
-        <v-icon small>{{ item.icon }}</v-icon>
-      </v-btn>
-    </v-bottom-navigation>
   </div>
 </template>
 
