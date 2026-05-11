@@ -3,10 +3,21 @@ import { resolveDiscordAuth } from '../routers/discord/auth';
 
 /** Paths that are always accessible without Discord authentication. */
 const PUBLIC_PREFIXES = [
+  '/',
+  '/discord-login',
+  '/js',
+  '/css',
+  '/img',
+  '/fonts',
+  '/assets',
+  '/manifest.json',
+  '/robots.txt',
   '/auth/login',
   '/auth/discord',
   '/auth/session',
   '/auth/logout',
+  '/api/v2/auth/login',
+  '/api/v2/auth/logout',
   '/health',
   '/favicon.ico',
 ];
