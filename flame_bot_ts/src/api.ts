@@ -91,7 +91,7 @@ export interface GuildInfo {
 
 export type GuildGetter = () => Guild | null;
 export type GuildsGetter = () => Guild[];
-export type SendToWelcomeFn = (message: string) => Promise<{ sent: number; skipped: number }>;
+export type SendToWelcomeFn = (message: string, customMessage?: string) => Promise<{ sent: number; skipped: number }>;
 export type CommandUsageGetter = () => Record<string, number>;
 
 export interface CreateAppOptions {
@@ -419,7 +419,8 @@ export function createApp(options: CreateAppOptions): Application {
     const discordId = BigInt(discordIdStr);
 
     const message = String(body['message'] ?? '').trim();
-    if (!message) {
+    const customMessage = String(body['custom_message'] ?? '').trim();
+    if (!message && !customMessage) {
       res.status(400).json({ error: 'Missing message' });
       return;
     }
@@ -434,7 +435,7 @@ export function createApp(options: CreateAppOptions): Application {
       return;
     }
 
-    const result = await sendToWelcomeFn(message);
+    const result = await sendToWelcomeFn(message, customMessage || undefined);
     res.status(200).json(result);
   });
 
