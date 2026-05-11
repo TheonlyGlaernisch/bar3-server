@@ -2,7 +2,9 @@
   <div>
     <!-- Sidebar -->
     <v-navigation-drawer
-      permanent
+      v-model="isShowing"
+      :permanent="!$vuetify.breakpoint.mobile"
+      :temporary="$vuetify.breakpoint.mobile"
       app
       dark
       color="#1A1A1A"
@@ -132,6 +134,7 @@ import Vue from 'vue';
       if (this.$route.path != path) {
         this.$router.push({'path': path})
       }
+      if (this.$vuetify.breakpoint.mobile) this.isShowing = false;
     }
 
     @Prop(Boolean) value!: boolean;

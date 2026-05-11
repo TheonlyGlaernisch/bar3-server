@@ -17,7 +17,7 @@ export interface GuildConfigDoc {
   grant_channel_id?: number | null;
   alliance_id?: number | null;
   welcome_enabled?: boolean;
-  welcome_channel_id?: number | null;
+  welcome_channel_id?: string | null;
   welcome_message?: string;
 }
 
@@ -186,18 +186,18 @@ export class Database {
 
   // Welcome message config helpers ----------------------------------------
 
-  async getWelcomeConfig(guildId: bigint): Promise<{ enabled: boolean; channel_id: number | null; message: string }> {
+  async getWelcomeConfig(guildId: bigint): Promise<{ enabled: boolean; channel_id: string | null; message: string }> {
     const doc = await this._guildConfig.findOne({ guild_id: guildId.toString() }, { projection: { _id: 0 } });
     return {
       enabled: Boolean(doc?.welcome_enabled ?? false),
-      channel_id: doc?.welcome_channel_id != null ? Number(doc.welcome_channel_id) : null,
+      channel_id: doc?.welcome_channel_id != null ? String(doc.welcome_channel_id) : null,
       message: String(doc?.welcome_message ?? 'Welcome !(user)!'),
     };
   }
 
   async setWelcomeConfig(
     guildId: bigint,
-    opts: { enabled?: boolean; channelId?: number | null; message?: string }
+    opts: { enabled?: boolean; channelId?: string | null; message?: string }
   ): Promise<void> {
     const updates: Record<string, unknown> = { guild_id: guildId.toString() };
     if (opts.enabled !== undefined) updates['welcome_enabled'] = opts.enabled;

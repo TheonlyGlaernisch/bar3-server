@@ -1723,11 +1723,11 @@ async function main(): Promise<void> {
       let channel: TextChannel | null = null;
       if (channelId != null) {
         const configured = guild.channels.cache.get(String(channelId));
-        if (configured instanceof TextChannel) channel = configured;
+        if (configured?.isTextBased() && 'send' in configured) channel = configured as TextChannel;
       }
-      if (!channel && guild.systemChannel instanceof TextChannel) channel = guild.systemChannel;
+      if (!channel && guild.systemChannel?.isTextBased() && 'send' in guild.systemChannel) channel = guild.systemChannel as TextChannel;
       if (!channel) {
-        channel = guild.channels.cache.find((c): c is TextChannel => c instanceof TextChannel) ?? null;
+        channel = guild.channels.cache.find((c): c is TextChannel => c.isTextBased() && 'send' in c) ?? null;
       }
       if (!channel) {
         skipped += 1;
@@ -1788,7 +1788,7 @@ async function main(): Promise<void> {
       if (!cfg.enabled) return;
       if (cfg.channel_id == null) return;
       const channel = member.guild.channels.cache.get(String(cfg.channel_id));
-      if (!(channel instanceof TextChannel)) return;
+      if (!channel?.isTextBased() || !('send' in channel)) return;
       const template = String(cfg.message || DEFAULT_WELCOME_MESSAGE);
       const isRegistered = (await db.getByDiscordId(BigInt(member.id))) !== null;
       const message = renderWelcomeMessage(
@@ -1798,7 +1798,7 @@ async function main(): Promise<void> {
         isRegistered,
         channel.toString(),
       );
-      await channel.send(message);
+      await (channel as TextChannel).send(message);
     } catch (err) {
       console.warn('Failed to send welcome message:', err);
     }
@@ -2468,7 +2468,10 @@ ${resourceLines}
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const ch = interaction.options.getChannel('channel', true);
-        await db.setWelcomeConfig(BigInt(interaction.guildId), { channelId: Number(ch.id) });
+        if (!('send' in ch)) {
+          return void interaction.reply({ content: 'Please choose a text-based channel.', flags: MessageFlags.Ephemeral });
+        }
+        await db.setWelcomeConfig(BigInt(interaction.guildId), { channelId: ch.id });
         return void interaction.reply({ content: `Welcome channel set to <#${ch.id}>.` });
       }
       if (commandName === 'welcome_enable') {

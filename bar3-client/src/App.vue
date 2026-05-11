@@ -7,6 +7,10 @@
         dark
         flat
       >
+        <v-app-bar-nav-icon
+          v-if="$vuetify.breakpoint.mobile"
+          @click.stop="sideBarOpen = !sideBarOpen"
+        />
         <div class="d-flex align-center">
           <v-img
             class="shrink mr-2"
