@@ -15,11 +15,8 @@ const DISCORD_REDIRECT_URI =
 const FLAME_BOT_API_URL = (process.env.FLAME_BOT_API_URL || 'http://localhost:8080').replace(/\/$/, '');
 const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || '';
 
-// After a successful OAuth2 login the browser is redirected here.
-// Set CLIENT_APP_URL to the root URL of the bar3-client SPA
-// (e.g. https://bar3-client.onrender.com).  When unset, the server redirects
-// to the relative path saved in the session (discordReturnTo) or '/' as a fallback.
-const CLIENT_APP_URL = (process.env.CLIENT_APP_URL || '').replace(/\/$/, '');
+// After a successful OAuth2 login the browser always redirects to a relative
+// path on this same origin (saved `discordReturnTo`, or '/' fallback).
 
 // Comma-separated Discord user IDs that bypass all command role requirements in
 // flame_bot (ADMIN_DISCORD_IDS).  When a logged-in user's Discord ID appears in
@@ -76,11 +73,6 @@ export function resolveDiscordAuth(req: Request): DiscordAuthContext | null {
     };
   }
   return null;
-}
-
-function appendQueryParam(url: string, key: string, value: string): string {
-  const separator = url.includes('?') ? '&' : '?';
-  return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
 }
 
 function buildDiscordRoles(flameBotRoles: Record<string, unknown>): DiscordAuthContext['discordRoles'] {
@@ -317,8 +309,7 @@ router.get('/discord', (req: Request, res: Response) => {
     return res.status(500).send('DISCORD_CLIENT_ID is not configured on this server.');
   }
   // If the SPA passes a ?returnTo= param (its current client-side route), save it in
-  // the session so the callback can append it to CLIENT_APP_URL after a successful login.
-  // This lets the SPA navigate the user back to where they were before the auth wall.
+  // the session so the callback can return the user to that path on this same origin.
   const returnTo = normalizeReturnTo(req.query.returnTo);
   if (returnTo) {
     req.session.discordReturnTo = returnTo;
@@ -409,23 +400,12 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
     }
 
     // Determine where to send the browser after a successful login.
-    // Priority: CLIENT_APP_URL env var > validated discordReturnTo > '/'
+    // Always stay on this same origin: validated discordReturnTo > '/'
     // Read discordReturnTo into a local variable now, before session
     // regeneration destroys the old session data.
     const savedReturnTo = normalizeReturnTo(req.session.discordReturnTo);
 
-    let destination: string;
-    if (CLIENT_APP_URL) {
-      destination = `${CLIENT_APP_URL}/auth/discord/callback`;
-      const safeSavedReturnTo = normalizeReturnTo(savedReturnTo);
-      if (safeSavedReturnTo) {
-        destination = appendQueryParam(destination, 'returnTo', safeSavedReturnTo);
-      }
-    } else if (savedReturnTo) {
-      destination = savedReturnTo;
-    } else {
-      destination = '/';
-    }
+    const destination: string = savedReturnTo || '/';
 
     // Regenerate the session before writing auth data to prevent session
     // fixation attacks and to ensure a fresh session is always issued after

@@ -213,9 +213,7 @@ export const mountLegacyUiAndApi = (app: Express ) => {
   app.use('/analytics', analyticsRouter);
   app.use('/analytics/v2', analyticsRouterV2);
 
-  const clientIndexPath = join(__dirname, '../../..', 'bar3-client/dist/index.html');
-  const legacyIndexPath = join(__dirname, '../../..', 'public/index.html');
-  const indexPath = existsSync(clientIndexPath) ? clientIndexPath : legacyIndexPath;
+  const indexPath = join(__dirname, '../../..', 'bar3-client/dist/index.html');
 
   app.get('*', async (req, res) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/analytics')) {
@@ -223,9 +221,9 @@ export const mountLegacyUiAndApi = (app: Express ) => {
     }
 
     if (!existsSync(indexPath)) {
-      return res.status(404).json({
-        error: 'UI build not found',
-        hint: 'Build bar3-client (or include public/index.html) in this service',
+      return res.status(503).json({
+        error: 'bar3-client UI build not found',
+        hint: 'Build bar3-client and deploy its dist assets with bar3-server',
       });
     }
 
