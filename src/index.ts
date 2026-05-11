@@ -1,6 +1,7 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { join } from 'path';
+import { existsSync } from 'fs';
 import session from 'express-session';
 import accountRoutes from './api/AccountRoutes';
 import { mountLegacyUiAndApi } from './api';
@@ -235,7 +236,10 @@ app.use('/admin', adminRouter);
 // Discord authentication guard — protects every subsequent route and static file.
 app.use(requireDiscordAuth);
 
-app.use(express.static(join(__dirname, '../..', 'public')));
+const legacyUiPath = join(__dirname, '../..', 'public');
+const clientUiPath = join(__dirname, '../..', 'bar3-client', 'dist');
+const staticUiPath = existsSync(clientUiPath) ? clientUiPath : legacyUiPath;
+app.use(express.static(staticUiPath));
 
 // MongoDB Connection
 const connectDB = async () => {
