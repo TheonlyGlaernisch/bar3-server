@@ -9,6 +9,7 @@ import { ensureGoogleTag } from '@/utilities/googleTag'
 Vue.config.productionTip = false
 
 ensureGoogleTag();
+document.title = 'TRF owns this thing';
 new Vue({
   router,
   store,
