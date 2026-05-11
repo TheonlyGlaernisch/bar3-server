@@ -736,22 +736,6 @@ function nationEmbed(n: Nation, registeredDiscord?: string | null, note?: string
     const dailyCapTan = Math.floor(DAILY_BUY_TANKS_PER_CITY * n.numCities * dailyBuyMultiplier);
     const dailyCapAir = Math.floor(DAILY_BUY_AIRCRAFT_PER_CITY * n.numCities * dailyBuyMultiplier);
     const dailyCapShi = Math.floor(DAILY_BUY_SHIPS_PER_CITY * n.numCities * dailyBuyMultiplier);
-    const hasSpaceProgram = n.projectsBuilt.includes('SP');
-    const hasMissileLaunchPad = n.projectsBuilt.includes('MLP');
-    const hasNuclearLaunchFacility = n.projectsBuilt.includes('NLF');
-    const hasNuclearResearchFacility = n.projectsBuilt.includes('NRF');
-    const hasSpySatellite = n.projectsBuilt.includes('SS');
-    const hasCentralIntelligenceAgency = n.projectsBuilt.includes('IA');
-    const dailyCapMissiles = hasSpaceProgram ? 3 : (hasMissileLaunchPad ? 2 : 0);
-    const dailyCapNukes = hasNuclearLaunchFacility ? 2 : (hasNuclearResearchFacility ? 1 : 0);
-    const dailyCapSpies = hasSpySatellite ? 3 : (hasCentralIntelligenceAgency ? 2 : 1);
-    const remSol = Math.max(0, dailyCapSol - n.soldiersToday);
-    const remTan = Math.max(0, dailyCapTan - n.tanksToday);
-    const remAir = Math.max(0, dailyCapAir - n.aircraftToday);
-    const remShi = Math.max(0, dailyCapShi - n.shipsToday);
-    const remMissiles = Math.max(0, dailyCapMissiles - n.missilesToday);
-    const remNukes = Math.max(0, dailyCapNukes - n.nukesToday);
-    const remSpies = Math.max(0, dailyCapSpies - n.spiesToday);
     const pct = (val: number, cap: number) =>
       cap === 0 ? `${val.toLocaleString()} (—)` : `${val.toLocaleString()} (${((val / cap) * 100).toFixed(1)}%)`;
     const militaryText = [
@@ -763,16 +747,6 @@ function nationEmbed(n: Nation, registeredDiscord?: string | null, note?: string
       `☢️ Nukes:    ${n.nukes.toLocaleString()}`,
     ].join('\n');
     embed.addFields({ name: 'Military', value: militaryText, inline: false });
-    const remainingBuysText = [
-      `🪖 Soldiers: ${remSol.toLocaleString()} left (${n.soldiersToday.toLocaleString()}/${dailyCapSol.toLocaleString()} used)`,
-      `⚔️ Tanks:    ${remTan.toLocaleString()} left (${n.tanksToday.toLocaleString()}/${dailyCapTan.toLocaleString()} used)`,
-      `✈️ Aircraft: ${remAir.toLocaleString()} left (${n.aircraftToday.toLocaleString()}/${dailyCapAir.toLocaleString()} used)`,
-      `🚢 Ships:    ${remShi.toLocaleString()} left (${n.shipsToday.toLocaleString()}/${dailyCapShi.toLocaleString()} used)`,
-      `🚀 Missiles: ${remMissiles.toLocaleString()} left (${n.missilesToday.toLocaleString()}/${dailyCapMissiles.toLocaleString()} used)`,
-      `☢️ Nukes:    ${remNukes.toLocaleString()} left (${n.nukesToday.toLocaleString()}/${dailyCapNukes.toLocaleString()} used)`,
-      `🕵️ Spies:    ${remSpies.toLocaleString()} left (${n.spiesToday.toLocaleString()}/${dailyCapSpies.toLocaleString()} used)`,
-    ].join('\n');
-    embed.addFields({ name: 'Remaining Buys (Today)', value: remainingBuysText, inline: false });
   }
 
   if (registeredDiscord) {
@@ -1738,27 +1712,34 @@ async function main(): Promise<void> {
     }
   };
 
-  const sendToAllWelcomeChannels = async (message: string): Promise<{ sent: number; skipped: number }> => {
+  const sendToAllWelcomeChannels = async (message: string, customMessage?: string): Promise<{ sent: number; skipped: number }> => {
     let sent = 0;
     let skipped = 0;
+    const trimmedMessage = message.trim();
+    const trimmedCustomMessage = (customMessage ?? '').trim();
     for (const guild of client.guilds.cache.values()) {
       const cfg = await db.getWelcomeConfig(BigInt(guild.id));
       const channelId = cfg.channel_id;
       let channel: TextChannel | null = null;
       if (channelId != null) {
         const configured = guild.channels.cache.get(String(channelId));
-        if (configured instanceof TextChannel) channel = configured;
+        if (configured?.isTextBased() && 'send' in configured) channel = configured as TextChannel;
       }
-      if (!channel && guild.systemChannel instanceof TextChannel) channel = guild.systemChannel;
+      if (!channel && guild.systemChannel?.isTextBased() && 'send' in guild.systemChannel) channel = guild.systemChannel as TextChannel;
       if (!channel) {
-        channel = guild.channels.cache.find((c): c is TextChannel => c instanceof TextChannel) ?? null;
+        channel = guild.channels.cache.find((c): c is TextChannel => c.isTextBased() && 'send' in c) ?? null;
       }
       if (!channel) {
         skipped += 1;
         continue;
       }
       try {
-        await channel.send(message);
+        const embedBody = trimmedCustomMessage || trimmedMessage;
+        const embed = new EmbedBuilder()
+          .setTitle('Announcement')
+          .setDescription(embedBody)
+          .setColor(0x5865F2);
+        await channel.send({ embeds: [embed] });
         sent += 1;
       } catch {
         skipped += 1;
@@ -1807,7 +1788,7 @@ async function main(): Promise<void> {
       if (!cfg.enabled) return;
       if (cfg.channel_id == null) return;
       const channel = member.guild.channels.cache.get(String(cfg.channel_id));
-      if (!(channel instanceof TextChannel)) return;
+      if (!channel?.isTextBased() || !('send' in channel)) return;
       const template = String(cfg.message || DEFAULT_WELCOME_MESSAGE);
       const isRegistered = (await db.getByDiscordId(BigInt(member.id))) !== null;
       const message = renderWelcomeMessage(
@@ -1817,7 +1798,7 @@ async function main(): Promise<void> {
         isRegistered,
         channel.toString(),
       );
-      await channel.send(message);
+      await (channel as TextChannel).send(message);
     } catch (err) {
       console.warn('Failed to send welcome message:', err);
     }
@@ -2487,7 +2468,10 @@ ${resourceLines}
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const ch = interaction.options.getChannel('channel', true);
-        await db.setWelcomeConfig(BigInt(interaction.guildId), { channelId: Number(ch.id) });
+        if (!('send' in ch)) {
+          return void interaction.reply({ content: 'Please choose a text-based channel.', flags: MessageFlags.Ephemeral });
+        }
+        await db.setWelcomeConfig(BigInt(interaction.guildId), { channelId: ch.id });
         return void interaction.reply({ content: `Welcome channel set to <#${ch.id}>.` });
       }
       if (commandName === 'welcome_enable') {
