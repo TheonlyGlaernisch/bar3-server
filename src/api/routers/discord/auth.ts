@@ -15,11 +15,8 @@ const DISCORD_REDIRECT_URI =
 const FLAME_BOT_API_URL = (process.env.FLAME_BOT_API_URL || 'http://localhost:8080').replace(/\/$/, '');
 const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || '';
 
-// After a successful OAuth2 login the browser is redirected here.
-// Set CLIENT_APP_URL to the root URL of the bar3-client SPA
-// (e.g. https://bar3-client.onrender.com).  When unset, the server redirects
-// to the relative path saved in the session (discordReturnTo) or '/' as a fallback.
-const CLIENT_APP_URL = (process.env.CLIENT_APP_URL || '').replace(/\/$/, '');
+// After a successful OAuth2 login the browser always redirects to a relative
+// path on this same origin (saved `discordReturnTo`, or '/' fallback).
 
 // Comma-separated Discord user IDs that bypass all command role requirements in
 // flame_bot (ADMIN_DISCORD_IDS).  When a logged-in user's Discord ID appears in
@@ -76,11 +73,6 @@ export function resolveDiscordAuth(req: Request): DiscordAuthContext | null {
     };
   }
   return null;
-}
-
-function appendQueryParam(url: string, key: string, value: string): string {
-  const separator = url.includes('?') ? '&' : '?';
-  return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
 }
 
 function buildDiscordRoles(flameBotRoles: Record<string, unknown>): DiscordAuthContext['discordRoles'] {
@@ -170,75 +162,6 @@ function normalizeReturnTo(input: unknown): string | null {
   return isSafeReturnTo(current) ? current : null;
 }
 
-const LOGIN_PAGE_HTML = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bar3 — Login</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      background: #1a1a2e;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      color: #e0e0e0;
-    }
-    .card {
-      background: #16213e;
-      border: 1px solid #0f3460;
-      border-radius: 12px;
-      padding: 48px 40px;
-      max-width: 400px;
-      width: 100%;
-      text-align: center;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-    }
-    h1 { font-size: 1.8rem; margin-bottom: 8px; color: #e0e0e0; }
-    p { color: #a0a0b0; margin-bottom: 32px; font-size: 0.95rem; }
-    .btn-discord {
-      display: inline-flex;
-      align-items: center;
-      gap: 12px;
-      background: #5865F2;
-      color: #fff;
-      text-decoration: none;
-      padding: 14px 28px;
-      border-radius: 8px;
-      font-size: 1rem;
-      font-weight: 600;
-      transition: background 0.2s;
-    }
-    .btn-discord:hover { background: #4752c4; }
-    .btn-discord svg { width: 22px; height: 22px; fill: #fff; }
-    .error {
-      background: #3d1515;
-      border: 1px solid #8b2121;
-      border-radius: 8px;
-      padding: 12px 16px;
-      margin-bottom: 24px;
-      color: #ff8080;
-      font-size: 0.9rem;
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>Bar3</h1>
-    <p>Sign in with Discord to continue.<br/>You must be a member of the Bar3 server.</p>
-    {{ERROR_BLOCK}}
-    <a href="{{DISCORD_LOGIN_HREF}}" class="btn-discord">
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.033.055a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
-      </svg>
-      Login with Discord
-    </a>
-  </div>
-</body>
-</html>`;
 
 const ACCESS_DENIED_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -284,31 +207,21 @@ const ACCESS_DENIED_HTML = `<!DOCTYPE html>
 
 /** GET /auth/login — show the login page */
 router.get('/login', (req: Request, res: Response) => {
-  const error = typeof req.query.error === 'string' ? req.query.error : null;
-  let errorBlock = '';
-  if (error === 'no_role') {
-    errorBlock = '<div class="error">You do not have the required role in the Bar3 Discord server.</div>';
-  } else if (error === 'auth_failed') {
-    errorBlock = '<div class="error">Discord authentication failed. Please try again.</div>';
-  } else if (error === 'no_code') {
-    errorBlock = '<div class="error">No authorization code received from Discord. Please try again.</div>';
-  } else if (error === 'role_check_failed') {
-    errorBlock = '<div class="error">Role verification is temporarily unavailable. Please try again in a moment.</div>';
-  }
+  const error = typeof req.query.error === 'string' ? req.query.error : '';
   const loginReturnTo = normalizeReturnTo(req.query.returnTo);
   if (loginReturnTo) {
     req.session.discordReturnTo = loginReturnTo;
   }
 
-  const discordLoginHref = loginReturnTo
-    ? `/auth/discord?returnTo=${encodeURIComponent(loginReturnTo)}`
-    : '/auth/discord';
-
-  const html = LOGIN_PAGE_HTML
-    .replace('{{ERROR_BLOCK}}', errorBlock)
-    .replace('{{DISCORD_LOGIN_HREF}}', discordLoginHref);
-  res.setHeader('Content-Type', 'text/html');
-  return res.send(html);
+  let destination = '/discord-login';
+  if (loginReturnTo) {
+    destination = `${destination}?returnTo=${encodeURIComponent(loginReturnTo)}`;
+  }
+  if (error) {
+    const separator = destination.includes('?') ? '&' : '?';
+    destination = `${destination}${separator}error=${encodeURIComponent(error)}`;
+  }
+  return res.redirect(destination);
 });
 
 /** GET /auth/discord — redirect to Discord OAuth2 authorization */
@@ -317,8 +230,7 @@ router.get('/discord', (req: Request, res: Response) => {
     return res.status(500).send('DISCORD_CLIENT_ID is not configured on this server.');
   }
   // If the SPA passes a ?returnTo= param (its current client-side route), save it in
-  // the session so the callback can append it to CLIENT_APP_URL after a successful login.
-  // This lets the SPA navigate the user back to where they were before the auth wall.
+  // the session so the callback can return the user to that path on this same origin.
   const returnTo = normalizeReturnTo(req.query.returnTo);
   if (returnTo) {
     req.session.discordReturnTo = returnTo;
@@ -409,23 +321,12 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
     }
 
     // Determine where to send the browser after a successful login.
-    // Priority: CLIENT_APP_URL env var > validated discordReturnTo > '/'
+    // Always stay on this same origin: validated discordReturnTo > '/'
     // Read discordReturnTo into a local variable now, before session
     // regeneration destroys the old session data.
     const savedReturnTo = normalizeReturnTo(req.session.discordReturnTo);
 
-    let destination: string;
-    if (CLIENT_APP_URL) {
-      destination = `${CLIENT_APP_URL}/auth/discord/callback`;
-      const safeSavedReturnTo = normalizeReturnTo(savedReturnTo);
-      if (safeSavedReturnTo) {
-        destination = appendQueryParam(destination, 'returnTo', safeSavedReturnTo);
-      }
-    } else if (savedReturnTo) {
-      destination = savedReturnTo;
-    } else {
-      destination = '/';
-    }
+    const destination: string = savedReturnTo || '/';
 
     // Regenerate the session before writing auth data to prevent session
     // fixation attacks and to ensure a fresh session is always issued after
