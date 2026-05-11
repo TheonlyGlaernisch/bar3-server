@@ -5,6 +5,13 @@ import { resolveDiscordAuth } from '../routers/discord/auth';
 const PUBLIC_PREFIXES = [
   '/',
   '/discord-login',
+  '/js',
+  '/css',
+  '/img',
+  '/fonts',
+  '/assets',
+  '/manifest.json',
+  '/robots.txt',
   '/auth/login',
   '/auth/discord',
   '/auth/session',
