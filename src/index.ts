@@ -236,10 +236,11 @@ app.use('/admin', adminRouter);
 // Discord authentication guard — protects every subsequent route and static file.
 app.use(requireDiscordAuth);
 
-const legacyUiPath = join(__dirname, '../..', 'public');
 const clientUiPath = join(__dirname, '../..', 'bar3-client', 'dist');
-const staticUiPath = existsSync(clientUiPath) ? clientUiPath : legacyUiPath;
-app.use(express.static(staticUiPath));
+if (!existsSync(clientUiPath)) {
+  console.warn(`[Warning] bar3-client build output not found at ${clientUiPath}. UI routes may return 503 until the client is built.`);
+}
+app.use(express.static(clientUiPath));
 
 // MongoDB Connection
 const connectDB = async () => {

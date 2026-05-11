@@ -24,4 +24,10 @@ module.exports = {
 
     devtool: 'source-map'
   },
+  chainWebpack: (config) => {
+    config.plugin('html').tap((args) => {
+      args[0].title = 'TRF owns this thing';
+      return args;
+    });
+  },
 }
