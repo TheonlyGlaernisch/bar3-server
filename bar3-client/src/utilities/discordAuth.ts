@@ -33,10 +33,6 @@ function parseSessionData(data: unknown): SessionData | null {
     bar3Server: sourceRoles.bar3_server === true,
     memberGuild: sourceRoles.member_guild === true,
   };
-  // Backward-compatibility fallback for older servers that don't return roles.
-  if (authenticated && !roles.bar3Client && !roles.bar3Server && !roles.memberGuild) {
-    roles.bar3Client = true;
-  }
   return {
     authenticated,
     isAdmin: source.isAdmin === true,

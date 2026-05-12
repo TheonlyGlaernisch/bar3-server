@@ -79,9 +79,9 @@ app.use(express.urlencoded({ extended: true }));
 type OriginMatcher = (origin: string) => boolean;
 type OriginRule = { raw: string; matches: OriginMatcher };
 
-const normalizeOriginRule = (value: string): string => value.trim().replace(/\/$/, '');
+const normalizeOriginString = (value: string): string => value.trim().replace(/\/$/, '');
 const buildOriginRule = (value: string): OriginRule => {
-  const normalized = normalizeOriginRule(value);
+  const normalized = normalizeOriginString(value);
   if (normalized.endsWith('*')) {
     const prefix = normalized.slice(0, -1);
     return { raw: normalized, matches: (origin: string) => origin.startsWith(prefix) };
@@ -99,7 +99,7 @@ const buildOriginRule = (value: string): OriginRule => {
 const CLIENT_APP_URL = process.env.CLIENT_APP_URL?.replace(/\/$/, '');
 const ALLOWED_ORIGIN_RULES: OriginRule[] = [];
 const addAllowedOriginRule = (value: string): void => {
-  const normalized = normalizeOriginRule(value);
+  const normalized = normalizeOriginString(value);
   if (!normalized) return;
   if (ALLOWED_ORIGIN_RULES.some((rule) => rule.raw === normalized)) return;
   ALLOWED_ORIGIN_RULES.push(buildOriginRule(normalized));
