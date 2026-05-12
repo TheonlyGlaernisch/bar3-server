@@ -25,9 +25,9 @@ export default new Vuex.Store({
     isAdmin: false,
     discordRoles: {
       verified: false,
-      bar3_client: false,
-      bar3_server: false,
-      member_guild: false,
+      bar3Client: false,
+      bar3Server: false,
+      memberGuild: false,
     },
     isBotAuthed: false
   },
@@ -43,8 +43,8 @@ export default new Vuex.Store({
     isDiscordAuthed: (state) => state.isDiscordAuthed,
     isAdmin: (state) => state.isAdmin,
     discordRoles: (state) => state.discordRoles,
-    hasClientRole: (state) => state.discordRoles.bar3_client || state.discordRoles.bar3_server,
-    hasMemberRole: (state) => state.discordRoles.member_guild,
+    hasClientRole: (state) => state.discordRoles.bar3Client || state.discordRoles.bar3Server,
+    hasMemberRole: (state) => state.discordRoles.memberGuild,
     isBotAuthed: (state) => state.isBotAuthed,
 
     sentMessages(state) {
@@ -138,15 +138,15 @@ export default new Vuex.Store({
     },
     setDiscordRoles(state, value: {
       verified?: boolean;
-      bar3_client?: boolean;
-      bar3_server?: boolean;
-      member_guild?: boolean;
+      bar3Client?: boolean;
+      bar3Server?: boolean;
+      memberGuild?: boolean;
     }) {
       state.discordRoles = {
         verified: value?.verified === true,
-        bar3_client: value?.bar3_client === true,
-        bar3_server: value?.bar3_server === true,
-        member_guild: value?.member_guild === true,
+        bar3Client: value?.bar3Client === true,
+        bar3Server: value?.bar3Server === true,
+        memberGuild: value?.memberGuild === true,
       };
     },
     setBotAuthed(state, value: boolean) {

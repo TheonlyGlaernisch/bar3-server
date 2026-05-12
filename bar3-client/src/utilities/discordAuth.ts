@@ -5,18 +5,18 @@ interface SessionData {
   isAdmin: boolean;
   roles: {
     verified: boolean;
-    bar3_client: boolean;
-    bar3_server: boolean;
-    member_guild: boolean;
+    bar3Client: boolean;
+    bar3Server: boolean;
+    memberGuild: boolean;
   };
 }
 
 const SESSION_STORAGE_KEY = 'bar3.discordSession';
 const DEFAULT_ROLES: SessionData['roles'] = {
   verified: false,
-  bar3_client: false,
-  bar3_server: false,
-  member_guild: false,
+  bar3Client: false,
+  bar3Server: false,
+  memberGuild: false,
 };
 
 function parseSessionData(data: unknown): SessionData | null {
@@ -29,13 +29,13 @@ function parseSessionData(data: unknown): SessionData | null {
   const authenticated = source.authenticated === true;
   const roles: SessionData['roles'] = {
     verified: sourceRoles.verified === true,
-    bar3_client: sourceRoles.bar3_client === true,
-    bar3_server: sourceRoles.bar3_server === true,
-    member_guild: sourceRoles.member_guild === true,
+    bar3Client: sourceRoles.bar3_client === true,
+    bar3Server: sourceRoles.bar3_server === true,
+    memberGuild: sourceRoles.member_guild === true,
   };
   // Backward-compatibility fallback for older servers that don't return roles.
-  if (authenticated && !roles.bar3_client && !roles.bar3_server && !roles.member_guild) {
-    roles.bar3_client = true;
+  if (authenticated && !roles.bar3Client && !roles.bar3Server && !roles.memberGuild) {
+    roles.bar3Client = true;
   }
   return {
     authenticated,
