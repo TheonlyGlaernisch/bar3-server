@@ -13,6 +13,7 @@ declare module 'express-session' {
       verified: boolean;
       bar3_client: boolean;
       bar3_server: boolean;
+      member_guild: boolean;
     };
     /** URL the user was trying to reach before being redirected to login. */
     discordReturnTo?: string;

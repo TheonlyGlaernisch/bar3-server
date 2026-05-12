@@ -43,6 +43,7 @@ export type DiscordAuthContext = {
     verified: boolean;
     bar3_client: boolean;
     bar3_server: boolean;
+    member_guild: boolean;
   };
 };
 
@@ -69,6 +70,7 @@ export function resolveDiscordAuth(req: Request): DiscordAuthContext | null {
         verified: req.session.discordRoles?.verified === true,
         bar3_client: req.session.discordRoles?.bar3_client === true,
         bar3_server: req.session.discordRoles?.bar3_server === true,
+        member_guild: req.session.discordRoles?.member_guild === true,
       },
     };
   }
@@ -80,6 +82,7 @@ function buildDiscordRoles(flameBotRoles: Record<string, unknown>): DiscordAuthC
     verified: flameBotRoles.verified === true,
     bar3_client: flameBotRoles.bar3_client === true,
     bar3_server: flameBotRoles.bar3_server === true,
+    member_guild: flameBotRoles.member_guild === true,
   };
 }
 
@@ -311,9 +314,10 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       return res.redirect('/auth/login?error=role_check_failed');
     }
 
-    // Grant access only to users holding the bar3_client role.
+    // Grant access to users with bar3_client, bar3_server, or configured member-guild role.
     const discordRoles = buildDiscordRoles(flameBotRoles);
-    const hasAccess: boolean = discordRoles.bar3_client;
+    const hasAccess: boolean =
+      discordRoles.bar3_client || discordRoles.bar3_server || discordRoles.member_guild;
 
     if (!hasAccess) {
       return res.send(ACCESS_DENIED_HTML);

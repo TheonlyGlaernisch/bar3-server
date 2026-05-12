@@ -48,7 +48,8 @@ curl -H "X-API-Key: <your_api_key>" http://localhost:8080/api/roles/123456789
   "roles": {
     "verified":    true,
     "bar3_client": true,
-    "bar3_server": false
+    "bar3_server": false,
+    "member_guild": false
   }
 }
 ```
@@ -58,6 +59,7 @@ curl -H "X-API-Key: <your_api_key>" http://localhost:8080/api/roles/123456789
 | `roles.verified` | Whether the user holds the `VERIFIED_ROLE_ID` Discord role |
 | `roles.bar3_client` | Whether the user holds the `BAR3_CLIENT_ROLE_ID` Discord role |
 | `roles.bar3_server` | Whether the user holds the `BAR3_SERVER_ROLE_ID` Discord role |
+| `roles.member_guild` | Whether the user holds `MEMBER_ROLE_ID` in `MEMBER_GUILD_ID` |
 
 Error responses: `401 Unauthorized` (missing/wrong key), `400 Bad Request` (invalid ID),
 `503 Service Unavailable` (bot not yet ready).
@@ -119,6 +121,8 @@ cp .env.example .env
 | `VERIFIED_ROLE_ID` | ☑️ | Role ID granted after a successful `/register` |
 | `BAR3_CLIENT_ROLE_ID` | ☑️ | bar3 client role ID |
 | `BAR3_SERVER_ROLE_ID` | ☑️ | bar3 server role ID |
+| `MEMBER_GUILD_ID` | ☑️ | Optional guild ID for an extra nation/alliance access role check (must be paired with `MEMBER_ROLE_ID`) |
+| `MEMBER_ROLE_ID` | ☑️ | Optional role ID used with `MEMBER_GUILD_ID` for the extra nation/alliance access check |
 | `API_KEY` | ☑️ | Secret key for the bar3 HTTP API; if unset the API server does not start |
 | `API_PORT` | ☑️ | Port for the bar3 HTTP API (default: `8080`) |
 | `ADMIN_DISCORD_IDS` | ☑️ | Comma-separated Discord IDs that bypass role checks |

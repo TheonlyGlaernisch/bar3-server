@@ -80,6 +80,8 @@ export interface RoleConfig {
   verifiedRoleId?: string | bigint | null;
   bar3ClientRoleId?: string | bigint | null;
   bar3ServerRoleId?: string | bigint | null;
+  memberGuildId?: string | bigint | null;
+  memberRoleId?: string | bigint | null;
 }
 
 export interface GuildInfo {
@@ -90,6 +92,7 @@ export interface GuildInfo {
 }
 
 export type GuildGetter = () => Guild | null;
+export type GuildByIdGetter = (guildId: string) => Guild | null;
 export type GuildsGetter = () => Guild[];
 export type SendToWelcomeFn = (message: string, customMessage?: string) => Promise<{ sent: number; skipped: number }>;
 export type CommandUsageGetter = () => Record<string, number>;
@@ -98,6 +101,7 @@ export interface CreateAppOptions {
   guildGetter: GuildGetter;
   apiKey: string;
   roleConfig?: RoleConfig;
+  guildByIdGetter?: GuildByIdGetter;
   guildsGetter?: GuildsGetter;
   sendToWelcomeFn?: SendToWelcomeFn;
   commandUsageGetter?: CommandUsageGetter;
@@ -120,6 +124,7 @@ export interface AuthSession {
     verified: boolean;
     bar3_client: boolean;
     bar3_server: boolean;
+    member_guild: boolean;
   };
 }
 
@@ -149,19 +154,12 @@ function _emptyDiscordRoles(): DiscordRoles {
     verified: false,
     bar3_client: false,
     bar3_server: false,
+    member_guild: false,
   };
 }
 
-async function _resolveDiscordRoles(
-  discordId: string,
-  guildGetter: GuildGetter,
-  roleConfig: RoleConfig
-): Promise<DiscordRoles> {
-  const roles = _emptyDiscordRoles();
-  if (!/^\d+$/.test(discordId)) return roles;
-  const guild = guildGetter();
-  if (!guild) return roles;
-
+async function _getGuildMember(guild: Guild | null, discordId: string): Promise<GuildMember | null> {
+  if (!guild) return null;
   let member: GuildMember | null = guild.members.cache.get(discordId) ?? null;
   if (!member) {
     try {
@@ -170,17 +168,42 @@ async function _resolveDiscordRoles(
       member = null;
     }
   }
-  if (!member) return roles;
+  return member;
+}
 
-  const memberRoleIds = new Set(member.roles.cache.keys());
-  if (roleConfig.verifiedRoleId && memberRoleIds.has(roleConfig.verifiedRoleId.toString())) {
-    roles.verified = true;
+async function _resolveDiscordRoles(
+  discordId: string,
+  guildGetter: GuildGetter,
+  roleConfig: RoleConfig,
+  guildByIdGetter?: GuildByIdGetter,
+): Promise<DiscordRoles> {
+  const roles = _emptyDiscordRoles();
+  if (!/^\d+$/.test(discordId)) return roles;
+  const guild = guildGetter();
+  const primaryMember = await _getGuildMember(guild, discordId);
+  if (primaryMember) {
+    const memberRoleIds = new Set(primaryMember.roles.cache.keys());
+    if (roleConfig.verifiedRoleId && memberRoleIds.has(roleConfig.verifiedRoleId.toString())) {
+      roles.verified = true;
+    }
+    if (roleConfig.bar3ClientRoleId && memberRoleIds.has(roleConfig.bar3ClientRoleId.toString())) {
+      roles.bar3_client = true;
+    }
+    if (roleConfig.bar3ServerRoleId && memberRoleIds.has(roleConfig.bar3ServerRoleId.toString())) {
+      roles.bar3_server = true;
+    }
   }
-  if (roleConfig.bar3ClientRoleId && memberRoleIds.has(roleConfig.bar3ClientRoleId.toString())) {
-    roles.bar3_client = true;
-  }
-  if (roleConfig.bar3ServerRoleId && memberRoleIds.has(roleConfig.bar3ServerRoleId.toString())) {
-    roles.bar3_server = true;
+
+  if (roleConfig.memberGuildId && roleConfig.memberRoleId) {
+    const memberGuildId = roleConfig.memberGuildId.toString();
+    const memberGuild =
+      guild && guild.id === memberGuildId
+        ? guild
+        : (guildByIdGetter ? guildByIdGetter(memberGuildId) : null);
+    const memberGuildMember = await _getGuildMember(memberGuild, discordId);
+    if (memberGuildMember?.roles?.cache.has(roleConfig.memberRoleId.toString())) {
+      roles.member_guild = true;
+    }
   }
 
   return roles;
@@ -310,6 +333,7 @@ export function createApp(options: CreateAppOptions): Application {
     guildGetter,
     apiKey,
     roleConfig = {},
+    guildByIdGetter,
     guildsGetter,
     sendToWelcomeFn,
     commandUsageGetter,
@@ -368,7 +392,7 @@ export function createApp(options: CreateAppOptions): Application {
       res.status(503).json({ error: 'Bot not ready' });
       return;
     }
-    const roles = await _resolveDiscordRoles(discordIdStr, guildGetter, roleConfig);
+    const roles = await _resolveDiscordRoles(discordIdStr, guildGetter, roleConfig, guildByIdGetter);
 
     res.status(200).json({ discord_id: discordIdStr, roles });
   });
@@ -509,9 +533,9 @@ export function createApp(options: CreateAppOptions): Application {
       }
 
       // Check roles via bot's guild membership cache
-      const discordRoles = await _resolveDiscordRoles(me.id, guildGetter, roleConfig);
+      const discordRoles = await _resolveDiscordRoles(me.id, guildGetter, roleConfig, guildByIdGetter);
 
-      const hasAccess = discordRoles.bar3_client || discordRoles.bar3_server;
+      const hasAccess = discordRoles.bar3_client || discordRoles.bar3_server || discordRoles.member_guild;
       if (!hasAccess) {
         res.send(_ACCESS_DENIED_HTML);
         return;

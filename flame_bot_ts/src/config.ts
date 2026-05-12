@@ -73,6 +73,8 @@ export const DISCORD_ENABLE_GUILD_MEMBERS_INTENT: boolean = _optionalBool('DISCO
 export const VERIFIED_ROLE_ID: string | null = _optionalSnowflake('VERIFIED_ROLE_ID');
 export const BAR3_CLIENT_ROLE_ID: string | null = _optionalSnowflake('BAR3_CLIENT_ROLE_ID');
 export const BAR3_SERVER_ROLE_ID: string | null = _optionalSnowflake('BAR3_SERVER_ROLE_ID');
+export const MEMBER_GUILD_ID: string | null = _optionalSnowflake('MEMBER_GUILD_ID');
+export const MEMBER_ROLE_ID: string | null = _optionalSnowflake('MEMBER_ROLE_ID');
 
 const _MONGODB_PASSWORD: string = _require('MONGODB_PASSWORD');
 export const MONGODB_URI: string =
@@ -88,6 +90,12 @@ export const API_PORT: number = parseInt(process.env['API_PORT'] || '8080', 10);
 if (API_KEY && GUILD_ID === null) {
   throw new Error(
     "Environment variable 'GUILD_ID' is required when 'API_KEY' is set."
+  );
+}
+
+if ((MEMBER_GUILD_ID && !MEMBER_ROLE_ID) || (!MEMBER_GUILD_ID && MEMBER_ROLE_ID)) {
+  throw new Error(
+    "Environment variables 'MEMBER_GUILD_ID' and 'MEMBER_ROLE_ID' must either both be set or both be unset."
   );
 }
 
