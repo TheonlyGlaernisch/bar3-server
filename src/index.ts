@@ -74,29 +74,59 @@ app.use(express.urlencoded({ extended: true }));
 // credentialled cross-origin access.  If neither is set the middleware falls
 // back to wildcard (*) which is suitable for local development but
 // incompatible with credentialled requests.
+// CLIENT_ORIGIN entries can be exact origins (https://host), wildcard prefixes
+// (app://*), or app:// prefixes for packaged Electron renderers.
+type OriginMatcher = (origin: string) => boolean;
+type OriginRule = { raw: string; matches: OriginMatcher };
+
+const normalizeOriginRule = (value: string): string => value.trim().replace(/\/$/, '');
+const buildOriginRule = (value: string): OriginRule => {
+  const normalized = normalizeOriginRule(value);
+  if (normalized.endsWith('*')) {
+    const prefix = normalized.slice(0, -1);
+    return { raw: normalized, matches: (origin: string) => origin.startsWith(prefix) };
+  }
+  // Convenience for Electron packaged apps where origins look like app://...
+  if (normalized === 'app://' || normalized === 'app://*') {
+    return { raw: 'app://*', matches: (origin: string) => origin.startsWith('app://') };
+  }
+  if (normalized.startsWith('app://')) {
+    return { raw: normalized, matches: (origin: string) => origin.startsWith(normalized) };
+  }
+  return { raw: normalized, matches: (origin: string) => origin === normalized };
+};
+
 const CLIENT_APP_URL = process.env.CLIENT_APP_URL?.replace(/\/$/, '');
-const ALLOWED_ORIGINS: Set<string> = new Set(
-  (process.env.CLIENT_ORIGIN || '')
-    .split(',')
-    .map((o) => o.trim())
-    .filter(Boolean)
-);
+const ALLOWED_ORIGIN_RULES: OriginRule[] = [];
+const addAllowedOriginRule = (value: string): void => {
+  const normalized = normalizeOriginRule(value);
+  if (!normalized) return;
+  if (ALLOWED_ORIGIN_RULES.some((rule) => rule.raw === normalized)) return;
+  ALLOWED_ORIGIN_RULES.push(buildOriginRule(normalized));
+};
+(process.env.CLIENT_ORIGIN || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean)
+  .forEach(addAllowedOriginRule);
 // If CLIENT_APP_URL is set, that origin must always be allowed so that the
 // client SPA can make credentialled cross-origin requests (e.g. /auth/session).
 // This means you only need to set CLIENT_APP_URL; setting CLIENT_ORIGIN
 // separately is optional and additive.
 if (CLIENT_APP_URL) {
-  ALLOWED_ORIGINS.add(CLIENT_APP_URL);
+  addAllowedOriginRule(CLIENT_APP_URL);
 }
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const origin = req.headers.origin;
-  if (origin && ALLOWED_ORIGINS.has(origin)) {
+  const originAllowed = typeof origin === 'string' &&
+    ALLOWED_ORIGIN_RULES.some((rule) => rule.matches(origin));
+  if (originAllowed && origin) {
     // Reflect the exact origin back and allow credentials (cookies/auth headers)
     res.header('Access-Control-Allow-Origin', origin);
     res.header('Access-Control-Allow-Credentials', 'true');
     res.header('Vary', 'Origin');
-  } else if (ALLOWED_ORIGINS.size === 0) {
+  } else if (ALLOWED_ORIGIN_RULES.length === 0) {
     // No explicit allow-list configured — permissive fallback for development.
     // Note: wildcard is incompatible with credentials; fine for non-credentialled dev use.
     res.header('Access-Control-Allow-Origin', '*');

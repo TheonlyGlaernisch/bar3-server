@@ -74,50 +74,76 @@ import Vue from 'vue';
       return this.$store.getters.isAdmin;
     }
 
+    get hasClientRole(): boolean {
+      return this.$store.getters.hasClientRole;
+    }
+
+    get hasMemberRole(): boolean {
+      return this.$store.getters.hasMemberRole;
+    }
 
     get items(): SideBarItem[] {
-      const base: SideBarItem[] = [
-  {
-    title: 'Dashboard',
-    icon: 'mdi-view-dashboard',
-    path: '/dashboard',
-  },
-  {
-    title: 'Automation',
-    icon: 'mdi-robot-outline',
-    path: '/automation',
-  },
-  {
-    title: 'Configuration',
-    icon: 'mdi-cog',
-    path: '/config',
-  },
-  {
-    title: 'Compose',
-    icon: 'mdi-email-edit',
-    path: '/message-creator',
-  },
-  {
-    title: 'Analytics',
-    icon: 'mdi-chart-line',
-    path: '/analytics',
-  },
-  {
-    title: 'Account',
-    icon: 'mdi-account-circle',
-    path: '/account',
-  },
-  {
-    title: 'About',
-    icon: 'mdi-information',
-    path: '/about',
-  },
-  {
-    title: 'Help',
-    icon: 'mdi-help-circle',
-    path: '/help',
-  },
-];
+      const base: SideBarItem[] = [];
+      if (this.hasClientRole) {
+        base.push(
+          {
+            title: 'Dashboard',
+            icon: 'mdi-view-dashboard',
+            path: '/dashboard',
+          },
+          {
+            title: 'Automation',
+            icon: 'mdi-robot-outline',
+            path: '/automation',
+          },
+          {
+            title: 'Configuration',
+            icon: 'mdi-cog',
+            path: '/config',
+          },
+          {
+            title: 'Compose',
+            icon: 'mdi-email-edit',
+            path: '/message-creator',
+          },
+          {
+            title: 'Analytics',
+            icon: 'mdi-chart-line',
+            path: '/analytics',
+          },
+          {
+            title: 'Account',
+            icon: 'mdi-account-circle',
+            path: '/account',
+          },
+        );
+      }
+      if (this.hasMemberRole) {
+        base.push(
+          {
+            title: 'Nation',
+            icon: 'mdi-flag',
+            path: '/nation',
+          },
+          {
+            title: 'Alliance',
+            icon: 'mdi-shield-account',
+            path: '/alliance',
+          },
+        );
+      }
+      base.push(
+        {
+          title: 'About',
+          icon: 'mdi-information',
+          path: '/about',
+        },
+        {
+          title: 'Help',
+          icon: 'mdi-help-circle',
+          path: '/help',
+        },
+      );
       if (this.isAdmin) {
         base.push({
           title: 'Bot',

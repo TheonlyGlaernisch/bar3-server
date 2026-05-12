@@ -3,10 +3,73 @@ import { AUTH_BASE_URL, normalizeReturnTo } from '@/utilities/serverUrls';
 interface SessionData {
   authenticated: boolean;
   isAdmin: boolean;
+  roles: {
+    verified: boolean;
+    bar3_client: boolean;
+    bar3_server: boolean;
+    member_guild: boolean;
+  };
+}
+
+const SESSION_STORAGE_KEY = 'bar3.discordSession';
+const DEFAULT_ROLES: SessionData['roles'] = {
+  verified: false,
+  bar3_client: false,
+  bar3_server: false,
+  member_guild: false,
+};
+
+function parseSessionData(data: unknown): SessionData | null {
+  if (!data || typeof data !== 'object') return null;
+  const source = data as Record<string, unknown>;
+  const sourceRoles =
+    source.roles && typeof source.roles === 'object'
+      ? (source.roles as Record<string, unknown>)
+      : {};
+  const authenticated = source.authenticated === true;
+  const roles: SessionData['roles'] = {
+    verified: sourceRoles.verified === true,
+    bar3_client: sourceRoles.bar3_client === true,
+    bar3_server: sourceRoles.bar3_server === true,
+    member_guild: sourceRoles.member_guild === true,
+  };
+  // Backward-compatibility fallback for older servers that don't return roles.
+  if (authenticated && !roles.bar3_client && !roles.bar3_server && !roles.member_guild) {
+    roles.bar3_client = true;
+  }
+  return {
+    authenticated,
+    isAdmin: source.isAdmin === true,
+    roles,
+  };
+}
+
+function readSessionCache(): SessionData | null {
+  if (typeof window === 'undefined' || !window.sessionStorage) return null;
+  try {
+    const raw = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    return parseSessionData(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionCache(value: SessionData | null): void {
+  if (typeof window === 'undefined' || !window.sessionStorage) return;
+  try {
+    if (value) {
+      window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(value));
+      return;
+    }
+    window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+  } catch {
+    // ignore storage write errors
+  }
 }
 
 // In-memory cache so the server is only contacted once per page load.
-let sessionCache: SessionData | null = null;
+let sessionCache: SessionData | null = readSessionCache();
 
 export const discordAuth = {
   /**
@@ -38,8 +101,14 @@ export const discordAuth = {
       });
       if (res.ok) {
         const data = await res.json();
-        const roles = Array.isArray(data?.roles) ? data.roles : [];
-        const roleBasedAdmin = roles.some((role: unknown) => {
+        const payload = data as Record<string, unknown>;
+        const parsed = parseSessionData(data) || {
+          authenticated: false,
+          isAdmin: false,
+          roles: { ...DEFAULT_ROLES },
+        };
+        const legacyRoles = Array.isArray(payload.roles) ? payload.roles : [];
+        const roleBasedAdmin = legacyRoles.some((role: unknown) => {
           if (typeof role === 'string') return role.toLowerCase() === 'admin';
           if (role && typeof role === 'object' && 'name' in role) {
             const name = (role as { name?: unknown }).name;
@@ -49,17 +118,28 @@ export const discordAuth = {
         });
 
         sessionCache = {
-          authenticated: data?.authenticated === true,
-          isAdmin: data?.isAdmin === true || roleBasedAdmin,
+          authenticated: parsed.authenticated,
+          isAdmin: parsed.isAdmin || roleBasedAdmin,
+          roles: parsed.roles,
         };
+        writeSessionCache(sessionCache);
       } else if (res.status === 429) {
-        // Preserve current auth state on temporary rate-limit responses.
-        sessionCache = sessionCache || { authenticated: false, isAdmin: false };
+        // Preserve prior auth state on temporary rate-limit responses.
+        sessionCache = readSessionCache() || {
+          authenticated: false,
+          isAdmin: false,
+          roles: { ...DEFAULT_ROLES },
+        };
       } else {
-        sessionCache = { authenticated: false, isAdmin: false };
+        sessionCache = { authenticated: false, isAdmin: false, roles: { ...DEFAULT_ROLES } };
+        writeSessionCache(null);
       }
     } catch {
-      sessionCache = { authenticated: false, isAdmin: false };
+      sessionCache = readSessionCache() || {
+        authenticated: false,
+        isAdmin: false,
+        roles: { ...DEFAULT_ROLES },
+      };
     }
     return sessionCache;
   },
@@ -77,6 +157,7 @@ export const discordAuth = {
    */
   logout(): void {
     sessionCache = null;
+    writeSessionCache(null);
     window.location.href = `${AUTH_BASE_URL}/auth/logout`;
   },
 };

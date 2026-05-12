@@ -23,6 +23,12 @@ export default new Vuex.Store({
     isLoggedIn: !!localStorage.getItem('apiKey'),
     isDiscordAuthed: false,
     isAdmin: false,
+    discordRoles: {
+      verified: false,
+      bar3_client: false,
+      bar3_server: false,
+      member_guild: false,
+    },
     isBotAuthed: false
   },
   getters: {
@@ -36,6 +42,9 @@ export default new Vuex.Store({
     isLoggedIn: (state) => state.isLoggedIn,
     isDiscordAuthed: (state) => state.isDiscordAuthed,
     isAdmin: (state) => state.isAdmin,
+    discordRoles: (state) => state.discordRoles,
+    hasClientRole: (state) => state.discordRoles.bar3_client || state.discordRoles.bar3_server,
+    hasMemberRole: (state) => state.discordRoles.member_guild,
     isBotAuthed: (state) => state.isBotAuthed,
 
     sentMessages(state) {
@@ -126,6 +135,19 @@ export default new Vuex.Store({
     },
     setIsAdmin(state, value: boolean) {
       state.isAdmin = value;
+    },
+    setDiscordRoles(state, value: {
+      verified?: boolean;
+      bar3_client?: boolean;
+      bar3_server?: boolean;
+      member_guild?: boolean;
+    }) {
+      state.discordRoles = {
+        verified: value?.verified === true,
+        bar3_client: value?.bar3_client === true,
+        bar3_server: value?.bar3_server === true,
+        member_guild: value?.member_guild === true,
+      };
     },
     setBotAuthed(state, value: boolean) {
       state.isBotAuthed = value;

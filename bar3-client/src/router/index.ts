@@ -11,6 +11,8 @@ import Help from '@/views/Help.vue'
 import DiscordLogin from '@/views/DiscordLogin.vue'
 import DiscordCallback from '@/views/DiscordCallback.vue'
 import BotPanel from '@/views/BotPanel.vue'
+import Nation from '@/views/Nation.vue'
+import Alliance from '@/views/Alliance.vue'
 import { discordAuth } from '@/utilities/discordAuth'
 import { normalizeReturnTo } from '@/utilities/serverUrls'
 
@@ -20,12 +22,14 @@ const DISCORD_PUBLIC_PATHS = ['/discord-login', '/auth/discord/callback'];
 
 const routes: Array<RouteConfig> = [
   { path: '/', redirect: '/dashboard' },
-  { path: '/dashboard', name: 'Dashboard', component: Home },
-  { path: '/automation', name: 'Automation', component: MessageCreator },
-  { path: '/config', name: 'Configuration', component: Configuration },
-  { path: '/message-creator', name: 'Message Creator', component: MessageCreator },
-  { path: '/analytics', name: 'Analytics', component: Analytics },
-  { path: '/account', name: 'Account', component: AccountManager },
+  { path: '/dashboard', name: 'Dashboard', component: Home, meta: { requiresClientAccess: true } },
+  { path: '/automation', name: 'Automation', component: MessageCreator, meta: { requiresClientAccess: true } },
+  { path: '/config', name: 'Configuration', component: Configuration, meta: { requiresClientAccess: true } },
+  { path: '/message-creator', name: 'Message Creator', component: MessageCreator, meta: { requiresClientAccess: true } },
+  { path: '/analytics', name: 'Analytics', component: Analytics, meta: { requiresClientAccess: true } },
+  { path: '/account', name: 'Account', component: AccountManager, meta: { requiresClientAccess: true } },
+  { path: '/nation', name: 'Nation', component: Nation, meta: { requiresMemberAccess: true } },
+  { path: '/alliance', name: 'Alliance', component: Alliance, meta: { requiresMemberAccess: true } },
   { path: '/about', name: 'About', component: About },
   { path: '/help', name: 'Help', component: Help },
   { path: '/discord-login', name: 'Discord Login', component: DiscordLogin },
@@ -44,17 +48,29 @@ router.beforeEach(async (to, _from, next) => {
     return;
   }
 
-  const authed = await discordAuth.isAuthed();
-  if (!authed) {
+  const session = await discordAuth.getSession();
+  if (!session.authenticated) {
     next(`/discord-login?returnTo=${encodeURIComponent(to.fullPath)}`);
     return;
   }
 
-  // Bot panel access is controlled by the Discord session admin flag.
+  const hasClientAccess = session.roles.bar3_client || session.roles.bar3_server;
+  const hasMemberAccess = session.roles.member_guild;
+
+  if (to.meta?.requiresClientAccess && !hasClientAccess) {
+    next(hasMemberAccess ? '/nation' : '/about');
+    return;
+  }
+
+  if (to.meta?.requiresMemberAccess && !hasMemberAccess) {
+    next(hasClientAccess ? '/dashboard' : '/about');
+    return;
+  }
+
+  // Bot panel access is controlled by ADMIN_DISCORD_IDS.
   if (to.meta?.requiresBotAuth) {
-    const session = await discordAuth.getSession();
     if (!session.isAdmin) {
-      next('/dashboard');
+      next(hasClientAccess ? '/dashboard' : (hasMemberAccess ? '/nation' : '/about'));
       return;
     }
   }
