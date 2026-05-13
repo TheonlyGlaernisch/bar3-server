@@ -35,7 +35,6 @@ function parseAllowedReturnToUrl(value: string): AllowedReturnToUrl | null {
 
 function parseConfiguredReturnToAllowlist(): AllowedReturnToUrl[] {
   const raw = [
-    'http://localhost:9876/callback',
     ...(process.env.DISCORD_RETURN_TO_ALLOWLIST || '')
       .split(',')
       .map((value) => value.trim())
@@ -204,9 +203,9 @@ function isSafeReturnTo(url: unknown): url is string {
 function isAllowedAbsoluteReturnTo(url: URL): boolean {
   return ALLOWED_ABSOLUTE_RETURN_TO.some((allowed) => {
     if (url.origin !== allowed.origin) return false;
-    const path = normalizePathPrefix(url.pathname);
+    const normalizedPath = normalizePathPrefix(url.pathname);
     if (allowed.pathPrefix === '/') return true;
-    return path === allowed.pathPrefix || path.startsWith(`${allowed.pathPrefix}/`);
+    return normalizedPath === allowed.pathPrefix || normalizedPath.startsWith(`${allowed.pathPrefix}/`);
   });
 }
 
