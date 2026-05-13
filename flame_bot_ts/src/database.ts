@@ -13,7 +13,7 @@ export interface RegistrationDoc {
 export interface GuildConfigDoc {
   guild_id: string;
   slots_alliances?: number[];
-  gov_roles?: Record<string, number | null>;
+  gov_roles?: Record<string, string | null>;
   grant_channel_id?: number | null;
   alliance_id?: number | null;
   welcome_enabled?: boolean;
@@ -133,18 +133,18 @@ export class Database {
 
   // Gov-role config helpers ---------------------------------------------------
 
-  async getGovRoles(guildId: bigint): Promise<Record<GovRoleKey, number | null>> {
+  async getGovRoles(guildId: bigint): Promise<Record<GovRoleKey, string | null>> {
     const doc = await this._guildConfig.findOne({ guild_id: guildId.toString() }, { projection: { _id: 0 } });
     const stored = (doc?.gov_roles) || {};
-    const result: Partial<Record<GovRoleKey, number | null>> = {};
+    const result: Partial<Record<GovRoleKey, string | null>> = {};
     for (const k of GOV_ROLE_KEYS) {
       const val = stored[k];
-      result[k] = val != null ? Number(val) : null;
+      result[k] = val != null ? String(val) : null;
     }
-    return result as Record<GovRoleKey, number | null>;
+    return result as Record<GovRoleKey, string | null>;
   }
 
-  async setGovRoles(guildId: bigint, roles: Record<GovRoleKey, number | null>): Promise<void> {
+  async setGovRoles(guildId: bigint, roles: Record<GovRoleKey, string | null>): Promise<void> {
     await this._guildConfig.updateOne(
       { guild_id: guildId.toString() },
       { $set: { guild_id: guildId.toString(), gov_roles: roles } },
