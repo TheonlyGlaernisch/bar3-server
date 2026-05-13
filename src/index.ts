@@ -145,8 +145,15 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-const faviconPath = join(process.cwd(), 'src', 'favicon.ico');
-const favicon = existsSync(faviconPath) ? readFileSync(faviconPath) : null;
+const faviconPath = join(__dirname, '../..', 'src', 'favicon.ico');
+let favicon: Buffer | null = null;
+try {
+  if (existsSync(faviconPath)) {
+    favicon = readFileSync(faviconPath);
+  }
+} catch (error) {
+  console.warn('[Warning] Failed to load favicon.ico:', error);
+}
 app.get('/favicon.ico', (_req: Request, res: Response) => {
   if (!favicon) {
     res.status(204).end();
