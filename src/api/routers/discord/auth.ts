@@ -199,6 +199,14 @@ function isSafeReturnTo(url: unknown): url is string {
 }
 
 function isAllowedAbsoluteReturnTo(url: URL): boolean {
+  const hostname = url.hostname.toLowerCase();
+  const normalizedHostname =
+    hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+  const isLoopback =
+    (url.protocol === 'http:' || url.protocol === 'https:') &&
+    (normalizedHostname === 'localhost' || normalizedHostname === '127.0.0.1' || normalizedHostname === '::1');
+  if (isLoopback) return true;
+
   return ALLOWED_ABSOLUTE_RETURN_TO.some((allowed) => {
     if (url.origin !== allowed.origin) return false;
     const normalizedPath = normalizePathPrefix(url.pathname);
