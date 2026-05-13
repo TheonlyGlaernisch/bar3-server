@@ -200,9 +200,12 @@ function isSafeReturnTo(url: unknown): url is string {
 
 function isAllowedAbsoluteReturnTo(url: URL): boolean {
   const loopbackHost = url.hostname.toLowerCase();
+  const normalizedLoopbackHost = loopbackHost.replace(/^\[(.*)\]$/, '$1');
   const isLoopback =
     (url.protocol === 'http:' || url.protocol === 'https:') &&
-    (loopbackHost === 'localhost' || loopbackHost === '127.0.0.1' || loopbackHost === '::1');
+    (normalizedLoopbackHost === 'localhost' ||
+      normalizedLoopbackHost === '127.0.0.1' ||
+      normalizedLoopbackHost === '::1');
   if (isLoopback) return true;
 
   return ALLOWED_ABSOLUTE_RETURN_TO.some((allowed) => {
