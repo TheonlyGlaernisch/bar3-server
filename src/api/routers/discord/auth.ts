@@ -8,6 +8,57 @@ const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || '';
 const DISCORD_REDIRECT_URI =
   process.env.DISCORD_REDIRECT_URI || 'http://localhost:3000/auth/discord/callback';
+const CLIENT_APP_URL = (process.env.CLIENT_APP_URL || '').trim().replace(/\/+$/, '');
+
+type AllowedReturnToUrl = {
+  origin: string;
+  pathPrefix: string;
+};
+
+function normalizePathPrefix(pathname: string): string {
+  if (!pathname || pathname === '/') return '/';
+  return pathname.replace(/\/+$/, '');
+}
+
+function parseAllowedReturnToUrl(value: string): AllowedReturnToUrl | null {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return {
+      origin: parsed.origin,
+      pathPrefix: normalizePathPrefix(parsed.pathname),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseConfiguredReturnToAllowlist(): AllowedReturnToUrl[] {
+  const raw = [
+    'http://localhost:9876/callback',
+    ...(process.env.DISCORD_RETURN_TO_ALLOWLIST || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+  ];
+  if (CLIENT_APP_URL) {
+    raw.push(CLIENT_APP_URL);
+  }
+
+  const seen = new Set<string>();
+  const allowed: AllowedReturnToUrl[] = [];
+  for (const candidate of raw) {
+    const parsed = parseAllowedReturnToUrl(candidate);
+    if (!parsed) continue;
+    const key = `${parsed.origin}${parsed.pathPrefix}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    allowed.push(parsed);
+  }
+  return allowed;
+}
+
+const ALLOWED_ABSOLUTE_RETURN_TO = parseConfiguredReturnToAllowlist();
 
 // flame_bot HTTP API — used to check whether the user holds the bar3_server role.
 // Set FLAME_BOT_API_URL to the base URL of the running flame_bot (e.g. http://localhost:8080)
@@ -15,8 +66,9 @@ const DISCORD_REDIRECT_URI =
 const FLAME_BOT_API_URL = (process.env.FLAME_BOT_API_URL || 'http://localhost:8080').replace(/\/$/, '');
 const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || '';
 
-// After a successful OAuth2 login the browser always redirects to a relative
-// path on this same origin (saved `discordReturnTo`, or '/' fallback).
+// After a successful OAuth2 login the browser redirects to either:
+// - a validated relative path (same-origin), or
+// - an explicitly allow-listed absolute URL.
 
 // Comma-separated Discord user IDs that bypass all command role requirements in
 // flame_bot (ADMIN_DISCORD_IDS).  When a logged-in user's Discord ID appears in
@@ -149,6 +201,15 @@ function isSafeReturnTo(url: unknown): url is string {
   return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
 }
 
+function isAllowedAbsoluteReturnTo(url: URL): boolean {
+  return ALLOWED_ABSOLUTE_RETURN_TO.some((allowed) => {
+    if (url.origin !== allowed.origin) return false;
+    const path = normalizePathPrefix(url.pathname);
+    if (allowed.pathPrefix === '/') return true;
+    return path === allowed.pathPrefix || path.startsWith(`${allowed.pathPrefix}/`);
+  });
+}
+
 function normalizeReturnTo(input: unknown): string | null {
   if (typeof input !== 'string' || !input) return null;
 
@@ -176,7 +237,16 @@ function normalizeReturnTo(input: unknown): string | null {
     }
   }
 
-  return isSafeReturnTo(current) ? current : null;
+  if (isSafeReturnTo(current)) {
+    return current;
+  }
+
+  try {
+    const absolute = new URL(current);
+    return isAllowedAbsoluteReturnTo(absolute) ? absolute.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 
