@@ -145,8 +145,9 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// Suppress browser favicon 404s — there is no icon file to serve.
-app.get('/favicon.ico', (_req: Request, res: Response) => res.status(204).end());
+// Serve the application favicon from the repository source tree.
+app.get('/favicon.ico', (_req: Request, res: Response) =>
+  res.sendFile(join(__dirname, '../..', 'src', 'favicon.ico')));
 
 // Liveness and health endpoints must remain public for platform uptime checks.
 app.get('/ping', (_req: Request, res: Response) => {
