@@ -86,6 +86,20 @@ function buildDiscordRoles(flameBotRoles: Record<string, unknown>): DiscordAuthC
   };
 }
 
+function buildSessionRoleNames(discordRoles: DiscordAuthContext['discordRoles'], isAdmin: boolean): string[] {
+  const roleNames: string[] = [];
+  if (discordRoles.bar3_client || discordRoles.bar3_server) {
+    roleNames.push('user');
+  }
+  if (discordRoles.member_guild) {
+    roleNames.push('member');
+  }
+  if (isAdmin) {
+    roleNames.push('admin');
+  }
+  return roleNames;
+}
+
 function getRateLimitKey(req: Request): string {
   // app.set('trust proxy', 1) is configured in src/index.ts, so req.ip reflects
   // the client IP from the trusted upstream proxy.
@@ -372,14 +386,16 @@ router.get('/session', authCheckLimiter, (req: Request, res: Response) => {
   const auth = resolveDiscordAuth(req);
   if (auth) {
     const userId = auth.discordUserId;
+    const isAdmin = ADMIN_DISCORD_IDS.has(userId);
     return res.json({
       authenticated: true,
       user: {
         id: userId,
         username: auth.discordUsername,
       },
-      roles: auth.discordRoles,
-      isAdmin: ADMIN_DISCORD_IDS.has(userId),
+      roles: buildSessionRoleNames(auth.discordRoles, isAdmin),
+      discordRoles: auth.discordRoles,
+      isAdmin,
     });
   }
   return res.status(401).json({ authenticated: false });
@@ -408,11 +424,13 @@ router.get('/logout', destroySession);
 router.get('/mobile-session', authCheckLimiter, (req: Request, res: Response) => {
   const auth = resolveDiscordAuth(req);
   if (!auth) return res.status(401).json({ authenticated: false });
+  const isAdmin = ADMIN_DISCORD_IDS.has(auth.discordUserId);
   return res.json({
     authenticated: true,
     user: { id: auth.discordUserId, username: auth.discordUsername },
-    roles: auth.discordRoles,
-    isAdmin: ADMIN_DISCORD_IDS.has(auth.discordUserId),
+    roles: buildSessionRoleNames(auth.discordRoles, isAdmin),
+    discordRoles: auth.discordRoles,
+    isAdmin,
   });
 });
 

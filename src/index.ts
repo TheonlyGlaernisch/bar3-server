@@ -14,6 +14,7 @@ import discordAuthRouter from './api/routers/discord/auth';
 import adminRouter from './api/routers/admin';
 import { requireDiscordAuth } from './api/middleware/discordAuth';
 import { startAutomationLoop } from './services/v2AutomationRunner';
+import AccountService from './services/accountService';
 import superagent from 'superagent';
 // Extend express-session SessionData with Discord fields
 import './interfaces/session';
@@ -74,8 +75,8 @@ app.use(express.urlencoded({ extended: true }));
 // credentialled cross-origin access.  If neither is set the middleware falls
 // back to wildcard (*) which is suitable for local development but
 // incompatible with credentialled requests.
-// CLIENT_ORIGIN entries can be exact origins (https://host), wildcard prefixes
-// (app://*), or app:// prefixes for packaged Electron renderers.
+// CLIENT_ORIGIN entries can be exact origins (https://host) or wildcard prefixes
+// (https://*.example.com* style via trailing *).
 type OriginMatcher = (origin: string) => boolean;
 type OriginRule = { raw: string; matches: OriginMatcher };
 
@@ -85,13 +86,6 @@ const buildOriginRule = (value: string): OriginRule => {
   if (normalized.endsWith('*')) {
     const prefix = normalized.slice(0, -1);
     return { raw: normalized, matches: (origin: string) => origin.startsWith(prefix) };
-  }
-  // Convenience for Electron packaged apps where origins look like app://...
-  if (normalized === 'app://' || normalized === 'app://*') {
-    return { raw: 'app://*', matches: (origin: string) => origin.startsWith('app://') };
-  }
-  if (normalized.startsWith('app://')) {
-    return { raw: normalized, matches: (origin: string) => origin.startsWith(normalized) };
   }
   return { raw: normalized, matches: (origin: string) => origin === normalized };
 };
@@ -209,6 +203,21 @@ const requireDiscordAdmin = (req: Request, res: Response, next: NextFunction) =>
   }
   next();
 };
+const authenticateApiKeyAccount = async (req: Request, res: Response, next: NextFunction) => {
+  const apiKeyHeader = req.headers['x-api-key'];
+  const apiKey = typeof apiKeyHeader === 'string' ? apiKeyHeader.trim() : '';
+  if (!apiKey) {
+    res.status(401).json({ error: 'API key is required' });
+    return;
+  }
+  try {
+    const account = await AccountService.getOrCreateAccount(apiKey);
+    res.locals.account = account;
+    next();
+  } catch (_error) {
+    res.status(500).json({ error: 'Failed to authenticate' });
+  }
+};
 const proxyBotApi = async (req: Request, res: Response, method: 'get' | 'post', path: string) => {
   try {
     let requestBuilder = method === 'get'
@@ -253,6 +262,8 @@ app.get('/api/bot/commands/usage', botRouteLimiter, requireDiscordAuth, requireD
   proxyBotApi(req, res, 'get', '/api/bot/commands/usage'));
 app.post('/api/bot/send', botRouteLimiter, requireDiscordAuth, requireDiscordAdmin, async (req: Request, res: Response) =>
   proxyBotApi(req, res, 'post', '/api/bot/send'));
+app.post('/api/bot/config', botRouteLimiter, requireDiscordAuth, requireDiscordAdmin, (_req: Request, res: Response) =>
+  res.status(204).end());
 
 // Discord OAuth routes — must be mounted BEFORE the auth guard so the login
 // page and callback are reachable without an existing session.
@@ -288,6 +299,17 @@ const connectDB = async () => {
 connectDB();
 
 // Routes
+app.get('/account', authenticateApiKeyAccount, (req: Request, res: Response) => {
+  const account = res.locals.account as { apiKey: string; createdAt: Date } | undefined;
+  if (!account) {
+    res.status(500).json({ error: 'Authenticated account missing from request' });
+    return;
+  }
+  res.json({
+    apiKey: account.apiKey,
+    createdAt: account.createdAt,
+  });
+});
 app.use('/api', accountRoutes);
 app.use('/api/v2/auth', v2AuthRouter);
 app.use('/api/v2/templates', v2TemplatesRouter);
