@@ -202,7 +202,7 @@ function isAllowedAbsoluteReturnTo(url: URL): boolean {
   const loopbackHost = url.hostname.toLowerCase();
   const isLoopback =
     (url.protocol === 'http:' || url.protocol === 'https:') &&
-    (loopbackHost === 'localhost' || loopbackHost === '127.0.0.1' || loopbackHost === '[::1]' || loopbackHost === '::1');
+    (loopbackHost === 'localhost' || loopbackHost === '127.0.0.1' || loopbackHost === '::1');
   if (isLoopback) return true;
 
   return ALLOWED_ABSOLUTE_RETURN_TO.some((allowed) => {
