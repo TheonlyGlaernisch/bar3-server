@@ -8,7 +8,7 @@ const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || '';
 const DISCORD_REDIRECT_URI =
   process.env.DISCORD_REDIRECT_URI || 'http://localhost:3000/auth/discord/callback';
-const CLIENT_APP_URL = (process.env.CLIENT_APP_URL || '').trim().replace(/\/+$/, '');
+const CLIENT_APP_URL = (process.env.CLIENT_APP_URL || '').trim().replace(/\/$/, '');
 
 type AllowedReturnToUrl = {
   origin: string;
@@ -34,12 +34,10 @@ function parseAllowedReturnToUrl(value: string): AllowedReturnToUrl | null {
 }
 
 function parseConfiguredReturnToAllowlist(): AllowedReturnToUrl[] {
-  const raw = [
-    ...(process.env.DISCORD_RETURN_TO_ALLOWLIST || '')
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean),
-  ];
+  const raw = (process.env.DISCORD_RETURN_TO_ALLOWLIST || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
   if (CLIENT_APP_URL) {
     raw.push(CLIENT_APP_URL);
   }
