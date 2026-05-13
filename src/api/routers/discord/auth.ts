@@ -200,7 +200,8 @@ function isSafeReturnTo(url: unknown): url is string {
 
 function isAllowedAbsoluteReturnTo(url: URL): boolean {
   const hostname = url.hostname.toLowerCase();
-  const normalizedHostname = hostname.replace(/^\[(.*)\]$/, '$1');
+  const normalizedHostname =
+    hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
   const isLoopback =
     (url.protocol === 'http:' || url.protocol === 'https:') &&
     (normalizedHostname === 'localhost' || normalizedHostname === '127.0.0.1' || normalizedHostname === '::1');
