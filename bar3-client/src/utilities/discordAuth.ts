@@ -22,16 +22,21 @@ const DEFAULT_ROLES: SessionData['roles'] = {
 function parseSessionData(data: unknown): SessionData | null {
   if (!data || typeof data !== 'object') return null;
   const source = data as Record<string, unknown>;
+  const sourceRoleNames = Array.isArray(source.roles)
+    ? source.roles.filter((role): role is string => typeof role === 'string').map((role) => role.toLowerCase())
+    : [];
   const sourceRoles =
-    source.roles && typeof source.roles === 'object'
-      ? (source.roles as Record<string, unknown>)
-      : {};
+    source.discordRoles && typeof source.discordRoles === 'object'
+      ? (source.discordRoles as Record<string, unknown>)
+      : source.roles && typeof source.roles === 'object'
+        ? (source.roles as Record<string, unknown>)
+        : {};
   const authenticated = source.authenticated === true;
   const roles: SessionData['roles'] = {
     verified: sourceRoles.verified === true,
-    bar3Client: sourceRoles.bar3_client === true,
-    bar3Server: sourceRoles.bar3_server === true,
-    memberGuild: sourceRoles.member_guild === true,
+    bar3Client: sourceRoles.bar3_client === true || sourceRoleNames.includes('user'),
+    bar3Server: sourceRoles.bar3_server === true || sourceRoleNames.includes('user'),
+    memberGuild: sourceRoles.member_guild === true || sourceRoleNames.includes('member'),
   };
   return {
     authenticated,

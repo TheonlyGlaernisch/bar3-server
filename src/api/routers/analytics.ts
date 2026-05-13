@@ -39,4 +39,23 @@ router.post('/newCampaign', celebrate({
   res.status(200).json({ success: true });
 });
 
+router.post('/campaigns', celebrate({
+  [Segments.BODY]: {
+    name: Joi.string().required(),
+  },
+}), async (req: Request, res: Response) => {
+  const logs = apiLogs.customContext(['campaigns']);
+  const name = req.body.name;
+
+  await analytics.newCampaign(name).catch((e) => {
+    logs.logError(`Cannot create new campaign, ${e}`);
+    res.status(500).end();
+    return;
+  });
+
+  if (!res.headersSent) {
+    res.status(200).json({ success: true });
+  }
+});
+
 export default router;

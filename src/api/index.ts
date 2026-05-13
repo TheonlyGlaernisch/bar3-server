@@ -11,6 +11,7 @@ import * as userService from '../services/userService';
 import * as messageService from '../services/messageService';
 import analyticsRouterV2 from './routers/v2/analytics';
 import analyticsRouter from './routers/analytics';
+import superagent from 'superagent';
 import { sha256Hex } from '../utilities/cryptoBox';
 import { sanitizeTemplateCss, sanitizeTemplateHtml } from '../utilities/sanitizeTemplateContent';
 import { PwAccount } from '../interfaces/schemas/PwAccountSchema';
@@ -55,6 +56,98 @@ const requireApiKey = (req: any, res: any): string | undefined => {
 
 const getScopedConfig = (apiKey: string): Config => ensureSession(apiKey).config;
 const getScopedSentMessages = (apiKey: string): Message[] => ensureSession(apiKey).sentMessages as Message[];
+const PW_API_BASE_URL = (process.env.PW_API_BASE_URL || 'https://politicsandwar.com/api/v2').replace(/\/$/, '');
+
+type PwCollectionName = 'nations' | 'alliances';
+
+function buildPwQuery(req: Request): Record<string, string> {
+  const query: Record<string, string> = {};
+  for (const [key, value] of Object.entries(req.query || {})) {
+    if (key.toLowerCase() === 'apikey') continue;
+    if (typeof value === 'string' && value.trim()) {
+      query[key] = value.trim();
+      continue;
+    }
+    if (Array.isArray(value)) {
+      const flattened = value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+      if (flattened.length > 0) {
+        query[key] = flattened.join(',');
+      }
+    }
+  }
+  return query;
+}
+
+async function fetchPwCollection(req: Request, collection: PwCollectionName) {
+  const apiKey = resolveApiKey(req);
+  if (!apiKey) {
+    return { error: { status: 400, body: { error: 'API key required' } } };
+  }
+
+  const endpoint = `${PW_API_BASE_URL}/${collection}/${encodeURIComponent(apiKey)}/`;
+  try {
+    const response = await superagent
+      .get(endpoint)
+      .query(buildPwQuery(req))
+      .timeout({ response: 10000, deadline: 15000 });
+    return { response };
+  } catch (err: any) {
+    const status = typeof err?.status === 'number' ? err.status : 502;
+    const body = err?.response?.body || { error: `Failed to fetch ${collection}` };
+    return { error: { status, body } };
+  }
+}
+
+function extractPwCollectionRows(rawBody: any): any[] {
+  if (Array.isArray(rawBody?.data)) return rawBody.data;
+  if (Array.isArray(rawBody)) return rawBody;
+  return [];
+}
+
+function pickSingleEntity(rows: any[], query: Record<string, unknown>, idKeys: string[], nameKeys: string[]): any | null {
+  const normalizedIdQueryValues = idKeys
+    .map((key) => query[key])
+    .filter((value): value is string | number => typeof value === 'string' || typeof value === 'number')
+    .map((value) => String(value).trim())
+    .filter(Boolean);
+
+  if (normalizedIdQueryValues.length > 0) {
+    const byId = rows.find((row: any) => {
+      const candidateIds = [
+        row?.id,
+        row?.nation_id,
+        row?.alliance_id,
+      ].map((value) => String(value ?? '').trim());
+      return normalizedIdQueryValues.some((wantedId) => candidateIds.includes(wantedId));
+    });
+    if (byId) return byId;
+  }
+
+  const normalizedNameQueryValues = nameKeys
+    .map((key) => query[key])
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (normalizedNameQueryValues.length > 0) {
+    const byName = rows.find((row: any) => {
+      const candidateNames = [
+        row?.nation,
+        row?.nation_name,
+        row?.name,
+        row?.alliance,
+        row?.alliance_name,
+        row?.leader,
+        row?.leader_name,
+      ].filter((value): value is string => typeof value === 'string')
+        .map((value) => value.toLowerCase());
+      return normalizedNameQueryValues.some((wantedName) => candidateNames.includes(wantedName));
+    });
+    if (byName) return byName;
+  }
+
+  return rows[0] ?? null;
+}
 
 const getValidatedUserIdFromApiKey = async (apiKey: string): Promise<string | null> => {
   const validation = await userService.validateApiKey(apiKey).catch(() => null);
@@ -208,8 +301,72 @@ legacyApiRouter.post('/setApplicationState', async (req, res) => {
   return res.status(204).end();
 });
 
+const handleNations = async (req: Request, res: Response) => {
+  const result = await fetchPwCollection(req, 'nations');
+  if (result.error) {
+    return res.status(result.error.status).json(result.error.body);
+  }
+  return res.status(result.response.status).json(result.response.body);
+};
+
+const handleNation = async (req: Request, res: Response) => {
+  const result = await fetchPwCollection(req, 'nations');
+  if (result.error) {
+    return res.status(result.error.status).json(result.error.body);
+  }
+  const rows = extractPwCollectionRows(result.response.body);
+  const selected = pickSingleEntity(
+    rows,
+    req.query as Record<string, unknown>,
+    ['id', 'nationId', 'nation_id', 'nationID'],
+    ['nation', 'nationName', 'nation_name', 'leader', 'leaderName']
+  );
+  if (!selected) {
+    return res.status(404).json({ error: 'Nation not found' });
+  }
+  return res.status(200).json(selected);
+};
+
+const handleAlliances = async (req: Request, res: Response) => {
+  const result = await fetchPwCollection(req, 'alliances');
+  if (result.error) {
+    return res.status(result.error.status).json(result.error.body);
+  }
+  return res.status(result.response.status).json(result.response.body);
+};
+
+const handleAlliance = async (req: Request, res: Response) => {
+  const result = await fetchPwCollection(req, 'alliances');
+  if (result.error) {
+    return res.status(result.error.status).json(result.error.body);
+  }
+  const rows = extractPwCollectionRows(result.response.body);
+  const selected = pickSingleEntity(
+    rows,
+    req.query as Record<string, unknown>,
+    ['id', 'allianceId', 'alliance_id', 'allianceID'],
+    ['alliance', 'allianceName', 'alliance_name', 'name']
+  );
+  if (!selected) {
+    return res.status(404).json({ error: 'Alliance not found' });
+  }
+  return res.status(200).json(selected);
+};
+
+legacyApiRouter.get('/nations', handleNations);
+legacyApiRouter.get('/nation', handleNation);
+legacyApiRouter.get('/alliances', handleAlliances);
+legacyApiRouter.get('/alliance', handleAlliance);
+
+const compatibilityAliasRouter = Router();
+compatibilityAliasRouter.get('/nations', handleNations);
+compatibilityAliasRouter.get('/nation', handleNation);
+compatibilityAliasRouter.get('/alliances', handleAlliances);
+compatibilityAliasRouter.get('/alliance', handleAlliance);
+
 export const mountLegacyUiAndApi = (app: Express ) => {
   app.use('/api', legacyApiRouter);
+  app.use(compatibilityAliasRouter);
   app.use('/analytics', analyticsRouter);
   app.use('/analytics/v2', analyticsRouterV2);
 
