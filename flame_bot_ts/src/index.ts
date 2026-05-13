@@ -2014,7 +2014,7 @@ async function main(): Promise<void> {
         for (const [key, label] of Object.entries(GOV_DEPT_LABELS)) {
           const rid = (current as Record<string, string | null>)[key];
           if (rid && interaction.guild) {
-            const role = interaction.guild.roles.cache.get(String(rid));
+            const role = interaction.guild.roles.cache.get(rid);
             lines.push(`**${label}:** ${role ? role.toString() : `<@&${rid}>`}`);
           } else {
             lines.push(`**${label}:** *(not set)*`);
@@ -2040,7 +2040,7 @@ async function main(): Promise<void> {
         for (const [key, label] of Object.entries(GOV_DEPT_LABELS)) {
           const rid = (cfg as Record<string, string | null>)[key];
           if (!rid) continue;
-          const role = guildRoles.get(String(rid));
+          const role = guildRoles.get(rid);
           if (!role) {
             embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label}`, value: '*(role not found)*', inline: false });
             continue;
