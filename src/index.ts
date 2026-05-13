@@ -1,7 +1,7 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import session from 'express-session';
 import accountRoutes from './api/AccountRoutes';
 import { mountLegacyUiAndApi } from './api';
@@ -145,8 +145,32 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// Suppress browser favicon 404s — there is no icon file to serve.
-app.get('/favicon.ico', (_req: Request, res: Response) => res.status(204).end());
+const FAVICON_CACHE_MAX_AGE_SECONDS = 86400;
+const faviconCandidatePaths = [
+  join(__dirname, '../..', 'src', 'favicon.ico'),
+  join(process.cwd(), 'src', 'favicon.ico'),
+];
+let favicon: Buffer | null = null;
+try {
+  for (const path of faviconCandidatePaths) {
+    if (!existsSync(path)) {
+      continue;
+    }
+    favicon = readFileSync(path);
+    break;
+  }
+} catch (error) {
+  console.warn('[Warning] Failed to load favicon.ico:', error);
+}
+app.get('/favicon.ico', (_req: Request, res: Response) => {
+  if (!favicon) {
+    res.status(204).end();
+    return;
+  }
+  res.setHeader('Content-Type', 'image/x-icon');
+  res.setHeader('Cache-Control', `public, max-age=${FAVICON_CACHE_MAX_AGE_SECONDS}`);
+  res.status(200).send(favicon);
+});
 
 // Liveness and health endpoints must remain public for platform uptime checks.
 app.get('/ping', (_req: Request, res: Response) => {
