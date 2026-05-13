@@ -213,13 +213,13 @@ test('getGovRoles returns all-null for unconfigured guild', async () => {
 test('setGovRoles and getGovRoles round-trip', async () => {
   const db = await makeDb();
   const input = {
-    leader: 1, '2ic': 2, econ: null, econ_gov: null, milcom: null,
+    leader: '1111111111111111111', '2ic': '2222222222222222222', econ: null, econ_gov: null, milcom: null,
     milcom_gov: null, ia: null, ia_asst: null, gov: null, member: null,
   };
   await db.setGovRoles(BigInt(201), input);
   const roles = await db.getGovRoles(BigInt(201));
-  assert.equal(roles.leader, 1);
-  assert.equal(roles['2ic'], 2);
+  assert.equal(roles.leader, '1111111111111111111');
+  assert.equal(roles['2ic'], '2222222222222222222');
   assert.equal(roles.econ, null);
 });
 
