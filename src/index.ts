@@ -1,7 +1,7 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import session from 'express-session';
 import accountRoutes from './api/AccountRoutes';
 import { mountLegacyUiAndApi } from './api';
@@ -145,9 +145,17 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// Serve the application favicon from the repository source tree.
-app.get('/favicon.ico', (_req: Request, res: Response) =>
-  res.sendFile(join(__dirname, '../..', 'src', 'favicon.ico')));
+const faviconPath = join(process.cwd(), 'src', 'favicon.ico');
+const favicon = existsSync(faviconPath) ? readFileSync(faviconPath) : null;
+app.get('/favicon.ico', (_req: Request, res: Response) => {
+  if (!favicon) {
+    res.status(204).end();
+    return;
+  }
+  res.setHeader('Content-Type', 'image/x-icon');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.status(200).send(favicon);
+});
 
 // Liveness and health endpoints must remain public for platform uptime checks.
 app.get('/ping', (_req: Request, res: Response) => {
