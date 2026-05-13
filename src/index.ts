@@ -145,11 +145,19 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-const faviconPath = join(__dirname, '../..', 'src', 'favicon.ico');
+const FAVICON_CACHE_MAX_AGE_SECONDS = 86400;
+const faviconCandidatePaths = [
+  join(__dirname, '../..', 'src', 'favicon.ico'),
+  join(process.cwd(), 'src', 'favicon.ico'),
+];
 let favicon: Buffer | null = null;
 try {
-  if (existsSync(faviconPath)) {
-    favicon = readFileSync(faviconPath);
+  for (const path of faviconCandidatePaths) {
+    if (!existsSync(path)) {
+      continue;
+    }
+    favicon = readFileSync(path);
+    break;
   }
 } catch (error) {
   console.warn('[Warning] Failed to load favicon.ico:', error);
@@ -160,7 +168,7 @@ app.get('/favicon.ico', (_req: Request, res: Response) => {
     return;
   }
   res.setHeader('Content-Type', 'image/x-icon');
-  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.setHeader('Cache-Control', `public, max-age=${FAVICON_CACHE_MAX_AGE_SECONDS}`);
   res.status(200).send(favicon);
 });
 
