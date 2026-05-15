@@ -913,6 +913,47 @@ export class PnWClient {
     return counts;
   }
 
+  async getActiveDefensiveWarsForAlliance(allianceId: number): Promise<WarDetail[]> {
+    if (allianceId <= 0 || this._restUrl !== null) return [];
+    const wars: WarDetail[] = [];
+    const seenWarIds = new Set<number>();
+    let page = 1;
+    while (true) {
+      const query = `query GetActiveAllianceWars($alliance_id: [Int], $page: Int) {
+        wars(alliance_id: $alliance_id, page: $page, first: 100, active: true) {
+          data {
+            id date war_type att_id def_id att_alliance_id def_alliance_id
+            attacker {
+              nation_name leader_name num_cities score soldiers tanks aircraft ships missiles nukes wars_won wars_lost
+              alliance { name }
+            }
+            defender {
+              nation_name leader_name num_cities score soldiers tanks aircraft ships missiles nukes wars_won wars_lost
+              alliance { name }
+            }
+          }
+          paginatorInfo { hasMorePages }
+        }
+      }`;
+      const data = await this._query(query, { alliance_id: [allianceId], page });
+      const payload = ((data['data'] as Record<string, unknown>)?.['wars'] as Record<string, unknown>) ?? {};
+      const rows = (payload['data'] as unknown[]) ?? [];
+      const hasMore = Boolean((payload['paginatorInfo'] as Record<string, unknown>)?.['hasMorePages']);
+      for (const row of rows as Array<Record<string, unknown>>) {
+        const parsed = parseWarFromDict(row);
+        if (!parsed) continue;
+        if (parsed.defenderAllianceId !== allianceId) continue;
+        if (seenWarIds.has(parsed.warId)) continue;
+        seenWarIds.add(parsed.warId);
+        wars.push(parsed);
+      }
+      if (!hasMore) break;
+      page += 1;
+    }
+    wars.sort((a, b) => b.date.getTime() - a.date.getTime());
+    return wars;
+  }
+
   async getActiveWarsForNation(nationId: number): Promise<NationWar[]> {
     if (nationId <= 0) return [];
     const query = `query GetActiveWarsByNation($attid: [Int], $defid: [Int]) {

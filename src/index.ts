@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { join } from 'path';
 import { existsSync, readFileSync } from 'fs';
 import session from 'express-session';
+import rateLimit from 'express-rate-limit';
 import accountRoutes from './api/AccountRoutes';
 import { mountLegacyUiAndApi } from './api';
 import v2AuthRouter from './api/routers/v2/auth';
@@ -227,6 +228,15 @@ const requireDiscordAdmin = (req: Request, res: Response, next: NextFunction) =>
   }
   next();
 };
+const requireDiscordMember = (req: Request, res: Response, next: NextFunction) => {
+  const authRoles = (res.locals.discordAuth as { discordRoles?: { member_guild?: boolean } } | undefined)?.discordRoles;
+  const hasMemberRole = req.session?.discordRoles?.member_guild === true || authRoles?.member_guild === true;
+  if (!hasMemberRole) {
+    res.status(403).json({ error: 'Member access required' });
+    return;
+  }
+  next();
+};
 const authenticateApiKeyAccount = async (req: Request, res: Response, next: NextFunction) => {
   const apiKeyHeader = req.headers['x-api-key'];
   const apiKey = typeof apiKeyHeader === 'string' ? apiKeyHeader.trim() : '';
@@ -288,6 +298,22 @@ app.post('/api/bot/send', botRouteLimiter, requireDiscordAuth, requireDiscordAdm
   proxyBotApi(req, res, 'post', '/api/bot/send'));
 app.post('/api/bot/config', botRouteLimiter, requireDiscordAuth, requireDiscordAdmin, (_req: Request, res: Response) =>
   res.status(204).end());
+app.get('/api/member/nation', rateLimit({
+  windowMs: BOT_ROUTE_WINDOW_MS,
+  limit: BOT_ROUTE_MAX_REQUESTS,
+  standardHeaders: true,
+  legacyHeaders: false,
+}), requireDiscordAuth, requireDiscordMember, async (req: Request, res: Response) => {
+  const authDiscordId = (res.locals.discordAuth as { discordUserId?: string } | undefined)?.discordUserId;
+  const sessionDiscordId = req.session?.discordUserId || authDiscordId;
+  if (!sessionDiscordId || !/^\d+$/.test(sessionDiscordId)) {
+    res.status(400).json({ error: 'Missing or invalid discord_id' });
+    return;
+  }
+  const refreshRequested = req.query['refresh'] === '1' || req.query['refresh'] === 'true';
+  const query = refreshRequested ? '?refresh=1' : '';
+  await proxyBotApi(req, res, 'get', `/api/member/nation/${encodeURIComponent(sessionDiscordId)}${query}`);
+});
 
 // Discord OAuth routes — must be mounted BEFORE the auth guard so the login
 // page and callback are reachable without an existing session.

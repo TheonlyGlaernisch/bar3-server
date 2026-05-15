@@ -96,6 +96,64 @@ export type GuildByIdGetter = (guildId: string) => Guild | null;
 export type GuildsGetter = () => Guild[];
 export type SendToWelcomeFn = (message: string, customMessage?: string) => Promise<{ sent: number; skipped: number }>;
 export type CommandUsageGetter = () => Record<string, number>;
+export interface MemberNationContextWar {
+  warId: number;
+  date: string;
+  warType: string;
+  attackerId: number;
+  attackerName: string;
+  attackerAllianceId: number;
+  attackerAllianceName: string;
+  defenderId: number;
+  defenderName: string;
+  defenderAllianceId: number;
+  defenderAllianceName: string;
+  url: string;
+}
+export interface MemberNationContextData {
+  registered: boolean;
+  nation: {
+    nationId: number;
+    nationName: string;
+    leaderName: string;
+    numCities: number;
+    score: number;
+    allianceId: number;
+    allianceName: string;
+    alliancePosition: string;
+    url: string;
+  } | null;
+  alliance: {
+    allianceId: number;
+    name: string;
+    acronym: string;
+    rank: number;
+    score: number;
+    averageScore: number;
+    numMembers: number;
+    totalCities: number;
+    url: string;
+  } | null;
+  activeDefensiveWars: MemberNationContextWar[];
+  nationDefensiveWars: Array<{
+    warId: number;
+    date: string;
+    reason: string;
+    attackerId: number;
+    attackerName: string;
+    attackerCities: number;
+    attackerUnits: {
+      soldiers: number;
+      tanks: number;
+      aircraft: number;
+      ships: number;
+      missiles: number;
+      nukes: number;
+    };
+    url: string;
+  }>;
+}
+export type MemberNationContextGetter = (discordId: string) => Promise<MemberNationContextData>;
 
 export interface CreateAppOptions {
   guildGetter: GuildGetter;
@@ -106,6 +164,7 @@ export interface CreateAppOptions {
   sendToWelcomeFn?: SendToWelcomeFn;
   commandUsageGetter?: CommandUsageGetter;
   adminIds?: Set<bigint>;
+  memberNationContextGetter?: MemberNationContextGetter;
 }
 
 function checkApiKey(req: Request, apiKey: string): boolean {
@@ -338,7 +397,10 @@ export function createApp(options: CreateAppOptions): Application {
     sendToWelcomeFn,
     commandUsageGetter,
     adminIds = new Set<bigint>(),
+    memberNationContextGetter,
   } = options;
+  const memberNationContextCache = new Map<string, { cachedAt: number; data: MemberNationContextData }>();
+  const MEMBER_CONTEXT_CACHE_TTL_MS = 10 * 60 * 1000;
 
   const app = express();
   app.use(express.json() as RequestHandler);
@@ -461,6 +523,65 @@ export function createApp(options: CreateAppOptions): Application {
 
     const result = await sendToWelcomeFn(message, customMessage || undefined);
     res.status(200).json(result);
+  });
+
+  app.get('/api/member/nation/:discord_id', async (req: Request, res: Response) => {
+    if (!checkApiKey(req, apiKey)) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    if (!memberNationContextGetter) {
+      res.status(503).json({ error: 'Bot not ready' });
+      return;
+    }
+    const discordIdStr = req.params['discord_id'] ?? '';
+    if (!/^\d+$/.test(discordIdStr)) {
+      res.status(400).json({ error: 'Invalid discord_id' });
+      return;
+    }
+    const refreshRequested = req.query['refresh'] === '1' || req.query['refresh'] === 'true';
+    const now = Date.now();
+    const cached = memberNationContextCache.get(discordIdStr);
+    const minRefreshAtMs = cached ? cached.cachedAt + MEMBER_CONTEXT_CACHE_TTL_MS : 0;
+    const canRefreshNow = !cached || now >= minRefreshAtMs;
+    if (!refreshRequested && cached) {
+      res.status(200).json({
+        ...cached.data,
+        cache: {
+          source: 'cache',
+          cachedAt: new Date(cached.cachedAt).toISOString(),
+          minRefreshIntervalSeconds: MEMBER_CONTEXT_CACHE_TTL_MS / 1000,
+          nextRefreshAt: new Date(cached.cachedAt + MEMBER_CONTEXT_CACHE_TTL_MS).toISOString(),
+          canRefreshNow: now >= cached.cachedAt + MEMBER_CONTEXT_CACHE_TTL_MS,
+        },
+      });
+      return;
+    }
+    if (refreshRequested && cached && !canRefreshNow) {
+      res.status(200).json({
+        ...cached.data,
+        cache: {
+          source: 'cache',
+          cachedAt: new Date(cached.cachedAt).toISOString(),
+          minRefreshIntervalSeconds: MEMBER_CONTEXT_CACHE_TTL_MS / 1000,
+          nextRefreshAt: new Date(cached.cachedAt + MEMBER_CONTEXT_CACHE_TTL_MS).toISOString(),
+          canRefreshNow: false,
+        },
+      });
+      return;
+    }
+    const data = await memberNationContextGetter(discordIdStr);
+    memberNationContextCache.set(discordIdStr, { cachedAt: now, data });
+    res.status(200).json({
+      ...data,
+      cache: {
+        source: 'upstream',
+        cachedAt: new Date(now).toISOString(),
+        minRefreshIntervalSeconds: MEMBER_CONTEXT_CACHE_TTL_MS / 1000,
+        nextRefreshAt: new Date(now + MEMBER_CONTEXT_CACHE_TTL_MS).toISOString(),
+        canRefreshNow: false,
+      },
+    });
   });
 
   // -------------------------------------------------------------------------

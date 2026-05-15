@@ -2979,6 +2979,113 @@ Message: ${cfg.message}`)],
       sendToWelcomeFn: sendToAllWelcomeChannels,
       commandUsageGetter: () => Object.fromEntries(commandUsage.entries()),
       adminIds: ADMIN_DISCORD_IDS,
+      memberNationContextGetter: async (discordId: string) => {
+        if (!/^\d+$/.test(discordId)) {
+          return {
+            registered: false,
+            nation: null,
+            alliance: null,
+            activeDefensiveWars: [],
+            nationDefensiveWars: [],
+          };
+        }
+        const registration = await db.getByDiscordId(BigInt(discordId));
+        if (!registration) {
+          return {
+            registered: false,
+            nation: null,
+            alliance: null,
+            activeDefensiveWars: [],
+            nationDefensiveWars: [],
+          };
+        }
+        const nation = await pnw.getNation(Number(registration.nation_id));
+        if (!nation) {
+          return {
+            registered: true,
+            nation: null,
+            alliance: null,
+            activeDefensiveWars: [],
+            nationDefensiveWars: [],
+          };
+        }
+        const alliance = nation.allianceId > 0 ? await pnw.getAllianceById(nation.allianceId) : null;
+        const activeDefensiveWars = nation.allianceId > 0
+          ? await pnw.getActiveDefensiveWarsForAlliance(nation.allianceId)
+          : [];
+        const activeNationWars = await pnw.getActiveWarsForNation(nation.nationId);
+        const defensiveWarIds = activeNationWars
+          .filter((war) => war.defenderId === nation.nationId && war.warId > 0)
+          .map((war) => war.warId);
+        const nationDefensiveWarDetails = await Promise.all(
+          defensiveWarIds.map(async (warId) => {
+            try {
+              return await pnw.getWarDetail(warId);
+            } catch {
+              return null;
+            }
+          }),
+        );
+        return {
+          registered: true,
+          nation: {
+            nationId: nation.nationId,
+            nationName: nation.nationName,
+            leaderName: nation.leaderName,
+            numCities: nation.numCities,
+            score: nation.score,
+            allianceId: nation.allianceId,
+            allianceName: nation.allianceName,
+            alliancePosition: nation.alliancePosition,
+            url: nationUrl(nation.nationId),
+          },
+          alliance: alliance ? {
+            allianceId: alliance.allianceId,
+            name: alliance.name,
+            acronym: alliance.acronym,
+            rank: alliance.rank,
+            score: alliance.score,
+            averageScore: alliance.averageScore,
+            numMembers: alliance.numMembers,
+            totalCities: alliance.totalCities,
+            url: allianceUrl(alliance.allianceId),
+          } : null,
+          activeDefensiveWars: activeDefensiveWars.map((war) => ({
+            warId: war.warId,
+            date: war.date.toISOString(),
+            warType: war.warType,
+            attackerId: war.attackerId,
+            attackerName: war.attackerName,
+            attackerAllianceId: war.attackerAllianceId,
+            attackerAllianceName: war.attackerAllianceName,
+            defenderId: war.defenderId,
+            defenderName: war.defenderName,
+            defenderAllianceId: war.defenderAllianceId,
+            defenderAllianceName: war.defenderAllianceName,
+            url: warUrl(war.warId),
+          })),
+          nationDefensiveWars: nationDefensiveWarDetails
+            .filter((war): war is WarDetail => war !== null && war.defenderId === nation.nationId)
+            .map((war) => ({
+              warId: war.warId,
+              date: war.date.toISOString(),
+              reason: war.warType,
+              attackerId: war.attackerId,
+              attackerName: war.attackerName,
+              attackerCities: war.attackerCities,
+              attackerUnits: {
+                soldiers: war.attackerSoldiers,
+                tanks: war.attackerTanks,
+                aircraft: war.attackerAircraft,
+                ships: war.attackerShips,
+                missiles: war.attackerMissiles,
+                nukes: war.attackerNukes,
+              },
+              url: warUrl(war.warId),
+            }))
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+        };
+      },
     });
     httpServer = createServer(app);
     httpServer.listen(API_PORT, () => logInfo(`API listening on :${API_PORT}`));
