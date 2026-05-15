@@ -14,6 +14,7 @@ import v2SendTestRouter from './api/routers/v2/sendTest';
 import discordAuthRouter from './api/routers/discord/auth';
 import adminRouter from './api/routers/admin';
 import { requireDiscordAuth } from './api/middleware/discordAuth';
+import { isTrustedOrigin } from './api/middleware/sameOrigin';
 import { startAutomationLoop } from './services/v2AutomationRunner';
 import AccountService from './services/accountService';
 import superagent from 'superagent';
@@ -237,6 +238,15 @@ const requireDiscordMember = (req: Request, res: Response, next: NextFunction) =
   }
   next();
 };
+const requireTrustedOriginForUnsafeMethod = (req: Request, res: Response, next: NextFunction) => {
+  const method = req.method.toUpperCase();
+  const unsafe = method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
+  if (unsafe && !isTrustedOrigin(req)) {
+    res.status(403).json({ error: 'Blocked by same-origin policy' });
+    return;
+  }
+  next();
+};
 const authenticateApiKeyAccount = async (req: Request, res: Response, next: NextFunction) => {
   const apiKeyHeader = req.headers['x-api-key'];
   const apiKey = typeof apiKeyHeader === 'string' ? apiKeyHeader.trim() : '';
@@ -294,16 +304,16 @@ app.get('/api/bot/servers', botRouteLimiter, requireDiscordAuth, requireDiscordA
   proxyBotApi(req, res, 'get', '/api/bot/servers'));
 app.get('/api/bot/commands/usage', botRouteLimiter, requireDiscordAuth, requireDiscordAdmin, async (req: Request, res: Response) =>
   proxyBotApi(req, res, 'get', '/api/bot/commands/usage'));
-app.post('/api/bot/send', botRouteLimiter, requireDiscordAuth, requireDiscordAdmin, async (req: Request, res: Response) =>
+app.post('/api/bot/send', botRouteLimiter, requireDiscordAuth, requireTrustedOriginForUnsafeMethod, requireDiscordAdmin, async (req: Request, res: Response) =>
   proxyBotApi(req, res, 'post', '/api/bot/send'));
-app.post('/api/bot/config', botRouteLimiter, requireDiscordAuth, requireDiscordAdmin, (_req: Request, res: Response) =>
+app.post('/api/bot/config', botRouteLimiter, requireDiscordAuth, requireTrustedOriginForUnsafeMethod, requireDiscordAdmin, (_req: Request, res: Response) =>
   res.status(204).end());
 app.get('/api/member/nation', rateLimit({
   windowMs: BOT_ROUTE_WINDOW_MS,
   limit: BOT_ROUTE_MAX_REQUESTS,
   standardHeaders: true,
   legacyHeaders: false,
-}), requireDiscordAuth, requireDiscordMember, async (req: Request, res: Response) => {
+}), requireDiscordAuth, requireTrustedOriginForUnsafeMethod, requireDiscordMember, async (req: Request, res: Response) => {
   const authDiscordId = (res.locals.discordAuth as { discordUserId?: string } | undefined)?.discordUserId;
   const sessionDiscordId = req.session?.discordUserId || authDiscordId;
   if (!sessionDiscordId || !/^\d+$/.test(sessionDiscordId)) {
