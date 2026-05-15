@@ -49,10 +49,46 @@
                 vs
                 {{ war.defenderName }} ({{ war.defenderAllianceName || war.defenderAllianceId }})
               </v-list-item-subtitle>
+              <v-list-item-subtitle v-if="war.counterRequested" class="green--text text--lighten-2">
+                Counter requested{{ war.counterRequestedAt ? ` · ${new Date(war.counterRequestedAt).toLocaleString()}` : '' }}
+              </v-list-item-subtitle>
             </v-list-item-content>
+            <v-list-item-action v-if="canRequestCounter(war)">
+              <v-btn
+                x-small
+                color="primary"
+                :loading="requestingWarId === war.warId"
+                :disabled="requestingWarId === war.warId || war.counterRequested"
+                @click="requestCounter(war.warId)"
+              >
+                {{ war.counterRequested ? 'Requested' : 'Request Counter' }}
+              </v-btn>
+            </v-list-item-action>
           </v-list-item>
         </v-list>
         <div v-else class="caption grey--text text--lighten-1">No active defensive wars found.</div>
+      </v-card>
+
+      <v-card dark color="#1A1A1A" class="pa-4 mt-4">
+        <div class="text-subtitle-1 white--text font-weight-medium mb-3">Requested Counters</div>
+        <v-list v-if="requestedCounterWars.length" dense dark color="transparent">
+          <v-list-item v-for="war in requestedCounterWars" :key="`counter-${war.warId}`" class="px-0">
+            <v-list-item-content>
+              <v-list-item-title class="white--text">
+                <a :href="war.url" target="_blank" rel="noopener noreferrer">War #{{ war.warId }}</a>
+              </v-list-item-title>
+              <v-list-item-subtitle>
+                {{ war.attackerName }} ({{ war.attackerAllianceName || war.attackerAllianceId }})
+                vs
+                {{ war.defenderName }} ({{ war.defenderAllianceName || war.defenderAllianceId }})
+              </v-list-item-subtitle>
+              <v-list-item-subtitle class="green--text text--lighten-2">
+                Requested{{ war.counterRequestedAt ? ` · ${new Date(war.counterRequestedAt).toLocaleString()}` : '' }}
+              </v-list-item-subtitle>
+            </v-list-item-content>
+          </v-list-item>
+        </v-list>
+        <div v-else class="caption grey--text text--lighten-1">No requested counters in active wars.</div>
       </v-card>
     </div>
   </div>
@@ -60,7 +96,7 @@
 
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator';
-import { getMemberNationContext, MemberNationContextResponse } from '@/utilities/memberNationApi';
+import { getMemberNationContext, MemberNationContextResponse, requestCounterForWar } from '@/utilities/memberNationApi';
 
 type AllianceViewContext = MemberNationContextResponse;
 
@@ -68,12 +104,14 @@ type AllianceViewContext = MemberNationContextResponse;
 export default class Alliance extends Vue {
   loading = false;
   error = '';
+  requestingWarId: number | null = null;
   context: AllianceViewContext = {
     registered: false,
     nation: null,
     alliance: null,
     activeDefensiveWars: [],
     nationDefensiveWars: [],
+    counterRequests: [],
   };
 
   get canRefresh(): boolean {
@@ -88,6 +126,15 @@ export default class Alliance extends Vue {
       return `Last updated ${new Date(this.context.cache.cachedAt).toLocaleTimeString()} (${source})`;
     }
     return `Last updated ${new Date(this.context.cache.cachedAt).toLocaleTimeString()} (${source}) · refresh after ${nextRefresh}`;
+  }
+
+  get requestedCounterWars() {
+    return this.context.activeDefensiveWars.filter((war) => war.counterRequested);
+  }
+
+  canRequestCounter(war: AllianceViewContext['activeDefensiveWars'][number]): boolean {
+    const nationId = this.context.nation?.nationId;
+    return !!nationId && war.defenderId === nationId;
   }
 
   async mounted() {
@@ -107,6 +154,19 @@ export default class Alliance extends Vue {
       this.error = e instanceof Error ? e.message : 'Failed to load alliance information';
     } finally {
       this.loading = false;
+    }
+  }
+
+  async requestCounter(warId: number) {
+    this.requestingWarId = warId;
+    this.error = '';
+    try {
+      await requestCounterForWar(warId);
+      await this.load(true);
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : 'Failed to request counter';
+    } finally {
+      this.requestingWarId = null;
     }
   }
 }

@@ -45,6 +45,14 @@ export interface RecruiterSubscriptionDoc {
   channel_id: string;
 }
 
+export interface CounterRequestDoc {
+  war_id: number;
+  defender_discord_id: string;
+  defender_nation_id: number;
+  defender_alliance_id: number;
+  requested_at: string;
+}
+
 const GOV_ROLE_KEYS = [
   'leader', '2ic', 'econ', 'econ_gov', 'milcom', 'milcom_gov',
   'ia', 'ia_asst', 'gov', 'member',
@@ -251,6 +259,19 @@ export class Database {
     );
   }
 
+  async getBotConfig(key: string): Promise<string | null> {
+    const doc = await this._botConfig.findOne({ key }, { projection: { _id: 0 } });
+    return doc?.value ?? null;
+  }
+
+  async setBotConfig(key: string, value: string): Promise<void> {
+    await this._botConfig.updateOne(
+      { key },
+      { $set: { key, value } },
+      { upsert: true }
+    );
+  }
+
   // War alert subscription helpers -----------------------------------------
 
   private get _warAlertCol(): Collection<WarAlertSubscriptionDoc> {
@@ -335,6 +356,62 @@ export class Database {
 
   async getAllRecruiterSubscriptions(): Promise<RecruiterSubscriptionDoc[]> {
     return this._recruiterCol.find({}, { projection: { _id: 0 } }).toArray();
+  }
+
+  // Counter request helpers --------------------------------------------------
+
+  private get _counterRequestsCol(): Collection<CounterRequestDoc> {
+    return this._client.db('TRF').collection<CounterRequestDoc>('counter_requests');
+  }
+
+  async ensureCounterRequestIndexes(): Promise<void> {
+    await this._counterRequestsCol.createIndex(
+      { war_id: 1, defender_discord_id: 1 },
+      { unique: true }
+    );
+    await this._counterRequestsCol.createIndex({ defender_alliance_id: 1 });
+    await this._counterRequestsCol.createIndex({ requested_at: 1 });
+  }
+
+  async addCounterRequest(
+    warId: number,
+    defenderDiscordId: bigint,
+    defenderNationId: number,
+    defenderAllianceId: number
+  ): Promise<string> {
+    const requestedAt = new Date().toISOString();
+    await this._counterRequestsCol.updateOne(
+      { war_id: warId, defender_discord_id: defenderDiscordId.toString() },
+      {
+        $set: {
+          war_id: warId,
+          defender_discord_id: defenderDiscordId.toString(),
+          defender_nation_id: defenderNationId,
+          defender_alliance_id: defenderAllianceId,
+          requested_at: requestedAt,
+        },
+      },
+      { upsert: true }
+    );
+    return requestedAt;
+  }
+
+  async getCounterRequestsByAlliance(defenderAllianceId: number): Promise<CounterRequestDoc[]> {
+    return this._counterRequestsCol.find(
+      { defender_alliance_id: defenderAllianceId },
+      { projection: { _id: 0 } }
+    ).toArray();
+  }
+
+  async removeCounterRequestsForAllianceExceptWarIds(
+    defenderAllianceId: number,
+    activeWarIds: number[]
+  ): Promise<number> {
+    const query = activeWarIds.length
+      ? { defender_alliance_id: defenderAllianceId, war_id: { $nin: activeWarIds } }
+      : { defender_alliance_id: defenderAllianceId };
+    const result = await this._counterRequestsCol.deleteMany(query);
+    return result.deletedCount ?? 0;
   }
 
   async close(): Promise<void> {

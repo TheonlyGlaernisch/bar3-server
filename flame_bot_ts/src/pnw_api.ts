@@ -1853,7 +1853,10 @@ export class PnWSubscriptionClient {
   private static readonly MS_PER_SECOND = 1_000;
   private static readonly SECONDS_PER_MINUTE = 60;
   private static readonly KEEPALIVE_INTERVAL_SECONDS = 18;
-  private static readonly GATEWAY_RESET_INTERVAL_MINUTES = 55;
+  private static readonly GATEWAY_RESET_INTERVAL_MINUTES = (() => {
+    const raw = Number.parseInt(process.env.PNW_SUBSCRIPTION_GATEWAY_RESET_MINUTES || '', 10);
+    return Number.isFinite(raw) && raw >= 30 ? raw : 180;
+  })();
   private static readonly RECONNECT_BASE = 15;
   private static readonly RECONNECT_MAX = 300;
   private static readonly MIN_IDLE_RECONNECT_DELAY_SECONDS = 5;

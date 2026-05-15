@@ -109,6 +109,14 @@ export interface MemberNationContextWar {
   defenderAllianceId: number;
   defenderAllianceName: string;
   url: string;
+  counterRequested?: boolean;
+  counterRequestedAt?: string | null;
+}
+export interface MemberNationCounterRequest {
+  warId: number;
+  requestedAt: string;
+  defenderNationId: number;
+  defenderDiscordId: string;
 }
 export interface MemberNationContextData {
   registered: boolean;
@@ -152,8 +160,14 @@ export interface MemberNationContextData {
     };
     url: string;
   }>;
+  counterRequests: MemberNationCounterRequest[];
 }
 export type MemberNationContextGetter = (discordId: string) => Promise<MemberNationContextData>;
+export type MemberNationCounterRequestResult =
+  | { ok: true; warId: number; requestedAt: string; }
+  | { ok: false; status: number; error: string; };
+export type MemberNationCounterRequestHandler =
+  (discordId: string, warId: number) => Promise<MemberNationCounterRequestResult>;
 
 export interface CreateAppOptions {
   guildGetter: GuildGetter;
@@ -165,6 +179,7 @@ export interface CreateAppOptions {
   commandUsageGetter?: CommandUsageGetter;
   adminIds?: Set<bigint>;
   memberNationContextGetter?: MemberNationContextGetter;
+  memberNationCounterRequestHandler?: MemberNationCounterRequestHandler;
 }
 
 function checkApiKey(req: Request, apiKey: string): boolean {
@@ -398,6 +413,7 @@ export function createApp(options: CreateAppOptions): Application {
     commandUsageGetter,
     adminIds = new Set<bigint>(),
     memberNationContextGetter,
+    memberNationCounterRequestHandler,
   } = options;
   const memberNationContextCache = new Map<string, { cachedAt: number; data: MemberNationContextData }>();
   const MEMBER_CONTEXT_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -582,6 +598,34 @@ export function createApp(options: CreateAppOptions): Application {
         canRefreshNow: false,
       },
     });
+  });
+  app.post('/api/member/nation/:discord_id/counter-request', async (req: Request, res: Response) => {
+    if (!checkApiKey(req, apiKey)) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    if (!memberNationCounterRequestHandler) {
+      res.status(503).json({ error: 'Bot not ready' });
+      return;
+    }
+    const discordIdStr = req.params['discord_id'] ?? '';
+    if (!/^\d+$/.test(discordIdStr)) {
+      res.status(400).json({ error: 'Invalid discord_id' });
+      return;
+    }
+    const warIdRaw = (req.body as Record<string, unknown> | undefined)?.['warId'];
+    const warId = typeof warIdRaw === 'number' ? Math.trunc(warIdRaw) : parseInt(String(warIdRaw ?? ''), 10);
+    if (!Number.isInteger(warId) || warId <= 0) {
+      res.status(400).json({ error: 'Invalid warId' });
+      return;
+    }
+    const result = await memberNationCounterRequestHandler(discordIdStr, warId);
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    memberNationContextCache.delete(discordIdStr);
+    res.status(200).json(result);
   });
 
   // -------------------------------------------------------------------------

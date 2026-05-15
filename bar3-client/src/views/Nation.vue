@@ -98,6 +98,7 @@ export default class Nation extends Vue {
     alliance: null,
     activeDefensiveWars: [],
     nationDefensiveWars: [],
+    counterRequests: [],
   };
 
   get canRefresh(): boolean {
