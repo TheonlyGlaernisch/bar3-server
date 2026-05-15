@@ -54,7 +54,7 @@ router.beforeEach(async (to, _from, next) => {
     return;
   }
 
-  const hasClientAccess = session.roles.bar3Client || session.roles.bar3Server;
+  const hasClientAccess = session.roles.bar3Client || session.roles.bar3Server || session.isAdmin;
   const hasMemberAccess = session.roles.memberGuild;
 
   if (to.meta?.requiresClientAccess && !hasClientAccess) {

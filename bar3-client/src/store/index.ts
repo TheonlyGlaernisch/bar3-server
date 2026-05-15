@@ -43,7 +43,7 @@ export default new Vuex.Store({
     isDiscordAuthed: (state) => state.isDiscordAuthed,
     isAdmin: (state) => state.isAdmin,
     discordRoles: (state) => state.discordRoles,
-    hasClientRole: (state) => state.discordRoles.bar3Client || state.discordRoles.bar3Server,
+    hasClientRole: (state) => state.discordRoles.bar3Client || state.discordRoles.bar3Server || state.isAdmin,
     hasMemberRole: (state) => state.discordRoles.memberGuild,
     isBotAuthed: (state) => state.isBotAuthed,
 
