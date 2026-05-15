@@ -34,6 +34,12 @@ const BOT_ROUTE_WINDOW_MS = 60 * 1000;
 const BOT_ROUTE_MAX_REQUESTS = 30;
 const BOT_ROUTE_LIMIT_CLEANUP_THRESHOLD = 1000;
 const botRouteRateLimit = new Map<string, { count: number; resetAt: number }>();
+const botWriteRouteLimiter = rateLimit({
+  windowMs: BOT_ROUTE_WINDOW_MS,
+  limit: BOT_ROUTE_MAX_REQUESTS,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Trust the first hop from a reverse proxy (Render, Heroku, nginx, etc.) so
 // that req.protocol is 'https' and secure session cookies are sent correctly.
@@ -67,6 +73,16 @@ app.use(
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const method = req.method.toUpperCase();
+  const unsafe = method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
+  const hasDiscordSession = typeof req.session?.discordUserId === 'string' && req.session.discordUserId.trim() !== '';
+  if (unsafe && hasDiscordSession && !isTrustedOrigin(req)) {
+    res.status(403).json({ error: 'Blocked by same-origin policy' });
+    return;
+  }
+  next();
+});
 
 // CORS — must come before the Discord auth guard so that ALL responses
 // (including 401s) carry the correct Access-Control-* headers and preflight
@@ -304,9 +320,9 @@ app.get('/api/bot/servers', botRouteLimiter, requireDiscordAuth, requireDiscordA
   proxyBotApi(req, res, 'get', '/api/bot/servers'));
 app.get('/api/bot/commands/usage', botRouteLimiter, requireDiscordAuth, requireDiscordAdmin, async (req: Request, res: Response) =>
   proxyBotApi(req, res, 'get', '/api/bot/commands/usage'));
-app.post('/api/bot/send', botRouteLimiter, requireDiscordAuth, requireTrustedOriginForUnsafeMethod, requireDiscordAdmin, async (req: Request, res: Response) =>
+app.post('/api/bot/send', botRouteLimiter, botWriteRouteLimiter, requireDiscordAuth, requireTrustedOriginForUnsafeMethod, requireDiscordAdmin, async (req: Request, res: Response) =>
   proxyBotApi(req, res, 'post', '/api/bot/send'));
-app.post('/api/bot/config', botRouteLimiter, requireDiscordAuth, requireTrustedOriginForUnsafeMethod, requireDiscordAdmin, (_req: Request, res: Response) =>
+app.post('/api/bot/config', botRouteLimiter, botWriteRouteLimiter, requireDiscordAuth, requireTrustedOriginForUnsafeMethod, requireDiscordAdmin, (_req: Request, res: Response) =>
   res.status(204).end());
 app.get('/api/member/nation', rateLimit({
   windowMs: BOT_ROUTE_WINDOW_MS,
