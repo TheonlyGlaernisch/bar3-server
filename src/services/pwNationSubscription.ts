@@ -7,7 +7,10 @@ const PNW_SUBSCRIPTION_URL = 'https://api.politicsandwar.com/subscriptions/v1/su
 const PNW_SUBSCRIPTION_AUTH_URL = 'https://api.politicsandwar.com/subscriptions/v1/auth';
 const RECONNECT_BASE_SECONDS = 5;
 const RECONNECT_MAX_SECONDS = 120;
-const GATEWAY_RESET_INTERVAL_MINUTES = 55;
+const GATEWAY_RESET_INTERVAL_MINUTES = (() => {
+  const raw = Number.parseInt(process.env.PNW_SUBSCRIPTION_GATEWAY_RESET_MINUTES || '', 10);
+  return Number.isFinite(raw) && raw >= 30 ? raw : 180;
+})();
 const GATEWAY_RESET_INTERVAL_MS = GATEWAY_RESET_INTERVAL_MINUTES * 60 * 1000;
 const WS_KEEPALIVE_INTERVAL_SECONDS = 18;
 const WS_KEEPALIVE_INTERVAL_MS = WS_KEEPALIVE_INTERVAL_SECONDS * 1000;

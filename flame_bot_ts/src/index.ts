@@ -18,6 +18,7 @@ import {
   MessageFlags,
 } from 'discord.js';
 import { createServer, Server } from 'http';
+import { createHash } from 'crypto';
 
 import {
   API_KEY,
@@ -35,6 +36,7 @@ import {
   PNW_API_KEY,
   PNW_TEST_API_KEY,
   PW_SCAN_API_KEY,
+  COUNTER_TRACKED_ALLIANCE_ID,
   VERIFIED_ROLE_ID,
 } from './config';
 import { createApp } from './api';
@@ -1434,6 +1436,9 @@ async function main(): Promise<void> {
   const db = new Database(MONGODB_URI);
   logInfo('[startup] Connecting to database...');
   await db.connect();
+  await db.ensureWarAlertIndexes();
+  await db.ensureRecruiterIndexes();
+  await db.ensureCounterRequestIndexes();
   logInfo('[startup] Database connected.');
   const overriddenPnwApiKey = await db.getPnwApiKey();
   const effectivePnwApiKey = overriddenPnwApiKey || PNW_API_KEY;
@@ -1657,6 +1662,34 @@ async function main(): Promise<void> {
 
   ].map(c => c.toJSON());
 
+  const shouldForceSlashSync = (): boolean => {
+    const raw = (process.env.FORCE_DISCORD_COMMAND_SYNC || '').trim().toLowerCase();
+    return ['1', 'true', 'yes', 'on'].includes(raw);
+  };
+
+  const slashCommandHash = createHash('sha256')
+    .update(JSON.stringify(commands))
+    .digest('hex');
+  const slashCommandHashKey = (guildId: string | null): string =>
+    guildId ? `slash_commands_hash:guild:${guildId}` : 'slash_commands_hash:global';
+
+  const syncSlashCommandsIfNeeded = async (rest: REST, appId: string, guildId: string | null): Promise<boolean> => {
+    const key = slashCommandHashKey(guildId);
+    const previousHash = await db.getBotConfig(key);
+    const force = shouldForceSlashSync();
+    if (!force && previousHash === slashCommandHash) {
+      logInfo(`[startup] Slash command sync skipped (${guildId ? `guild ${guildId}` : 'global'} unchanged).`);
+      return false;
+    }
+    if (guildId) {
+      await rest.put(Routes.applicationGuildCommands(appId, guildId), { body: commands });
+    } else {
+      await rest.put(Routes.applicationCommands(appId), { body: commands });
+    }
+    await db.setBotConfig(key, slashCommandHash);
+    return true;
+  };
+
   const createGuildInvite = async (guild: Guild): Promise<string | null> => {
     const me = guild.members.me;
     if (!me) return null;
@@ -1757,11 +1790,7 @@ async function main(): Promise<void> {
     const appId = client.application?.id;
     if (!appId) return;
     const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
-    if (GUILD_ID !== null) {
-      await rest.put(Routes.applicationGuildCommands(appId, String(GUILD_ID)), { body: commands });
-    } else {
-      await rest.put(Routes.applicationCommands(appId), { body: commands });
-    }
+    const synced = await syncSlashCommandsIfNeeded(rest, appId, GUILD_ID !== null ? String(GUILD_ID) : null);
     for (const guild of client.guilds.cache.values()) {
       await persistGuildMetadata(guild);
     }
@@ -1771,7 +1800,7 @@ async function main(): Promise<void> {
         void refreshDeletedGuildInvitesOnce();
       }, INVITE_REFRESH_INTERVAL_MS);
     }
-    logInfo('Slash commands synced.');
+    logInfo(synced ? 'Slash commands synced.' : 'Slash commands unchanged; sync skipped.');
   });
 
   client.on('guildCreate', async (guild) => {
@@ -2928,9 +2957,11 @@ Message: ${cfg.message}`)],
         const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         if (interaction.guildId) {
           await rest.put(Routes.applicationGuildCommands(appId, interaction.guildId), { body: commands });
+          await db.setBotConfig(slashCommandHashKey(interaction.guildId), slashCommandHash);
           return void (await replyEphemeral('Guild commands synced.'));
         }
         await rest.put(Routes.applicationCommands(appId), { body: commands });
+        await db.setBotConfig(slashCommandHashKey(null), slashCommandHash);
         return void (await replyEphemeral('Global commands synced.'));
       }
       if (commandName === 'admin_clear_guild_commands') {
@@ -2987,6 +3018,7 @@ Message: ${cfg.message}`)],
             alliance: null,
             activeDefensiveWars: [],
             nationDefensiveWars: [],
+            counterRequests: [],
           };
         }
         const registration = await db.getByDiscordId(BigInt(discordId));
@@ -2997,6 +3029,7 @@ Message: ${cfg.message}`)],
             alliance: null,
             activeDefensiveWars: [],
             nationDefensiveWars: [],
+            counterRequests: [],
           };
         }
         const nation = await pnw.getNation(Number(registration.nation_id));
@@ -3007,12 +3040,46 @@ Message: ${cfg.message}`)],
             alliance: null,
             activeDefensiveWars: [],
             nationDefensiveWars: [],
+            counterRequests: [],
+          };
+        }
+        if (COUNTER_TRACKED_ALLIANCE_ID !== null && nation.allianceId !== COUNTER_TRACKED_ALLIANCE_ID) {
+          return {
+            registered: true,
+            nation: {
+              nationId: nation.nationId,
+              nationName: nation.nationName,
+              leaderName: nation.leaderName,
+              numCities: nation.numCities,
+              score: nation.score,
+              allianceId: nation.allianceId,
+              allianceName: nation.allianceName,
+              alliancePosition: nation.alliancePosition,
+              url: nationUrl(nation.nationId),
+            },
+            alliance: null,
+            activeDefensiveWars: [],
+            nationDefensiveWars: [],
+            counterRequests: [],
           };
         }
         const alliance = nation.allianceId > 0 ? await pnw.getAllianceById(nation.allianceId) : null;
         const activeDefensiveWars = nation.allianceId > 0
           ? await pnw.getActiveDefensiveWarsForAlliance(nation.allianceId)
           : [];
+        const activeDefensiveWarIds = activeDefensiveWars.map((war) => war.warId).filter((warId) => warId > 0);
+        if (nation.allianceId > 0) {
+          await db.removeCounterRequestsForAllianceExceptWarIds(nation.allianceId, activeDefensiveWarIds);
+        }
+        const counterRequests = nation.allianceId > 0
+          ? await db.getCounterRequestsByAlliance(nation.allianceId)
+          : [];
+        const counterRequestsByWarId = new Map<number, string>();
+        for (const req of counterRequests) {
+          if (!counterRequestsByWarId.has(req.war_id)) {
+            counterRequestsByWarId.set(req.war_id, req.requested_at);
+          }
+        }
         const activeNationWars = await pnw.getActiveWarsForNation(nation.nationId);
         const defensiveWarIds = activeNationWars
           .filter((war) => war.defenderId === nation.nationId && war.warId > 0)
@@ -3063,6 +3130,8 @@ Message: ${cfg.message}`)],
             defenderAllianceId: war.defenderAllianceId,
             defenderAllianceName: war.defenderAllianceName,
             url: warUrl(war.warId),
+            counterRequested: counterRequestsByWarId.has(war.warId),
+            counterRequestedAt: counterRequestsByWarId.get(war.warId) || null,
           })),
           nationDefensiveWars: nationDefensiveWarDetails
             .filter((war): war is WarDetail => war !== null && war.defenderId === nation.nationId)
@@ -3084,7 +3153,44 @@ Message: ${cfg.message}`)],
               url: warUrl(war.warId),
             }))
             .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+          counterRequests: counterRequests
+            .filter((req) => activeDefensiveWarIds.includes(req.war_id))
+            .map((req) => ({
+              warId: req.war_id,
+              requestedAt: req.requested_at,
+              defenderNationId: req.defender_nation_id,
+              defenderDiscordId: req.defender_discord_id,
+            }))
+            .sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime()),
         };
+      },
+      memberNationCounterRequestHandler: async (discordId: string, warId: number) => {
+        if (!/^\d+$/.test(discordId)) {
+          return { ok: false, status: 400, error: 'Invalid discord_id' };
+        }
+        const registration = await db.getByDiscordId(BigInt(discordId));
+        if (!registration) {
+          return { ok: false, status: 404, error: 'No registered nation found' };
+        }
+        const nation = await pnw.getNation(Number(registration.nation_id));
+        if (!nation) {
+          return { ok: false, status: 404, error: 'Nation not found' };
+        }
+        if (COUNTER_TRACKED_ALLIANCE_ID !== null && nation.allianceId !== COUNTER_TRACKED_ALLIANCE_ID) {
+          return { ok: false, status: 403, error: 'Counters are disabled for this alliance' };
+        }
+        const activeWars = await pnw.getActiveWarsForNation(nation.nationId);
+        const war = activeWars.find((row) => row.warId === warId && row.defenderId === nation.nationId);
+        if (!war) {
+          return { ok: false, status: 403, error: 'Counter request allowed only for your active defensive wars' };
+        }
+        const requestedAt = await db.addCounterRequest(
+          warId,
+          BigInt(discordId),
+          nation.nationId,
+          nation.allianceId
+        );
+        return { ok: true, warId, requestedAt };
       },
     });
     httpServer = createServer(app);

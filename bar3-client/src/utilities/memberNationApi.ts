@@ -37,6 +37,8 @@ export interface MemberNationContextResponse {
     defenderAllianceId: number;
     defenderAllianceName: string;
     url: string;
+    counterRequested?: boolean;
+    counterRequestedAt?: string | null;
   }>;
   nationDefensiveWars: Array<{
     warId: number;
@@ -54,6 +56,12 @@ export interface MemberNationContextResponse {
       nukes: number;
     };
     url: string;
+  }>;
+  counterRequests: Array<{
+    warId: number;
+    requestedAt: string;
+    defenderNationId: number;
+    defenderDiscordId: string;
   }>;
   cache?: {
     source: 'cache' | 'upstream';
@@ -87,6 +95,17 @@ export async function getMemberNationContext(refresh = false): Promise<MemberNat
     alliance: data?.alliance ?? null,
     activeDefensiveWars: Array.isArray(data?.activeDefensiveWars) ? data.activeDefensiveWars : [],
     nationDefensiveWars: Array.isArray(data?.nationDefensiveWars) ? data.nationDefensiveWars : [],
+    counterRequests: Array.isArray(data?.counterRequests) ? data.counterRequests : [],
     cache: data?.cache ?? undefined,
   };
+}
+
+export async function requestCounterForWar(warId: number): Promise<void> {
+  const res = await fetch(`${AUTH_BASE_URL}/api/member/nation/counter-request`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ warId }),
+  });
+  if (!res.ok) throw new Error(await readError(res, 'Failed to request counter'));
 }

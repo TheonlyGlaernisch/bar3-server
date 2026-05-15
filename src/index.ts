@@ -314,6 +314,25 @@ app.get('/api/member/nation', rateLimit({
   const query = refreshRequested ? '?refresh=1' : '';
   await proxyBotApi(req, res, 'get', `/api/member/nation/${encodeURIComponent(sessionDiscordId)}${query}`);
 });
+app.post('/api/member/nation/counter-request', rateLimit({
+  windowMs: BOT_ROUTE_WINDOW_MS,
+  limit: BOT_ROUTE_MAX_REQUESTS,
+  standardHeaders: true,
+  legacyHeaders: false,
+}), requireDiscordAuth, requireDiscordMember, async (req: Request, res: Response) => {
+  const authDiscordId = (res.locals.discordAuth as { discordUserId?: string } | undefined)?.discordUserId;
+  const sessionDiscordId = req.session?.discordUserId || authDiscordId;
+  if (!sessionDiscordId || !/^\d+$/.test(sessionDiscordId)) {
+    res.status(400).json({ error: 'Missing or invalid discord_id' });
+    return;
+  }
+  await proxyBotApi(
+    req,
+    res,
+    'post',
+    `/api/member/nation/${encodeURIComponent(sessionDiscordId)}/counter-request`
+  );
+});
 
 // Discord OAuth routes — must be mounted BEFORE the auth guard so the login
 // page and callback are reachable without an existing session.
