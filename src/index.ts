@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { join } from 'path';
 import { existsSync, readFileSync } from 'fs';
 import session from 'express-session';
+import rateLimit from 'express-rate-limit';
 import accountRoutes from './api/AccountRoutes';
 import { mountLegacyUiAndApi } from './api';
 import v2AuthRouter from './api/routers/v2/auth';
@@ -236,6 +237,12 @@ const requireDiscordMember = (req: Request, res: Response, next: NextFunction) =
   }
   next();
 };
+const memberNationRouteLimiter = rateLimit({
+  windowMs: BOT_ROUTE_WINDOW_MS,
+  limit: BOT_ROUTE_MAX_REQUESTS,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 const authenticateApiKeyAccount = async (req: Request, res: Response, next: NextFunction) => {
   const apiKeyHeader = req.headers['x-api-key'];
   const apiKey = typeof apiKeyHeader === 'string' ? apiKeyHeader.trim() : '';
@@ -297,7 +304,7 @@ app.post('/api/bot/send', botRouteLimiter, requireDiscordAuth, requireDiscordAdm
   proxyBotApi(req, res, 'post', '/api/bot/send'));
 app.post('/api/bot/config', botRouteLimiter, requireDiscordAuth, requireDiscordAdmin, (_req: Request, res: Response) =>
   res.status(204).end());
-app.get('/api/member/nation', requireDiscordAuth, requireDiscordMember, botRouteLimiter, async (req: Request, res: Response) => {
+app.get('/api/member/nation', requireDiscordAuth, requireDiscordMember, memberNationRouteLimiter, async (req: Request, res: Response) => {
   const authDiscordId = (res.locals.discordAuth as { discordUserId?: string } | undefined)?.discordUserId;
   const sessionDiscordId = req.session?.discordUserId || authDiscordId;
   if (!sessionDiscordId || !/^\d+$/.test(sessionDiscordId)) {
