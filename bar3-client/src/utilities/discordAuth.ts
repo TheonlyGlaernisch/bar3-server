@@ -19,6 +19,14 @@ const DEFAULT_ROLES: SessionData['roles'] = {
   memberGuild: false,
 };
 
+function buildDefaultSession(): SessionData {
+  return {
+    authenticated: false,
+    isAdmin: false,
+    roles: { ...DEFAULT_ROLES },
+  };
+}
+
 function parseSessionData(data: unknown): SessionData | null {
   if (!data || typeof data !== 'object') return null;
   const source = data as Record<string, unknown>;
@@ -71,6 +79,8 @@ function writeSessionCache(value: SessionData | null): void {
 
 // In-memory cache so the server is only contacted once per page load.
 let sessionCache: SessionData | null = readSessionCache();
+let sessionValidatedThisPageLoad = false;
+let sessionRequest: Promise<SessionData> | null = null;
 
 export const discordAuth = {
   /**
@@ -95,54 +105,52 @@ export const discordAuth = {
    * repeated server calls during in-app navigation.
    */
   async getSession(): Promise<SessionData> {
-    if (sessionCache !== null) return sessionCache;
-    try {
-      const res = await fetch(`${AUTH_BASE_URL}/auth/session`, {
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const payload = data as Record<string, unknown>;
-        const parsed = parseSessionData(data) || {
-          authenticated: false,
-          isAdmin: false,
-          roles: { ...DEFAULT_ROLES },
-        };
-        const legacyRoles = Array.isArray(payload.roles) ? payload.roles : [];
-        const roleBasedAdmin = legacyRoles.some((role: unknown) => {
-          if (typeof role === 'string') return role.toLowerCase() === 'admin';
-          if (role && typeof role === 'object' && 'name' in role) {
-            const name = (role as { name?: unknown }).name;
-            return typeof name === 'string' && name.toLowerCase() === 'admin';
-          }
-          return false;
-        });
+    if (sessionValidatedThisPageLoad && sessionCache !== null) return sessionCache;
+    if (sessionRequest) return sessionRequest;
 
-        sessionCache = {
-          authenticated: parsed.authenticated,
-          isAdmin: parsed.isAdmin || roleBasedAdmin,
-          roles: parsed.roles,
-        };
-        writeSessionCache(sessionCache);
-      } else if (res.status === 429) {
-        // Preserve prior auth state on temporary rate-limit responses.
-        sessionCache = readSessionCache() || {
-          authenticated: false,
-          isAdmin: false,
-          roles: { ...DEFAULT_ROLES },
-        };
-      } else {
-        sessionCache = { authenticated: false, isAdmin: false, roles: { ...DEFAULT_ROLES } };
-        writeSessionCache(null);
+    sessionRequest = (async () => {
+      try {
+        const res = await fetch(`${AUTH_BASE_URL}/auth/session`, {
+          credentials: 'include',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const payload = data as Record<string, unknown>;
+          const parsed = parseSessionData(data) || buildDefaultSession();
+          const legacyRoles = Array.isArray(payload.roles) ? payload.roles : [];
+          const roleBasedAdmin = legacyRoles.some((role: unknown) => {
+            if (typeof role === 'string') return role.toLowerCase() === 'admin';
+            if (role && typeof role === 'object' && 'name' in role) {
+              const name = (role as { name?: unknown }).name;
+              return typeof name === 'string' && name.toLowerCase() === 'admin';
+            }
+            return false;
+          });
+
+          sessionCache = {
+            authenticated: parsed.authenticated,
+            isAdmin: parsed.isAdmin || roleBasedAdmin,
+            roles: parsed.roles,
+          };
+          writeSessionCache(sessionCache);
+        } else if (res.status === 429) {
+          // Preserve prior auth state on temporary rate-limit responses.
+          sessionCache = readSessionCache() || sessionCache || buildDefaultSession();
+        } else {
+          sessionCache = buildDefaultSession();
+          writeSessionCache(null);
+        }
+      } catch {
+        sessionCache = readSessionCache() || sessionCache || buildDefaultSession();
+      } finally {
+        sessionValidatedThisPageLoad = true;
+        sessionRequest = null;
       }
-    } catch {
-      sessionCache = readSessionCache() || {
-        authenticated: false,
-        isAdmin: false,
-        roles: { ...DEFAULT_ROLES },
-      };
-    }
-    return sessionCache;
+
+      return sessionCache || buildDefaultSession();
+    })();
+
+    return sessionRequest;
   },
 
   /**
@@ -158,6 +166,8 @@ export const discordAuth = {
    */
   logout(): void {
     sessionCache = null;
+    sessionValidatedThisPageLoad = false;
+    sessionRequest = null;
     writeSessionCache(null);
     window.location.href = `${AUTH_BASE_URL}/auth/logout`;
   },
