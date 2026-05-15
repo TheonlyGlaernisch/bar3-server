@@ -403,10 +403,12 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
       return res.redirect('/auth/login?error=role_check_failed');
     }
 
-    // Grant access to users with bar3_client, bar3_server, or configured member-guild role.
+    // Grant access to users with bar3_client, bar3_server, configured member-guild role,
+    // or explicit ADMIN_DISCORD_IDS allowlist membership.
     const discordRoles = buildDiscordRoles(flameBotRoles);
+    const isAdmin = ADMIN_DISCORD_IDS.has(discordId);
     const hasAccess: boolean =
-      discordRoles.bar3_client || discordRoles.bar3_server || discordRoles.member_guild;
+      discordRoles.bar3_client || discordRoles.bar3_server || discordRoles.member_guild || isAdmin;
 
     if (!hasAccess) {
       return res.send(ACCESS_DENIED_HTML);
