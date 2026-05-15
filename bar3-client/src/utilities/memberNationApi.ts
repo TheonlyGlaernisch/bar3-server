@@ -38,6 +38,23 @@ export interface MemberNationContextResponse {
     defenderAllianceName: string;
     url: string;
   }>;
+  nationDefensiveWars: Array<{
+    warId: number;
+    date: string;
+    reason: string;
+    attackerId: number;
+    attackerName: string;
+    attackerCities: number;
+    attackerUnits: {
+      soldiers: number;
+      tanks: number;
+      aircraft: number;
+      ships: number;
+      missiles: number;
+      nukes: number;
+    };
+    url: string;
+  }>;
   cache?: {
     source: 'cache' | 'upstream';
     cachedAt: string;
@@ -69,6 +86,7 @@ export async function getMemberNationContext(refresh = false): Promise<MemberNat
     nation: data?.nation ?? null,
     alliance: data?.alliance ?? null,
     activeDefensiveWars: Array.isArray(data?.activeDefensiveWars) ? data.activeDefensiveWars : [],
+    nationDefensiveWars: Array.isArray(data?.nationDefensiveWars) ? data.nationDefensiveWars : [],
     cache: data?.cache ?? undefined,
   };
 }

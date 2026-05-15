@@ -35,6 +35,46 @@
       </div>
       <div class="text-body-2"><strong>Position:</strong> {{ context.nation.alliancePosition || 'N/A' }}</div>
     </v-card>
+    <v-card v-if="context.nation" dark color="#1A1A1A" class="pa-4 mt-4">
+      <div class="text-subtitle-1 white--text font-weight-medium mb-3">Defensive Wars</div>
+      <v-alert v-if="counterNotice" type="success" dense class="mb-3">{{ counterNotice }}</v-alert>
+      <v-simple-table v-if="context.nationDefensiveWars.length" dark>
+        <template v-slot:default>
+          <thead>
+            <tr>
+              <th class="text-left">War</th>
+              <th class="text-left">Reason</th>
+              <th class="text-left">Attacker Cities</th>
+              <th class="text-left">Units</th>
+              <th class="text-left">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="war in context.nationDefensiveWars" :key="war.warId">
+              <td>
+                <a :href="war.url" target="_blank" rel="noopener noreferrer">War #{{ war.warId }}</a>
+              </td>
+              <td>{{ war.reason }}</td>
+              <td>{{ war.attackerCities }}</td>
+              <td>
+                S: {{ war.attackerUnits.soldiers.toLocaleString() }} ·
+                T: {{ war.attackerUnits.tanks.toLocaleString() }} ·
+                A: {{ war.attackerUnits.aircraft.toLocaleString() }} ·
+                Sh: {{ war.attackerUnits.ships.toLocaleString() }} ·
+                M: {{ war.attackerUnits.missiles.toLocaleString() }} ·
+                N: {{ war.attackerUnits.nukes.toLocaleString() }}
+              </td>
+              <td>
+                <v-btn x-small color="primary" @click="requestCounter(war)">Request Counter</v-btn>
+              </td>
+            </tr>
+          </tbody>
+        </template>
+      </v-simple-table>
+      <div v-else class="caption grey--text text--lighten-1">
+        No active defensive wars right now.
+      </div>
+    </v-card>
     <v-card v-else dark color="#1A1A1A" class="pa-4">
       <div class="text-subtitle-2">This account is registered, but nation details are currently unavailable.</div>
     </v-card>
@@ -51,7 +91,14 @@ type NationViewContext = MemberNationContextResponse;
 export default class Nation extends Vue {
   loading = false;
   error = '';
-  context: NationViewContext = { registered: false, nation: null, alliance: null, activeDefensiveWars: [] };
+  counterNotice = '';
+  context: NationViewContext = {
+    registered: false,
+    nation: null,
+    alliance: null,
+    activeDefensiveWars: [],
+    nationDefensiveWars: [],
+  };
 
   get canRefresh(): boolean {
     return this.context.cache?.canRefreshNow !== false;
@@ -73,6 +120,23 @@ export default class Nation extends Vue {
 
   async refresh() {
     await this.load(true);
+  }
+
+  async requestCounter(war: NationViewContext['nationDefensiveWars'][number]) {
+    const text = `Request counter: war #${war.warId} vs ${war.attackerName} (${war.url})`;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        this.counterNotice = 'Counter request copied to clipboard.';
+      } else {
+        this.counterNotice = text;
+      }
+    } catch {
+      this.counterNotice = text;
+    }
+    setTimeout(() => {
+      this.counterNotice = '';
+    }, 3000);
   }
 
   async load(refresh: boolean) {

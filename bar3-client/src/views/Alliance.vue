@@ -68,7 +68,13 @@ type AllianceViewContext = MemberNationContextResponse;
 export default class Alliance extends Vue {
   loading = false;
   error = '';
-  context: AllianceViewContext = { registered: false, nation: null, alliance: null, activeDefensiveWars: [] };
+  context: AllianceViewContext = {
+    registered: false,
+    nation: null,
+    alliance: null,
+    activeDefensiveWars: [],
+    nationDefensiveWars: [],
+  };
 
   get canRefresh(): boolean {
     return this.context.cache?.canRefreshNow !== false;

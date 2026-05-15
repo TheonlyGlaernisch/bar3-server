@@ -135,6 +135,23 @@ export interface MemberNationContextData {
     url: string;
   } | null;
   activeDefensiveWars: MemberNationContextWar[];
+  nationDefensiveWars: Array<{
+    warId: number;
+    date: string;
+    reason: string;
+    attackerId: number;
+    attackerName: string;
+    attackerCities: number;
+    attackerUnits: {
+      soldiers: number;
+      tanks: number;
+      aircraft: number;
+      ships: number;
+      missiles: number;
+      nukes: number;
+    };
+    url: string;
+  }>;
 }
 export type MemberNationContextGetter = (discordId: string) => Promise<MemberNationContextData>;
 

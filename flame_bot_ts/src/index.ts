@@ -2986,6 +2986,7 @@ Message: ${cfg.message}`)],
             nation: null,
             alliance: null,
             activeDefensiveWars: [],
+            nationDefensiveWars: [],
           };
         }
         const registration = await db.getByDiscordId(BigInt(discordId));
@@ -2995,6 +2996,7 @@ Message: ${cfg.message}`)],
             nation: null,
             alliance: null,
             activeDefensiveWars: [],
+            nationDefensiveWars: [],
           };
         }
         const nation = await pnw.getNation(Number(registration.nation_id));
@@ -3004,12 +3006,26 @@ Message: ${cfg.message}`)],
             nation: null,
             alliance: null,
             activeDefensiveWars: [],
+            nationDefensiveWars: [],
           };
         }
         const alliance = nation.allianceId > 0 ? await pnw.getAllianceById(nation.allianceId) : null;
         const activeDefensiveWars = nation.allianceId > 0
           ? await pnw.getActiveDefensiveWarsForAlliance(nation.allianceId)
           : [];
+        const activeNationWars = await pnw.getActiveWarsForNation(nation.nationId);
+        const defensiveWarIds = activeNationWars
+          .filter((war) => war.defenderId === nation.nationId && war.warId > 0)
+          .map((war) => war.warId);
+        const nationDefensiveWarDetails = await Promise.all(
+          defensiveWarIds.map(async (warId) => {
+            try {
+              return await pnw.getWarDetail(warId);
+            } catch {
+              return null;
+            }
+          }),
+        );
         return {
           registered: true,
           nation: {
@@ -3048,6 +3064,26 @@ Message: ${cfg.message}`)],
             defenderAllianceName: war.defenderAllianceName,
             url: warUrl(war.warId),
           })),
+          nationDefensiveWars: nationDefensiveWarDetails
+            .filter((war): war is WarDetail => war !== null && war.defenderId === nation.nationId)
+            .map((war) => ({
+              warId: war.warId,
+              date: war.date.toISOString(),
+              reason: war.warType,
+              attackerId: war.attackerId,
+              attackerName: war.attackerName,
+              attackerCities: war.attackerCities,
+              attackerUnits: {
+                soldiers: war.attackerSoldiers,
+                tanks: war.attackerTanks,
+                aircraft: war.attackerAircraft,
+                ships: war.attackerShips,
+                missiles: war.attackerMissiles,
+                nukes: war.attackerNukes,
+              },
+              url: warUrl(war.warId),
+            }))
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
         };
       },
     });
