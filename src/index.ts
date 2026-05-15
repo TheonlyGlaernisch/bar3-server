@@ -297,7 +297,7 @@ app.post('/api/bot/send', botRouteLimiter, requireDiscordAuth, requireDiscordAdm
   proxyBotApi(req, res, 'post', '/api/bot/send'));
 app.post('/api/bot/config', botRouteLimiter, requireDiscordAuth, requireDiscordAdmin, (_req: Request, res: Response) =>
   res.status(204).end());
-app.get('/api/member/nation', botRouteLimiter, requireDiscordAuth, requireDiscordMember, async (req: Request, res: Response) => {
+app.get('/api/member/nation', requireDiscordAuth, requireDiscordMember, botRouteLimiter, async (req: Request, res: Response) => {
   const authDiscordId = (res.locals.discordAuth as { discordUserId?: string } | undefined)?.discordUserId;
   const sessionDiscordId = req.session?.discordUserId || authDiscordId;
   if (!sessionDiscordId || !/^\d+$/.test(sessionDiscordId)) {
