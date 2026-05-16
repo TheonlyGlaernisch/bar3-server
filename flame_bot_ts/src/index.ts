@@ -2469,13 +2469,22 @@ ${resourceLines}
         const infoEmbed = allianceEmbed(alliance, baseUrl);
         const totalCities = lotsMembers.reduce((s, n) => s + n.numCities, 0);
         if (totalCities > 0) {
-          const soldierRate = (lotsMembers.reduce((s, n) => s + n.soldiers, 0) / (totalCities * MAX_SOLDIERS_PER_CITY)) * 100;
-          const tankRate = (lotsMembers.reduce((s, n) => s + n.tanks, 0) / (totalCities * MAX_TANKS_PER_CITY)) * 100;
-          const aircraftRate = (lotsMembers.reduce((s, n) => s + n.aircraft, 0) / (totalCities * MAX_AIRCRAFT_PER_CITY)) * 100;
-          const shipRate = (lotsMembers.reduce((s, n) => s + n.ships, 0) / (totalCities * MAX_SHIPS_PER_CITY)) * 100;
-          const avgMilitarisationRate = (soldierRate + tankRate + aircraftRate + shipRate) / 4;
+          const totalSoldiers = lotsMembers.reduce((s, n) => s + n.soldiers, 0);
+          const totalTanks = lotsMembers.reduce((s, n) => s + n.tanks, 0);
+          const totalAircraft = lotsMembers.reduce((s, n) => s + n.aircraft, 0);
+          const totalShips = lotsMembers.reduce((s, n) => s + n.ships, 0);
+          const soldierRate = (totalSoldiers / (totalCities * MAX_SOLDIERS_PER_CITY)) * 100;
+          const tankRate = (totalTanks / (totalCities * MAX_TANKS_PER_CITY)) * 100;
+          const aircraftRate = (totalAircraft / (totalCities * MAX_AIRCRAFT_PER_CITY)) * 100;
+          const shipRate = (totalShips / (totalCities * MAX_SHIPS_PER_CITY)) * 100;
+          const totalMilRate = (
+            (totalTanks / (totalCities * MAX_TANKS_PER_CITY)) +
+            (totalAircraft / (totalCities * MAX_AIRCRAFT_PER_CITY)) +
+            (totalSoldiers / (totalCities * MAX_SOLDIERS_PER_CITY)) +
+            (totalShips / (totalCities * MAX_SHIPS_PER_CITY))
+          ) * 100;
           const avgMil = [
-            `📈 Rate: ${avgMilitarisationRate.toFixed(1)}%`,
+            `📈 Total Rate: ${totalMilRate.toFixed(1)}%`,
             `🪖 Soldiers: ${soldierRate.toFixed(1)}%`,
             `⚔️ Tanks: ${tankRate.toFixed(1)}%`,
             `✈️ Aircraft: ${aircraftRate.toFixed(1)}%`,
