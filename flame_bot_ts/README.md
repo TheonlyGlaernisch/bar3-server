@@ -25,6 +25,7 @@ This is the TypeScript port of `flame_bot` (Python). It is the active production
 | `/city_cost <current>` | City purchase cost calculator |
 | `/send ...resources` | Compose a Locutus transfer command |
 | `/request_grant` | Submit a grant request to the configured channel |
+| `/counter [war_id]` | List your active defensive wars or record a counter request |
 | `/gov` | Show current gov role assignments |
 | `/fun_quote` | Return a random legacy quote |
 | `/help` | List all available commands |

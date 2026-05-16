@@ -15,6 +15,8 @@ export interface GuildConfigDoc {
   slots_alliances?: number[];
   gov_roles?: Record<string, string | null>;
   grant_channel_id?: number | null;
+  gov_panel_channel_id?: string | null;
+  gov_panel_message_id?: string | null;
   alliance_id?: number | null;
   welcome_enabled?: boolean;
   welcome_channel_id?: string | null;
@@ -172,6 +174,28 @@ export class Database {
     await this._guildConfig.updateOne(
       { guild_id: guildId.toString() },
       { $set: { guild_id: guildId.toString(), grant_channel_id: channelId } },
+      { upsert: true }
+    );
+  }
+
+  async getGovPanel(guildId: bigint): Promise<{ channelId: string | null; messageId: string | null }> {
+    const doc = await this._guildConfig.findOne({ guild_id: guildId.toString() }, { projection: { _id: 0 } });
+    return {
+      channelId: doc?.gov_panel_channel_id != null ? String(doc.gov_panel_channel_id) : null,
+      messageId: doc?.gov_panel_message_id != null ? String(doc.gov_panel_message_id) : null,
+    };
+  }
+
+  async setGovPanel(guildId: bigint, channelId: string | null, messageId: string | null): Promise<void> {
+    await this._guildConfig.updateOne(
+      { guild_id: guildId.toString() },
+      {
+        $set: {
+          guild_id: guildId.toString(),
+          gov_panel_channel_id: channelId,
+          gov_panel_message_id: messageId,
+        },
+      },
       { upsert: true }
     );
   }
