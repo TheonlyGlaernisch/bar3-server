@@ -240,6 +240,19 @@ test('setGrantChannel and getGrantChannel round-trip', async () => {
   assert.equal(await db.getGrantChannel(BigInt(301)), null);
 });
 
+test('getGovPanel returns null ids for unconfigured guild', async () => {
+  const db = await makeDb();
+  assert.deepEqual(await db.getGovPanel(BigInt(350)), { channelId: null, messageId: null });
+});
+
+test('setGovPanel and getGovPanel round-trip', async () => {
+  const db = await makeDb();
+  await db.setGovPanel(BigInt(351), '1234567890', '0987654321');
+  assert.deepEqual(await db.getGovPanel(BigInt(351)), { channelId: '1234567890', messageId: '0987654321' });
+  await db.setGovPanel(BigInt(351), null, null);
+  assert.deepEqual(await db.getGovPanel(BigInt(351)), { channelId: null, messageId: null });
+});
+
 // ---------------------------------------------------------------------------
 // Guild config — welcome
 // ---------------------------------------------------------------------------

@@ -32,6 +32,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
   { name: '/city_cost <current> [target] [policies]', summary: 'Calculate city purchase costs using the dynamic formula.', category: 'core' },
   { name: '/revenue [query]', summary: 'Show estimated gross daily revenue for a nation; defaults to your registered nation.', category: 'core' },
   { name: '/send ...resources', summary: 'Compose Locutus transfer command with full resource payload.', category: 'core' },
+  { name: '/counter [war_id]', summary: 'List your active defensive wars or record a counter request for one of them.', category: 'alliance' },
   { name: '/request_grant <note> [resources]', summary: 'Submit grant request to configured grant channel.', category: 'gov' },
   { name: '/slots', summary: 'Show open defensive slots for configured alliances.', category: 'alliance' },
   { name: '/config_slots_set <ids>', summary: 'Set slot-tracked alliance list for this guild.', category: 'setup' },

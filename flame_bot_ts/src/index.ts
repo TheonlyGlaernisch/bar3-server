@@ -1,4 +1,5 @@
 import {
+  ButtonInteraction,
   ChatInputCommandInteraction,
   Client,
   ComponentType,
@@ -13,6 +14,10 @@ import {
   REST,
   Routes,
   SlashCommandBuilder,
+  ModalBuilder,
+  ModalSubmitInteraction,
+  TextInputBuilder,
+  TextInputStyle,
   TextChannel,
   PermissionFlagsBits,
   MessageFlags,
@@ -92,6 +97,7 @@ const RECRUIT_DELAY_SECONDS = 5 * 60;
 const DEFAULT_WELCOME_MESSAGE = 'Welcome !(user)! !(status)';
 const DISCORD_COMMAND_COOLDOWN_SECONDS = 2.0;
 const INVITE_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const GRANT_REQUEST_BUTTON_TTL_MS = 48 * 60 * 60 * 1000;
 
 const DEBUG_ENABLED = LOG_LEVEL === 'DEBUG';
 const logInfo = (...args: unknown[]): void => console.log(...args);
@@ -589,7 +595,24 @@ function warUrl(warId: number, baseUrl = PNW_BASE_URL): string {
   return `${baseUrl}/nation/war/timeline/war=${warId}`;
 }
 
-function hasRole(i: ChatInputCommandInteraction, roleId: string | null): boolean {
+type GuildInteractionLike = ChatInputCommandInteraction | ButtonInteraction | ModalSubmitInteraction;
+
+function getInteractionRoleIds(member: unknown): Set<string> {
+  if (!member || typeof member !== 'object') return new Set<string>();
+  const maybeRoles = (member as any).roles;
+  if (maybeRoles?.cache) return new Set<string>(Array.from(maybeRoles.cache.keys()));
+  if (Array.isArray(maybeRoles)) return new Set<string>(maybeRoles.map((roleId) => String(roleId)));
+  return new Set<string>();
+}
+
+function interactionHasAdminPermissions(interaction: GuildInteractionLike): boolean {
+  if (!interaction.inGuild() || !interaction.member) return false;
+  if (ADMIN_DISCORD_IDS.has(BigInt(interaction.user.id))) return true;
+  const member = interaction.member;
+  return 'permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator');
+}
+
+function hasRole(i: GuildInteractionLike, roleId: string | null): boolean {
   if (!roleId || !i.inGuild() || !i.member) return false;
   const member = i.member as any;
   if (member?.roles?.cache) return member.roles.cache.has(roleId);
@@ -597,21 +620,18 @@ function hasRole(i: ChatInputCommandInteraction, roleId: string | null): boolean
   return false;
 }
 
-function hasBar3ClientAccess(i: ChatInputCommandInteraction): boolean {
+function hasBar3ClientAccess(i: GuildInteractionLike): boolean {
   if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
   return hasRole(i, BAR3_CLIENT_ROLE_ID);
 }
 
 type GovRoleKey = 'milcom' | 'milcom_gov' | 'econ' | 'econ_gov' | 'ia' | 'ia_asst' | 'gov' | 'leader' | '2ic' | 'member';
 
-async function hasGovAccess(i: ChatInputCommandInteraction, db: Database, roleKeys: GovRoleKey[] = ['milcom']): Promise<boolean> {
+async function hasGovAccess(i: GuildInteractionLike, db: Database, roleKeys: GovRoleKey[] = ['milcom']): Promise<boolean> {
   if (!i.inGuild() || !i.guildId || !i.member) return false;
-  if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
-  const member = i.member;
-  if ('permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator')) return true;
+  if (interactionHasAdminPermissions(i)) return true;
   const cfg = await db.getGovRoles(BigInt(i.guildId));
-  if (!('roles' in member) || !member.roles) return false;
-  const roleSet = new Set((member.roles as { cache?: Map<string, unknown> }).cache ? Array.from((member.roles as any).cache.keys()) : (member.roles as any));
+  const roleSet = getInteractionRoleIds(i.member);
   for (const key of roleKeys) {
     const rid = (cfg as any)[key];
     if (rid != null && roleSet.has(String(rid))) return true;
@@ -620,26 +640,19 @@ async function hasGovAccess(i: ChatInputCommandInteraction, db: Database, roleKe
 }
 
 function hasAdminCommandAccess(i: ChatInputCommandInteraction): boolean {
-  if (!i.inGuild() || !i.member) return false;
-  if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
-  const member = i.member;
-  return 'permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator');
+  return interactionHasAdminPermissions(i);
 }
 
 /** Check whether the caller may use member-gated commands.
  * Passes if admin, the configured "member" role is unset, caller holds the
  * "member" role, or caller holds any gov role. */
-async function hasMemberAccess(i: ChatInputCommandInteraction, db: Database): Promise<boolean> {
+async function hasMemberAccess(i: GuildInteractionLike, db: Database): Promise<boolean> {
   if (!i.inGuild() || !i.guildId || !i.member) return false;
-  if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
-  const member = i.member;
-  if ('permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator')) return true;
+  if (interactionHasAdminPermissions(i)) return true;
   const cfg = await db.getGovRoles(BigInt(i.guildId));
   const memberRoleId = (cfg as any)['member'];
   if (!memberRoleId) return true; // not configured — no restriction
-  const roleSet = new Set(
-    (member.roles as any)?.cache ? Array.from((member.roles as any).cache.keys()) : (member.roles as any) ?? [],
-  );
+  const roleSet = getInteractionRoleIds(i.member);
   if (roleSet.has(String(memberRoleId))) return true;
   const govKeys: GovRoleKey[] = ['leader', '2ic', 'econ', 'econ_gov', 'milcom', 'milcom_gov', 'ia', 'ia_asst', 'gov'];
   for (const key of govKeys) {
@@ -665,6 +678,61 @@ function renderWelcomeMessage(
     .replace(/!\(mention\)/g, memberMention)
     .replace(/!\(status\)/g, statusText)
     .replace(/!\(channel\)/g, welcomeChannelMention ?? '#unknown-channel');
+}
+
+function buildGovPanelEmbed(guild: Guild, cfg: Record<string, string | null>): EmbedBuilder {
+  const GOV_DEPT_LABELS: Record<string, string> = {
+    leader: 'Leader', '2ic': 'Second in Command', econ: 'Economics', econ_gov: 'Economics Gov',
+    milcom: 'Military Command', milcom_gov: 'Military Command Gov', ia: 'Internal Affairs',
+    ia_asst: 'Internal Affairs Assistant',
+  };
+  const GOV_DEPT_EMOJI: Record<string, string> = {
+    leader: '👑', '2ic': '🥈', econ: '💰', econ_gov: '📊',
+    milcom: '⚔️', milcom_gov: '🛡️', ia: '🤝', ia_asst: '📋',
+  };
+  const embed = new EmbedBuilder()
+    .setTitle(`${guild.name} — Government Panel`)
+    .setColor(0x5865F2)
+    .setTimestamp();
+  let total = 0;
+  const guildRoles = new Map(guild.roles.cache.map((role) => [role.id, role]));
+  for (const [key, label] of Object.entries(GOV_DEPT_LABELS)) {
+    const roleId = cfg[key];
+    if (!roleId) continue;
+    const role = guildRoles.get(roleId);
+    if (!role) {
+      embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label}`, value: '*(role not found)*', inline: false });
+      continue;
+    }
+    const membersWithRole = role.members.filter((member) => !member.user.bot);
+    total += membersWithRole.size;
+    const value = membersWithRole.size
+      ? [...membersWithRole.values()].sort((a, b) => a.displayName.localeCompare(b.displayName)).map((member) => `<@${member.id}>`).join(' ')
+      : '*(no members)*';
+    embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label} (${membersWithRole.size})`, value, inline: false });
+  }
+  if (embed.data.fields?.length === 0) {
+    embed.setDescription('No government roles are configured yet. Use `/roles_setup` first.');
+  }
+  embed.setFooter({ text: `${total} government member(s) total` });
+  return embed;
+}
+
+function buildGovPanelComponents(): ActionRowBuilder<ButtonBuilder>[] {
+  return [
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId('gov_panel_refresh').setLabel('Refresh').setStyle(ButtonStyle.Primary).setEmoji('🔄'),
+    ),
+  ];
+}
+
+function buildGrantDecisionComponents(): ActionRowBuilder<ButtonBuilder>[] {
+  return [
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId('grant_request:approve').setLabel('Approve').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('grant_request:decline').setLabel('Decline').setStyle(ButtonStyle.Danger),
+    ),
+  ];
 }
 
 /** Rich nation embed matching Python's _nation_embed. */
@@ -1514,6 +1582,7 @@ async function main(): Promise<void> {
     new SlashCommandBuilder().setName('gov').setDescription('List members in configured gov departments'),
     new SlashCommandBuilder().setName('setup_grant_channel').setDescription('Set grant request channel').addChannelOption(o => o.setName('channel').setDescription('Target channel').setRequired(true)),
     new SlashCommandBuilder().setName('request_grant').setDescription('Request a grant').addStringOption(o => o.setName('note').setDescription('Grant reason').setRequired(true)).addNumberOption(o => o.setName('money').setDescription('Requested money')).addNumberOption(o => o.setName('food').setDescription('Food amount')).addNumberOption(o => o.setName('coal').setDescription('Coal amount')).addNumberOption(o => o.setName('oil').setDescription('Oil amount')).addNumberOption(o => o.setName('uranium').setDescription('Uranium amount')).addNumberOption(o => o.setName('iron').setDescription('Iron amount')).addNumberOption(o => o.setName('bauxite').setDescription('Bauxite amount')).addNumberOption(o => o.setName('lead').setDescription('Lead amount')).addNumberOption(o => o.setName('gasoline').setDescription('Gasoline amount')).addNumberOption(o => o.setName('munitions').setDescription('Munitions amount')).addNumberOption(o => o.setName('steel').setDescription('Steel amount')).addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount')),
+    new SlashCommandBuilder().setName('counter').setDescription('List or request counters for your active defensive wars').addIntegerOption(o => o.setName('war_id').setDescription('Specific defensive war ID to request a counter for')),
     new SlashCommandBuilder().setName('admin_alliance_set').setDescription('Set guild primary alliance ID').addIntegerOption(o => o.setName('alliance_id').setDescription('Alliance ID').setRequired(true)),
     new SlashCommandBuilder().setName('admin_alliance_show').setDescription('Show guild primary alliance ID'),
     new SlashCommandBuilder().setName('color').setDescription('Check alliance color compliance'),
@@ -1835,7 +1904,152 @@ async function main(): Promise<void> {
     }
   });
 
+  const syncGovPanel = async (guild: Guild, preferredChannel: TextChannel | null): Promise<{ channel: TextChannel; messageId: string; created: boolean } | null> => {
+    const cfg = await db.getGovRoles(BigInt(guild.id));
+    const embed = buildGovPanelEmbed(guild, cfg as Record<string, string | null>);
+    const components = buildGovPanelComponents();
+    const storedPanel = await db.getGovPanel(BigInt(guild.id));
+    const resolveTextChannel = async (channelId: string | null): Promise<TextChannel | null> => {
+      if (!channelId) return null;
+      const cached = guild.channels.cache.get(channelId) ?? await guild.channels.fetch(channelId).catch(() => null);
+      return cached?.isTextBased() && 'send' in cached ? cached as TextChannel : null;
+    };
+    let channel = await resolveTextChannel(storedPanel.channelId);
+    if (!channel) channel = preferredChannel;
+    if (!channel) return null;
+    if (storedPanel.messageId) {
+      const existingMessage = await channel.messages.fetch(storedPanel.messageId).catch(() => null);
+      if (existingMessage) {
+        await existingMessage.edit({ embeds: [embed], components });
+        if (storedPanel.channelId !== channel.id) {
+          await db.setGovPanel(BigInt(guild.id), channel.id, existingMessage.id);
+        }
+        return { channel, messageId: existingMessage.id, created: false };
+      }
+    }
+    const newMessage = await channel.send({ embeds: [embed], components });
+    await db.setGovPanel(BigInt(guild.id), channel.id, newMessage.id);
+    return { channel, messageId: newMessage.id, created: true };
+  };
+
+  const handleCounterRequestByDiscordId = async (discordId: string, warId: number) => {
+    if (!/^\d+$/.test(discordId)) {
+      return { ok: false as const, status: 400, error: 'Invalid discord_id' };
+    }
+    const registration = await db.getByDiscordId(BigInt(discordId));
+    if (!registration) {
+      return { ok: false as const, status: 404, error: 'No registered nation found' };
+    }
+    const nation = await pnw.getNation(Number(registration.nation_id));
+    if (!nation) {
+      return { ok: false as const, status: 404, error: 'Nation not found' };
+    }
+    if (COUNTER_TRACKED_ALLIANCE_ID !== null && nation.allianceId !== COUNTER_TRACKED_ALLIANCE_ID) {
+      return { ok: false as const, status: 403, error: 'Counters are disabled for this alliance' };
+    }
+    const activeWars = await pnw.getActiveWarsForNation(nation.nationId);
+    const war = activeWars.find((row) => row.warId === warId && row.defenderId === nation.nationId);
+    if (!war) {
+      return { ok: false as const, status: 403, error: 'Counter request allowed only for your active defensive wars' };
+    }
+    const requestedAt = await db.addCounterRequest(
+      warId,
+      BigInt(discordId),
+      nation.nationId,
+      nation.allianceId
+    );
+    return { ok: true as const, warId, requestedAt };
+  };
+
   client.on('interactionCreate', async (interaction: Interaction) => {
+    if (interaction.isButton()) {
+      if (interaction.customId === 'gov_panel_refresh') {
+        if (!interaction.inGuild() || !interaction.guildId || !interaction.guild) {
+          return void interaction.reply({ content: 'Guild only button.', flags: MessageFlags.Ephemeral });
+        }
+        const storedPanel = await db.getGovPanel(BigInt(interaction.guildId));
+        if (!storedPanel.messageId || storedPanel.messageId !== interaction.message.id) {
+          return void interaction.reply({ content: 'This government panel has been replaced. Use `/gov` to locate the current panel.', flags: MessageFlags.Ephemeral });
+        }
+        const cfg = await db.getGovRoles(BigInt(interaction.guildId));
+        await interaction.update({
+          embeds: [buildGovPanelEmbed(interaction.guild, cfg as Record<string, string | null>)],
+          components: buildGovPanelComponents(),
+        });
+        return;
+      }
+      if (interaction.customId === 'grant_request:approve' || interaction.customId === 'grant_request:decline') {
+        if (!interaction.inGuild() || !interaction.guildId) {
+          return void interaction.reply({ content: 'Guild only button.', flags: MessageFlags.Ephemeral });
+        }
+        if (!await hasGovAccess(interaction, db, ['econ', 'econ_gov', 'leader', '2ic'])) {
+          return void interaction.reply({ content: 'You need grant approval permissions to use this button.', flags: MessageFlags.Ephemeral });
+        }
+        if (Date.now() - interaction.message.createdTimestamp > GRANT_REQUEST_BUTTON_TTL_MS) {
+          try { await interaction.message.edit({ components: [] }); } catch { /**/ }
+          return void interaction.reply({ content: 'These grant-request buttons expired after 48 hours.', flags: MessageFlags.Ephemeral });
+        }
+        const action = interaction.customId.endsWith(':approve') ? 'approve' : 'decline';
+        const modal = new ModalBuilder()
+          .setCustomId(`grant_request_reason:${action}:${interaction.message.id}`)
+          .setTitle(action === 'approve' ? 'Approve Grant Request' : 'Decline Grant Request');
+        modal.addComponents(
+          new ActionRowBuilder<TextInputBuilder>().addComponents(
+            new TextInputBuilder()
+              .setCustomId('reason')
+              .setLabel('Reason')
+              .setStyle(TextInputStyle.Paragraph)
+              .setRequired(true)
+              .setMaxLength(1000),
+          ),
+        );
+        await interaction.showModal(modal);
+        return;
+      }
+      return;
+    }
+    if (interaction.isModalSubmit()) {
+      const modalMatch = /^grant_request_reason:(approve|decline):(\d+)$/.exec(interaction.customId);
+      if (!modalMatch) return;
+      if (!interaction.inGuild() || !interaction.guildId || !interaction.channel?.isTextBased() || !('messages' in interaction.channel)) {
+        return void interaction.reply({ content: 'Grant request message not available.', flags: MessageFlags.Ephemeral });
+      }
+      if (!await hasGovAccess(interaction, db, ['econ', 'econ_gov', 'leader', '2ic'])) {
+        return void interaction.reply({ content: 'You need grant approval permissions to use this modal.', flags: MessageFlags.Ephemeral });
+      }
+      const [, action, messageId] = modalMatch;
+      const reason = interaction.fields.getTextInputValue('reason').trim();
+      if (!reason) {
+        return void interaction.reply({ content: 'Reason is required.', flags: MessageFlags.Ephemeral });
+      }
+      const message = await interaction.channel.messages.fetch(messageId).catch(() => null);
+      if (!message) {
+        return void interaction.reply({ content: 'Grant request message could not be found.', flags: MessageFlags.Ephemeral });
+      }
+      if (Date.now() - message.createdTimestamp > GRANT_REQUEST_BUTTON_TTL_MS) {
+        try { await message.edit({ components: [] }); } catch { /**/ }
+        return void interaction.reply({ content: 'These grant-request buttons expired after 48 hours.', flags: MessageFlags.Ephemeral });
+      }
+      if (!message.components.length) {
+        return void interaction.reply({ content: 'This grant request was already handled.', flags: MessageFlags.Ephemeral });
+      }
+      const existingEmbed = message.embeds[0];
+      const existingJson = existingEmbed?.toJSON() ?? {};
+      const existingFields = Array.isArray(existingJson.fields) ? existingJson.fields.filter((field) => field.name !== 'Status' && field.name !== 'Reason') : [];
+      const decisionLabel = action === 'approve' ? 'Approved' : 'Declined';
+      const updatedEmbed = new EmbedBuilder(existingJson)
+        .setColor(action === 'approve' ? 0x2ECC71 : 0xE74C3C)
+        .setFields(
+          ...existingFields.map((field) => ({ name: String(field.name), value: String(field.value), inline: Boolean(field.inline) })),
+          { name: 'Status', value: `${decisionLabel} by <@${interaction.user.id}>`, inline: false },
+          { name: 'Reason', value: reason, inline: false },
+        )
+        .setFooter({ text: `${decisionLabel} · ${interaction.user.tag}` })
+        .setTimestamp();
+      await message.edit({ embeds: [updatedEmbed], components: [] });
+      await interaction.reply({ content: `Grant request ${action === 'approve' ? 'approved' : 'declined'}.`, flags: MessageFlags.Ephemeral });
+      return;
+    }
     if (!interaction.isChatInputCommand()) return;
     const now = Date.now() / 1000;
     const lastUsed = commandCooldowns.get(interaction.user.id);
@@ -2053,36 +2267,17 @@ async function main(): Promise<void> {
       }
       if (commandName === 'gov') {
         if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        const cfg = await db.getGovRoles(BigInt(interaction.guildId));
-        const GOV_DEPT_LABELS: Record<string, string> = {
-          leader: 'Leader', '2ic': 'Second in Command', econ: 'Economics', econ_gov: 'Economics Gov',
-          milcom: 'Military Command', milcom_gov: 'Military Command Gov', ia: 'Internal Affairs',
-          ia_asst: 'Internal Affairs Assistant',
-        };
-        const GOV_DEPT_EMOJI: Record<string, string> = {
-          leader: '👑', '2ic': '🥈', econ: '💰', econ_gov: '📊',
-          milcom: '⚔️', milcom_gov: '🛡️', ia: '🤝', ia_asst: '📋',
-        };
-        const embed = new EmbedBuilder().setTitle('Government').setColor(0x5865F2);
-        const guildRoles = new Map(interaction.guild.roles.cache.map((r) => [r.id, r]));
-        let total = 0;
-        for (const [key, label] of Object.entries(GOV_DEPT_LABELS)) {
-          const rid = (cfg as Record<string, string | null>)[key];
-          if (!rid) continue;
-          const role = guildRoles.get(rid);
-          if (!role) {
-            embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label}`, value: '*(role not found)*', inline: false });
-            continue;
-          }
-          const membersWithRole = role.members.filter((m) => !m.user.bot);
-          total += membersWithRole.size;
-          const value = membersWithRole.size
-            ? [...membersWithRole.values()].sort((a, b) => a.displayName.localeCompare(b.displayName)).map((m) => `<@${m.id}>`).join(' ')
-            : '*(no members)*';
-          embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label} (${membersWithRole.size})`, value, inline: false });
+        const preferredChannel = interaction.channel?.isTextBased() && 'send' in interaction.channel
+          ? interaction.channel as TextChannel
+          : null;
+        const panel = await syncGovPanel(interaction.guild, preferredChannel);
+        if (!panel) {
+          return void interaction.reply({ content: 'Could not create a government panel in this guild.', flags: MessageFlags.Ephemeral });
         }
-        embed.setFooter({ text: `${total} government member(s) total` });
-        return void interaction.reply({ embeds: [embed] });
+        return void interaction.reply({
+          content: `${panel.created ? 'Created' : 'Updated'} the government panel in <#${panel.channel.id}>.`,
+          flags: MessageFlags.Ephemeral,
+        });
       }
 
       if (commandName === 'roles_show') {
@@ -2140,8 +2335,63 @@ Reason: ${note}
 ${resourceLines}
 
 \`\`\`${transferCmd}\`\`\``)],
+          components: buildGrantDecisionComponents(),
         });
         return void interaction.reply({ content: `Grant request submitted in <#${grantChannelId}>.`, flags: MessageFlags.Ephemeral });
+      }
+
+      if (commandName === 'counter') {
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const registration = await db.getByDiscordId(BigInt(interaction.user.id));
+        if (!registration) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ You are not registered. Use `/register <nation_id>` first.').setColor(0x3498DB)], flags: MessageFlags.Ephemeral });
+        }
+        const nation = await pnw.getNation(Number(registration.nation_id));
+        if (!nation) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ Your registered nation could not be found right now.').setColor(0x3498DB)], flags: MessageFlags.Ephemeral });
+        }
+        if (COUNTER_TRACKED_ALLIANCE_ID !== null && nation.allianceId !== COUNTER_TRACKED_ALLIANCE_ID) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ Counter tracking is not enabled for your alliance.').setColor(0x3498DB)], flags: MessageFlags.Ephemeral });
+        }
+        const requestedWarId = interaction.options.getInteger('war_id');
+        if (requestedWarId != null) {
+          const result = await handleCounterRequestByDiscordId(interaction.user.id, requestedWarId);
+          if (!result.ok) {
+            return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ ${result.error}`).setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
+          }
+          return void interaction.followUp({
+            embeds: [
+              new EmbedBuilder()
+                .setTitle('Counter Requested')
+                .setDescription(`Counter request recorded for [war #${requestedWarId}](${warUrl(requestedWarId)}).`)
+                .setColor(0x2ECC71)
+                .setFooter({ text: `Requested at ${new Date(result.requestedAt).toLocaleString()}` }),
+            ],
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+        const activeWars = await pnw.getActiveWarsForNation(nation.nationId);
+        const defensiveWars = activeWars.filter((war) => war.defenderId === nation.nationId && war.warId > 0);
+        if (!defensiveWars.length) {
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ You have no active defensive wars to request counters for.').setColor(0x3498DB)], flags: MessageFlags.Ephemeral });
+        }
+        const counterRequests = nation.allianceId > 0 ? await db.getCounterRequestsByAlliance(nation.allianceId) : [];
+        const requestedByWarId = new Set(counterRequests.map((row) => row.war_id));
+        const lines = defensiveWars.map((war) =>
+          `• [War #${war.warId}](${warUrl(war.warId)}) vs **${war.attackerName}**${requestedByWarId.has(war.warId) ? ' — already requested' : ''}`
+        );
+        return void interaction.followUp({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('Active Defensive Wars')
+              .setDescription(lines.join('\n'))
+              .setColor(0x5865F2)
+              .setFooter({ text: 'Use /counter war_id:<id> to record a counter request.' }),
+          ],
+          flags: MessageFlags.Ephemeral,
+        });
       }
 
       if (commandName === 'admin_alliance_set') {
@@ -2219,11 +2469,17 @@ ${resourceLines}
         const infoEmbed = allianceEmbed(alliance, baseUrl);
         const totalCities = lotsMembers.reduce((s, n) => s + n.numCities, 0);
         if (totalCities > 0) {
+          const soldierRate = (lotsMembers.reduce((s, n) => s + n.soldiers, 0) / (totalCities * MAX_SOLDIERS_PER_CITY)) * 100;
+          const tankRate = (lotsMembers.reduce((s, n) => s + n.tanks, 0) / (totalCities * MAX_TANKS_PER_CITY)) * 100;
+          const aircraftRate = (lotsMembers.reduce((s, n) => s + n.aircraft, 0) / (totalCities * MAX_AIRCRAFT_PER_CITY)) * 100;
+          const shipRate = (lotsMembers.reduce((s, n) => s + n.ships, 0) / (totalCities * MAX_SHIPS_PER_CITY)) * 100;
+          const avgMilitarisationRate = (soldierRate + tankRate + aircraftRate + shipRate) / 4;
           const avgMil = [
-            `🪖 Soldiers: ${(lotsMembers.reduce((s,n)=>s+n.soldiers,0)/(totalCities*MAX_SOLDIERS_PER_CITY)*100).toFixed(1)}%`,
-            `⚔️ Tanks: ${(lotsMembers.reduce((s,n)=>s+n.tanks,0)/(totalCities*MAX_TANKS_PER_CITY)*100).toFixed(1)}%`,
-            `✈️ Aircraft: ${(lotsMembers.reduce((s,n)=>s+n.aircraft,0)/(totalCities*MAX_AIRCRAFT_PER_CITY)*100).toFixed(1)}%`,
-            `🚢 Ships: ${(lotsMembers.reduce((s,n)=>s+n.ships,0)/(totalCities*MAX_SHIPS_PER_CITY)*100).toFixed(1)}%`,
+            `📈 Rate: ${avgMilitarisationRate.toFixed(1)}%`,
+            `🪖 Soldiers: ${soldierRate.toFixed(1)}%`,
+            `⚔️ Tanks: ${tankRate.toFixed(1)}%`,
+            `✈️ Aircraft: ${aircraftRate.toFixed(1)}%`,
+            `🚢 Ships: ${shipRate.toFixed(1)}%`,
           ].join('\n');
           infoEmbed.addFields({ name: 'Avg Militarization', value: avgMil, inline: false });
         }
@@ -3164,34 +3420,7 @@ Message: ${cfg.message}`)],
             .sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime()),
         };
       },
-      memberNationCounterRequestHandler: async (discordId: string, warId: number) => {
-        if (!/^\d+$/.test(discordId)) {
-          return { ok: false, status: 400, error: 'Invalid discord_id' };
-        }
-        const registration = await db.getByDiscordId(BigInt(discordId));
-        if (!registration) {
-          return { ok: false, status: 404, error: 'No registered nation found' };
-        }
-        const nation = await pnw.getNation(Number(registration.nation_id));
-        if (!nation) {
-          return { ok: false, status: 404, error: 'Nation not found' };
-        }
-        if (COUNTER_TRACKED_ALLIANCE_ID !== null && nation.allianceId !== COUNTER_TRACKED_ALLIANCE_ID) {
-          return { ok: false, status: 403, error: 'Counters are disabled for this alliance' };
-        }
-        const activeWars = await pnw.getActiveWarsForNation(nation.nationId);
-        const war = activeWars.find((row) => row.warId === warId && row.defenderId === nation.nationId);
-        if (!war) {
-          return { ok: false, status: 403, error: 'Counter request allowed only for your active defensive wars' };
-        }
-        const requestedAt = await db.addCounterRequest(
-          warId,
-          BigInt(discordId),
-          nation.nationId,
-          nation.allianceId
-        );
-        return { ok: true, warId, requestedAt };
-      },
+      memberNationCounterRequestHandler: handleCounterRequestByDiscordId,
     });
     httpServer = createServer(app);
     httpServer.listen(API_PORT, () => logInfo(`API listening on :${API_PORT}`));
