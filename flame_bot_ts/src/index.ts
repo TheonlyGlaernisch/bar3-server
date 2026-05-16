@@ -680,7 +680,7 @@ function renderWelcomeMessage(
     .replace(/!\(channel\)/g, welcomeChannelMention ?? '#unknown-channel');
 }
 
-function buildGovPanelEmbed(guild: Guild, cfg: Record<string, string | null>): EmbedBuilder {
+async function buildGovPanelEmbed(guild: Guild, cfg: Record<string, string | null>): Promise<EmbedBuilder> {
   const GOV_DEPT_LABELS: Record<string, string> = {
     leader: 'Leader', '2ic': 'Second in Command', econ: 'Economics', econ_gov: 'Economics Gov',
     milcom: 'Military Command', milcom_gov: 'Military Command Gov', ia: 'Internal Affairs',
@@ -695,6 +695,11 @@ function buildGovPanelEmbed(guild: Guild, cfg: Record<string, string | null>): E
     .setColor(0x5865F2)
     .setTimestamp();
   let total = 0;
+  try {
+    await guild.members.fetch();
+  } catch {
+    // fall back to currently cached members only
+  }
   const guildRoles = new Map(guild.roles.cache.map((role) => [role.id, role]));
   for (const [key, label] of Object.entries(GOV_DEPT_LABELS)) {
     const roleId = cfg[key];
@@ -704,7 +709,7 @@ function buildGovPanelEmbed(guild: Guild, cfg: Record<string, string | null>): E
       embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label}`, value: '*(role not found)*', inline: false });
       continue;
     }
-    const membersWithRole = role.members.filter((member) => !member.user.bot);
+    const membersWithRole = guild.members.cache.filter((member) => !member.user.bot && member.roles.cache.has(role.id));
     total += membersWithRole.size;
     const value = membersWithRole.size
       ? [...membersWithRole.values()].sort((a, b) => a.displayName.localeCompare(b.displayName)).map((member) => `<@${member.id}>`).join(' ')
@@ -1580,6 +1585,7 @@ async function main(): Promise<void> {
       .addRoleOption(o => o.setName('gov').setDescription('Basic gov role'))
       .addRoleOption(o => o.setName('member').setDescription('Member role (required to use most commands)')),
     new SlashCommandBuilder().setName('gov').setDescription('List members in configured gov departments'),
+    new SlashCommandBuilder().setName('gov_refresh').setDescription('Refresh the unique government panel message'),
     new SlashCommandBuilder().setName('setup_grant_channel').setDescription('Set grant request channel').addChannelOption(o => o.setName('channel').setDescription('Target channel').setRequired(true)),
     new SlashCommandBuilder().setName('request_grant').setDescription('Request a grant').addStringOption(o => o.setName('note').setDescription('Grant reason').setRequired(true)).addNumberOption(o => o.setName('money').setDescription('Requested money')).addNumberOption(o => o.setName('food').setDescription('Food amount')).addNumberOption(o => o.setName('coal').setDescription('Coal amount')).addNumberOption(o => o.setName('oil').setDescription('Oil amount')).addNumberOption(o => o.setName('uranium').setDescription('Uranium amount')).addNumberOption(o => o.setName('iron').setDescription('Iron amount')).addNumberOption(o => o.setName('bauxite').setDescription('Bauxite amount')).addNumberOption(o => o.setName('lead').setDescription('Lead amount')).addNumberOption(o => o.setName('gasoline').setDescription('Gasoline amount')).addNumberOption(o => o.setName('munitions').setDescription('Munitions amount')).addNumberOption(o => o.setName('steel').setDescription('Steel amount')).addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount')),
     new SlashCommandBuilder().setName('counter').setDescription('List or request counters for your active defensive wars').addIntegerOption(o => o.setName('war_id').setDescription('Specific defensive war ID to request a counter for')),
@@ -1906,7 +1912,7 @@ async function main(): Promise<void> {
 
   const syncGovPanel = async (guild: Guild, preferredChannel: TextChannel | null): Promise<{ channel: TextChannel; messageId: string; created: boolean } | null> => {
     const cfg = await db.getGovRoles(BigInt(guild.id));
-    const embed = buildGovPanelEmbed(guild, cfg as Record<string, string | null>);
+    const embed = await buildGovPanelEmbed(guild, cfg as Record<string, string | null>);
     const components = buildGovPanelComponents();
     const storedPanel = await db.getGovPanel(BigInt(guild.id));
     const resolveTextChannel = async (channelId: string | null): Promise<TextChannel | null> => {
@@ -1973,7 +1979,7 @@ async function main(): Promise<void> {
         }
         const cfg = await db.getGovRoles(BigInt(interaction.guildId));
         await interaction.update({
-          embeds: [buildGovPanelEmbed(interaction.guild, cfg as Record<string, string | null>)],
+          embeds: [await buildGovPanelEmbed(interaction.guild, cfg as Record<string, string | null>)],
           components: buildGovPanelComponents(),
         });
         return;
@@ -2278,6 +2284,22 @@ async function main(): Promise<void> {
           content: `${panel.created ? 'Created' : 'Updated'} the government panel in <#${panel.channel.id}>.`,
           flags: MessageFlags.Ephemeral,
         });
+      }
+      if (commandName === 'gov_refresh') {
+        if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        const storedPanel = await db.getGovPanel(BigInt(interaction.guildId));
+        if (!storedPanel.channelId) {
+          return void interaction.reply({ content: 'No government panel is configured yet. Use `/gov` first.', flags: MessageFlags.Ephemeral });
+        }
+        const channel = interaction.guild.channels.cache.get(storedPanel.channelId) ?? await interaction.guild.channels.fetch(storedPanel.channelId).catch(() => null);
+        if (!channel || !channel.isTextBased() || !('send' in channel)) {
+          return void interaction.reply({ content: 'Stored government panel channel is unavailable. Run `/gov` to recreate it.', flags: MessageFlags.Ephemeral });
+        }
+        const panel = await syncGovPanel(interaction.guild, channel as TextChannel);
+        if (!panel) {
+          return void interaction.reply({ content: 'Could not refresh the government panel.', flags: MessageFlags.Ephemeral });
+        }
+        return void interaction.reply({ content: `Refreshed the government panel in <#${panel.channel.id}>.`, flags: MessageFlags.Ephemeral });
       }
 
       if (commandName === 'roles_show') {
