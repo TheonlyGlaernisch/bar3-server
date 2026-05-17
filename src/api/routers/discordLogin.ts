@@ -1,15 +1,13 @@
 import express, { Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 
 const router = express.Router();
-
-function isSafeReturnTo(url: unknown): url is string {
-  return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
-}
-
-function normalizeReturnTo(input: unknown): string {
-  if (!isSafeReturnTo(input)) return '/';
-  return input;
-}
+const discordLoginPageLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 function escapeHtml(value: string): string {
   return value
@@ -20,12 +18,8 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function buildDiscordLoginHtml(returnTo: string, errorText: string): string {
-  const encodedReturnTo = encodeURIComponent(returnTo);
-  const discordHref = returnTo
-    ? `/auth/discord?returnTo=${encodedReturnTo}`
-    : '/auth/discord';
-
+function buildDiscordLoginHtml(errorText: string): string {
+  const discordHref = '/auth/discord';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -207,7 +201,7 @@ function buildDiscordLoginHtml(returnTo: string, errorText: string): string {
 
   <script>
     (function () {
-      const returnTo = ${JSON.stringify(returnTo || '/')};
+      const returnTo = '/';
       const tabs = Array.from(document.querySelectorAll('.tab'));
       const panels = Array.from(document.querySelectorAll('.panel'));
 
@@ -297,10 +291,9 @@ function buildDiscordLoginHtml(returnTo: string, errorText: string): string {
 </html>`;
 }
 
-router.get('/', (req: Request, res: Response) => {
-  const returnTo = normalizeReturnTo(req.query.returnTo);
+router.get('/', discordLoginPageLimiter, (req: Request, res: Response) => {
   const errorText = typeof req.query.error === 'string' ? req.query.error : '';
-  res.status(200).send(buildDiscordLoginHtml(returnTo, errorText));
+  res.status(200).send(buildDiscordLoginHtml(errorText));
 });
 
 export default router;
