@@ -13,6 +13,8 @@ import v2AnalyticsRouter from './api/routers/v2/analytics';
 import v2SendTestRouter from './api/routers/v2/sendTest';
 import discordAuthRouter from './api/routers/discord/auth';
 import adminRouter from './api/routers/admin';
+import pnwNativeAuthRouter from './api/routers/pnwNativeAuth';
+import discordLoginRouter from './api/routers/discordLogin';
 import { requireDiscordAuth } from './api/middleware/discordAuth';
 import { isTrustedOrigin } from './api/middleware/sameOrigin';
 import { startAutomationLoop } from './services/v2AutomationRunner';
@@ -20,6 +22,7 @@ import AccountService from './services/accountService';
 import superagent from 'superagent';
 // Extend express-session SessionData with Discord fields
 import './interfaces/session';
+import './interfaces/sessionPnwNative';
 
 mongoose.set('strictQuery', true);
 
@@ -359,6 +362,10 @@ app.post('/api/member/nation/counter-request', rateLimit({
     `/api/member/nation/${encodeURIComponent(sessionDiscordId)}/counter-request`
   );
 });
+
+// PnW native auth and login UI routes must remain public and mounted before the auth guard.
+app.use('/auth/pnw', pnwNativeAuthRouter);
+app.use('/discord-login', discordLoginRouter);
 
 // Discord OAuth routes — must be mounted BEFORE the auth guard so the login
 // page and callback are reachable without an existing session.
