@@ -19,6 +19,9 @@ const USERNAME_REGEX = /^[A-Za-z0-9_-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 128;
 const BCRYPT_ROUNDS = 12;
+const VERIFICATION_CODE_DIGITS = 10;
+const VERIFICATION_CODE_MIN = 10 ** (VERIFICATION_CODE_DIGITS - 1);
+const VERIFICATION_CODE_MAX = 10 ** VERIFICATION_CODE_DIGITS;
 const CODE_TTL_MS = 10 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 60 * 1000;
 const DUMMY_PASSWORD_HASH = '$2b$12$KIX1B5Q7E09gM08fN6hKjem9eQxQxB8N6H9Q2fYMSQ3fWXwoQ9C8W';
@@ -175,7 +178,7 @@ export async function startVerification(
   }
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-  const code = String(crypto.randomInt(100000, 1000000));
+  const code = String(crypto.randomInt(VERIFICATION_CODE_MIN, VERIFICATION_CODE_MAX));
 
   const sent = await sendVerificationCode(nationId, code);
   if (!sent) {
@@ -206,8 +209,8 @@ export async function confirmVerification(
     return { ok: false, status: 400, error: 'Nation ID must be a positive integer.' };
   }
 
-  if (!/^\d{6}$/.test(code)) {
-    return { ok: false, status: 400, error: 'Verification code must be 6 digits.' };
+  if (!new RegExp(`^\\d{${VERIFICATION_CODE_DIGITS}}$`).test(code)) {
+    return { ok: false, status: 400, error: `Verification code must be ${VERIFICATION_CODE_DIGITS} digits.` };
   }
 
   const pending = pendingVerifications.get(nationId);

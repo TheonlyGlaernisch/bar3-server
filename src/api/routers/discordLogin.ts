@@ -180,7 +180,7 @@ function buildDiscordLoginHtml(errorText: string): string {
 
         <form id="verifyForm" autocomplete="off" style="margin-top:14px; display:none;">
           <label for="verifyCode">Verification Code</label>
-          <input id="verifyCode" name="code" inputmode="numeric" minlength="6" maxlength="6" required />
+          <input id="verifyCode" name="code" inputmode="numeric" minlength="10" maxlength="10" required />
           <button class="primary" type="submit">Verify and Sign In</button>
           <div id="verifyMsg" class="msg"></div>
         </form>
