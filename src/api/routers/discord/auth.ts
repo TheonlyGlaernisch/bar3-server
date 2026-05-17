@@ -430,6 +430,7 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
         lastRoleCheckError = roleErr;
         if (attempt < ROLE_CHECK_MAX_ATTEMPTS && shouldRetryRoleCheck(roleErr)) {
           await sleep(ROLE_CHECK_RETRY_DELAY_MS * attempt);
+          continue;
         }
         break;
       }
