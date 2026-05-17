@@ -60,8 +60,10 @@ const ALLOWED_ABSOLUTE_RETURN_TO = parseConfiguredReturnToAllowlist();
 // flame_bot HTTP API — used to check whether the user holds the bar3_server role.
 // Set FLAME_BOT_API_URL to the base URL of the running flame_bot (e.g. http://localhost:8080)
 // and FLAME_BOT_API_KEY to the same secret configured in flame_bot's API_KEY env var.
-const FLAME_BOT_API_URL = (process.env.FLAME_BOT_API_URL || 'http://localhost:8080').replace(/\/$/, '');
+const FLAME_BOT_API_URL = (process.env.FLAME_BOT_API_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
 const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || '';
+const ROLE_CHECK_MAX_ATTEMPTS = 3;
+const ROLE_CHECK_RETRY_DELAY_MS = 400;
 
 // After a successful OAuth2 login the browser redirects to either:
 // - a validated relative path (same-origin), or
@@ -147,6 +149,26 @@ function buildSessionRoleNames(discordRoles: DiscordAuthContext['discordRoles'],
     roleNames.push('admin');
   }
   return roleNames;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shouldRetryRoleCheck(err: unknown): boolean {
+  const status = (err as any)?.status || (err as any)?.response?.status;
+  if (typeof status === 'number') {
+    return status === 429 || (status >= 500 && status < 600);
+  }
+  const code = String((err as any)?.code || '').toUpperCase();
+  return (
+    code === 'ECONNREFUSED' ||
+    code === 'ECONNRESET' ||
+    code === 'ETIMEDOUT' ||
+    code === 'EHOSTUNREACH' ||
+    code === 'ENOTFOUND' ||
+    code === 'EAI_AGAIN'
+  );
 }
 
 function getRateLimitKey(req: Request): string {
@@ -389,16 +411,29 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
     // Timeouts: 10 s to receive the first response byte, 15 s total deadline,
     // so the callback never hangs if flame_bot is temporarily unreachable.
     let flameBotRoles: Record<string, unknown> = {};
-    try {
-      const rolesRes = await superagent
-        .get(`${FLAME_BOT_API_URL}/api/roles/${discordId}`)
-        .set('X-API-Key', FLAME_BOT_API_KEY)
-        .timeout({ response: 10000, deadline: 15000 });
-      flameBotRoles = (rolesRes.body?.roles ?? {}) as Record<string, unknown>;
-    } catch (roleErr: unknown) {
+    let lastRoleCheckError: unknown = null;
+    for (let attempt = 1; attempt <= ROLE_CHECK_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        const rolesRes = await superagent
+          .get(`${FLAME_BOT_API_URL}/api/roles/${discordId}`)
+          .set('X-API-Key', FLAME_BOT_API_KEY)
+          .timeout({ response: 10000, deadline: 15000 });
+        flameBotRoles = (rolesRes.body?.roles ?? {}) as Record<string, unknown>;
+        lastRoleCheckError = null;
+        break;
+      } catch (roleErr: unknown) {
+        lastRoleCheckError = roleErr;
+        if (attempt < ROLE_CHECK_MAX_ATTEMPTS && shouldRetryRoleCheck(roleErr)) {
+          await sleep(ROLE_CHECK_RETRY_DELAY_MS * attempt);
+          continue;
+        }
+        break;
+      }
+    }
+    if (lastRoleCheckError) {
       console.error(
         '[Discord Auth] flame_bot role check failed:',
-        (roleErr as any)?.response?.body || (roleErr as any)?.message || roleErr,
+        (lastRoleCheckError as any)?.response?.body || (lastRoleCheckError as any)?.message || lastRoleCheckError,
       );
       return res.redirect('/auth/login?error=role_check_failed');
     }
