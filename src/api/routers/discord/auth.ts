@@ -64,6 +64,8 @@ const FLAME_BOT_API_URL = (process.env.FLAME_BOT_API_URL || 'http://127.0.0.1:80
 const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || '';
 const ROLE_CHECK_MAX_ATTEMPTS = 3;
 const ROLE_CHECK_RETRY_DELAY_MS = 400;
+const ROLE_CHECK_RESPONSE_TIMEOUT_MS = 4000;
+const ROLE_CHECK_DEADLINE_TIMEOUT_MS = 6000;
 
 // After a successful OAuth2 login the browser redirects to either:
 // - a validated relative path (same-origin), or
@@ -417,7 +419,10 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
         const rolesRes = await superagent
           .get(`${FLAME_BOT_API_URL}/api/roles/${discordId}`)
           .set('X-API-Key', FLAME_BOT_API_KEY)
-          .timeout({ response: 10000, deadline: 15000 });
+          .timeout({
+            response: ROLE_CHECK_RESPONSE_TIMEOUT_MS,
+            deadline: ROLE_CHECK_DEADLINE_TIMEOUT_MS,
+          });
         flameBotRoles = (rolesRes.body?.roles ?? {}) as Record<string, unknown>;
         lastRoleCheckError = null;
         break;
@@ -425,7 +430,6 @@ router.get('/discord/callback', async (req: Request, res: Response) => {
         lastRoleCheckError = roleErr;
         if (attempt < ROLE_CHECK_MAX_ATTEMPTS && shouldRetryRoleCheck(roleErr)) {
           await sleep(ROLE_CHECK_RETRY_DELAY_MS * attempt);
-          continue;
         }
         break;
       }
