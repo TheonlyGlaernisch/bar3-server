@@ -65,6 +65,22 @@ export default class DiscordLogin extends Vue {
   errorCode = '';
   errorHint = '';
 
+  private buildServerLoginUrl(): string {
+    const params = new URLSearchParams();
+    const returnTo = normalizeReturnTo(this.$route.query.returnTo);
+    if (returnTo) {
+      params.set('returnTo', returnTo);
+    }
+
+    const queryError = this.$route.query.error;
+    if (typeof queryError === 'string' && queryError) {
+      params.set('error', queryError);
+    }
+
+    const query = params.toString();
+    return query ? `/auth/login?${query}` : '/auth/login';
+  }
+
   private mapAuthError(rawError: string): string {
     this.errorCode = '';
     this.errorHint = '';
@@ -89,8 +105,14 @@ export default class DiscordLogin extends Vue {
 
   created() {
     // If already authenticated, go straight to the app.
+    // Otherwise, force the server-rendered /discord-login page, which includes
+    // the public PnW native auth UI.
     discordAuth.isAuthed().then(authed => {
-      if (authed) this.$router.replace('/');
+      if (authed) {
+        this.$router.replace('/');
+        return;
+      }
+      window.location.replace(this.buildServerLoginUrl());
     });
 
     // Surface any error message passed as a query param (e.g. from the callback).
