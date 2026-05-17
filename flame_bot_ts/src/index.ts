@@ -2284,33 +2284,34 @@ async function main(): Promise<void> {
       }
       if (commandName === 'gov') {
         if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const preferredChannel = interaction.channel?.isTextBased() && 'send' in interaction.channel
           ? interaction.channel as TextChannel
           : null;
         const panel = await syncGovPanel(interaction.guild, preferredChannel);
         if (!panel) {
-          return void interaction.reply({ content: 'Could not create a government panel in this guild.', flags: MessageFlags.Ephemeral });
+          return void interaction.editReply({ content: 'Could not create a government panel in this guild.' });
         }
-        return void interaction.reply({
+        return void interaction.editReply({
           content: `${panel.created ? 'Created' : 'Updated'} the government panel in <#${panel.channel.id}>.`,
-          flags: MessageFlags.Ephemeral,
         });
       }
       if (commandName === 'gov_refresh') {
         if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const storedPanel = await db.getGovPanel(BigInt(interaction.guildId));
         if (!storedPanel.channelId) {
-          return void interaction.reply({ content: 'No government panel is configured yet. Use `/gov` first.', flags: MessageFlags.Ephemeral });
+          return void interaction.editReply({ content: 'No government panel is configured yet. Use `/gov` first.' });
         }
         const channel = interaction.guild.channels.cache.get(storedPanel.channelId) ?? await interaction.guild.channels.fetch(storedPanel.channelId).catch(() => null);
         if (!channel || !channel.isTextBased() || !('send' in channel)) {
-          return void interaction.reply({ content: 'Stored government panel channel is unavailable. Run `/gov` to recreate it.', flags: MessageFlags.Ephemeral });
+          return void interaction.editReply({ content: 'Stored government panel channel is unavailable. Run `/gov` to recreate it.' });
         }
         const panel = await syncGovPanel(interaction.guild, channel as TextChannel);
         if (!panel) {
-          return void interaction.reply({ content: 'Could not refresh the government panel.', flags: MessageFlags.Ephemeral });
+          return void interaction.editReply({ content: 'Could not refresh the government panel.' });
         }
-        return void interaction.reply({ content: `Refreshed the government panel in <#${panel.channel.id}>.`, flags: MessageFlags.Ephemeral });
+        return void interaction.editReply({ content: `Refreshed the government panel in <#${panel.channel.id}>.` });
       }
 
       if (commandName === 'roles_show') {
