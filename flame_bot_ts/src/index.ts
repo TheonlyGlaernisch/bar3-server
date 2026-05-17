@@ -700,6 +700,11 @@ async function buildGovPanelEmbed(guild: Guild, cfg: Record<string, string | nul
   } catch {
     // fall back to currently cached members only
   }
+  try {
+    await guild.roles.fetch();
+  } catch {
+    // fall back to currently cached roles only
+  }
   const guildRoles = new Map(guild.roles.cache.map((role) => [role.id, role]));
   for (const [key, label] of Object.entries(GOV_DEPT_LABELS)) {
     const roleId = cfg[key];
@@ -1920,17 +1925,23 @@ async function main(): Promise<void> {
       const cached = guild.channels.cache.get(channelId) ?? await guild.channels.fetch(channelId).catch(() => null);
       return cached?.isTextBased() && 'send' in cached ? cached as TextChannel : null;
     };
-    let channel = await resolveTextChannel(storedPanel.channelId);
-    if (!channel) channel = preferredChannel;
+    // Prefer the channel where the command was run; fall back to stored channel.
+    const channel = preferredChannel ?? await resolveTextChannel(storedPanel.channelId);
     if (!channel) return null;
-    if (storedPanel.messageId) {
+    // If the stored message is in the target channel, just edit it in place.
+    if (storedPanel.messageId && storedPanel.channelId === channel.id) {
       const existingMessage = await channel.messages.fetch(storedPanel.messageId).catch(() => null);
       if (existingMessage) {
         await existingMessage.edit({ embeds: [embed], components });
-        if (storedPanel.channelId !== channel.id) {
-          await db.setGovPanel(BigInt(guild.id), channel.id, existingMessage.id);
-        }
         return { channel, messageId: existingMessage.id, created: false };
+      }
+    }
+    // Clean up old message if it was in a different channel.
+    if (storedPanel.messageId && storedPanel.channelId && storedPanel.channelId !== channel.id) {
+      const oldChannel = await resolveTextChannel(storedPanel.channelId);
+      if (oldChannel) {
+        const oldMessage = await oldChannel.messages.fetch(storedPanel.messageId).catch(() => null);
+        if (oldMessage) await oldMessage.delete().catch(() => null);
       }
     }
     const newMessage = await channel.send({ embeds: [embed], components });
