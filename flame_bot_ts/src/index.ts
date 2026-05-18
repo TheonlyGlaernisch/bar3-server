@@ -1892,9 +1892,18 @@ async function main(): Promise<void> {
     try {
       const cfg = await db.getWelcomeConfig(BigInt(member.guild.id));
       if (!cfg.enabled) return;
-      if (cfg.channel_id == null) return;
-      const channel = member.guild.channels.cache.get(String(cfg.channel_id));
-      if (!channel?.isTextBased() || !('send' in channel)) return;
+      let channel: TextChannel | null = null;
+      if (cfg.channel_id != null) {
+        const configured = member.guild.channels.cache.get(String(cfg.channel_id));
+        if (configured?.isTextBased() && 'send' in configured) channel = configured as TextChannel;
+      }
+      if (!channel && member.guild.systemChannel?.isTextBased() && 'send' in member.guild.systemChannel) {
+        channel = member.guild.systemChannel as TextChannel;
+      }
+      if (!channel) {
+        channel = member.guild.channels.cache.find((c): c is TextChannel => c.isTextBased() && 'send' in c) ?? null;
+      }
+      if (!channel) return;
       const template = String(cfg.message || DEFAULT_WELCOME_MESSAGE);
       const isRegistered = (await db.getByDiscordId(BigInt(member.id))) !== null;
       const message = renderWelcomeMessage(
@@ -1904,7 +1913,7 @@ async function main(): Promise<void> {
         isRegistered,
         channel.toString(),
       );
-      await (channel as TextChannel).send(message);
+      await channel.send(message);
     } catch (err) {
       console.warn('Failed to send welcome message:', err);
     }

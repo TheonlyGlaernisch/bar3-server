@@ -229,11 +229,11 @@ export class Database {
 
   async setWelcomeConfig(
     guildId: bigint,
-    opts: { enabled?: boolean; channelId?: string | null; message?: string }
+    opts: { enabled?: boolean; channelId?: string | number | null; message?: string }
   ): Promise<void> {
     const updates: Record<string, unknown> = { guild_id: guildId.toString() };
     if (opts.enabled !== undefined) updates['welcome_enabled'] = opts.enabled;
-    if (opts.channelId !== undefined) updates['welcome_channel_id'] = opts.channelId;
+    if (opts.channelId !== undefined) updates['welcome_channel_id'] = opts.channelId == null ? null : String(opts.channelId);
     if (opts.message !== undefined) updates['welcome_message'] = opts.message;
     await this._guildConfig.updateOne(
       { guild_id: guildId.toString() },
