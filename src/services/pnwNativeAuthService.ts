@@ -134,7 +134,15 @@ async function sendVerificationCode(nationId: number, code: string): Promise<boo
     .ok(() => true)
     .catch(() => undefined);
 
-  return response?.body?.success === true;
+  const success = response?.body?.success;
+  if (success === true || success === 1 || success === '1') {
+    return true;
+  }
+  if (typeof success === 'string') {
+    const normalized = success.trim().toLowerCase();
+    return normalized === 'true' || normalized === 'yes' || normalized === 'ok' || normalized === 'success';
+  }
+  return false;
 }
 
 export async function startVerification(
