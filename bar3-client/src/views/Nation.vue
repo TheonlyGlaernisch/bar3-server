@@ -15,9 +15,7 @@
     <v-alert v-else-if="error" type="error" dense>{{ error }}</v-alert>
     <v-card v-else-if="!context.registered" dark color="#1A1A1A" class="pa-4">
       <div class="text-subtitle-1 white--text font-weight-medium mb-2">No registered nation found</div>
-      <div class="text-body-2">
-        Link your Discord account with <code>/register &lt;nation_id&gt;</code> in flame_bot, then refresh.
-      </div>
+      <div class="text-body-2">Link your Discord account with <code>/register</code></div>
     </v-card>
     <v-card v-else-if="context.nation" dark color="#1A1A1A" class="pa-4">
       <div class="text-subtitle-1 white--text font-weight-medium mb-3">
