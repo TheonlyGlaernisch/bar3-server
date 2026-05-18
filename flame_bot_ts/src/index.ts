@@ -21,6 +21,7 @@ import {
   TextChannel,
   PermissionFlagsBits,
   MessageFlags,
+  Message,
 } from 'discord.js';
 import { createServer, Server } from 'http';
 import { createHash } from 'crypto';
@@ -101,6 +102,7 @@ const GRANT_REQUEST_BUTTON_TTL_MS = 48 * 60 * 60 * 1000;
 
 const GOV_MEMBER_CACHE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const govMemberCacheRefreshByGuild = new Map<string, number>();
+const govMemberRefreshInFlightByGuild = new Map<string, Promise<void>>();
 
 const DEBUG_ENABLED = LOG_LEVEL === 'DEBUG';
 const logInfo = (...args: unknown[]): void => console.log(...args);
@@ -683,7 +685,7 @@ function renderWelcomeMessage(
     .replace(/!\(channel\)/g, welcomeChannelMention ?? '#unknown-channel');
 }
 
-async function buildGovPanelEmbed(guild: Guild, cfg: Record<string, string | null>): Promise<EmbedBuilder> {
+async function buildGovPanelEmbed(guild: Guild, cfg: Record<string, string | null>, refreshMembers = false): Promise<EmbedBuilder> {
   const GOV_DEPT_LABELS: Record<string, string> = {
     leader: 'Leader', '2ic': 'Second in Command', econ: 'Economics', econ_gov: 'Economics Gov',
     milcom: 'Military Command', milcom_gov: 'Military Command Gov', ia: 'Internal Affairs',
@@ -703,13 +705,12 @@ async function buildGovPanelEmbed(guild: Guild, cfg: Record<string, string | nul
   } catch {
     // fall back to currently cached roles only
   }
-  const now = Date.now();
-  const lastMemberRefresh = govMemberCacheRefreshByGuild.get(guild.id) ?? 0;
-  if (now - lastMemberRefresh >= GOV_MEMBER_CACHE_REFRESH_INTERVAL_MS) {
+  if (refreshMembers) {
     try {
       await guild.members.fetch();
-      govMemberCacheRefreshByGuild.set(guild.id, now);
-    } catch {
+      govMemberCacheRefreshByGuild.set(guild.id, Date.now());
+    } catch (err) {
+      logWarn(`[gov] Member refresh skipped for guild ${guild.id}:`, err);
       // fall back to currently cached members only
     }
   }
@@ -734,6 +735,35 @@ async function buildGovPanelEmbed(guild: Guild, cfg: Record<string, string | nul
   }
   embed.setFooter({ text: `${total} government member(s) total` });
   return embed;
+}
+
+
+async function refreshGovPanelMembersInBackground(guild: Guild, message: Message, cfg: Record<string, string | null>): Promise<void> {
+  const now = Date.now();
+  const lastMemberRefresh = govMemberCacheRefreshByGuild.get(guild.id) ?? 0;
+  if (now - lastMemberRefresh < GOV_MEMBER_CACHE_REFRESH_INTERVAL_MS) return;
+  if (govMemberRefreshInFlightByGuild.has(guild.id)) return;
+
+  const refreshPromise = (async () => {
+    try {
+      await Promise.race([
+        guild.members.fetch(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('guild member fetch timed out')), 10_000)),
+      ]);
+      govMemberCacheRefreshByGuild.set(guild.id, Date.now());
+      await message.edit({
+        embeds: [await buildGovPanelEmbed(guild, cfg, false)],
+        components: buildGovPanelComponents(),
+      });
+    } catch (err) {
+      logWarn(`[gov] Background member refresh skipped for guild ${guild.id}:`, err);
+    } finally {
+      govMemberRefreshInFlightByGuild.delete(guild.id);
+    }
+  })();
+
+  govMemberRefreshInFlightByGuild.set(guild.id, refreshPromise);
+  await refreshPromise;
 }
 
 function buildGovPanelComponents(): ActionRowBuilder<ButtonBuilder>[] {
@@ -1934,7 +1964,7 @@ async function main(): Promise<void> {
 
   const syncGovPanel = async (guild: Guild, preferredChannel: TextChannel | null): Promise<{ channel: TextChannel; messageId: string; created: boolean } | null> => {
     const cfg = await db.getGovRoles(BigInt(guild.id));
-    const embed = await buildGovPanelEmbed(guild, cfg as Record<string, string | null>);
+    const embed = await buildGovPanelEmbed(guild, cfg as Record<string, string | null>, false);
     const components = buildGovPanelComponents();
     const storedPanel = await db.getGovPanel(BigInt(guild.id));
     const resolveTextChannel = async (channelId: string | null): Promise<TextChannel | null> => {
@@ -1950,6 +1980,7 @@ async function main(): Promise<void> {
       const existingMessage = await channel.messages.fetch(storedPanel.messageId).catch(() => null);
       if (existingMessage) {
         await existingMessage.edit({ embeds: [embed], components });
+        void refreshGovPanelMembersInBackground(guild, existingMessage, cfg as Record<string, string | null>);
         return { channel, messageId: existingMessage.id, created: false };
       }
     }
@@ -1963,6 +1994,7 @@ async function main(): Promise<void> {
     }
     const newMessage = await channel.send({ embeds: [embed], components });
     await db.setGovPanel(BigInt(guild.id), channel.id, newMessage.id);
+    void refreshGovPanelMembersInBackground(guild, newMessage, cfg as Record<string, string | null>);
     return { channel, messageId: newMessage.id, created: true };
   };
 
@@ -2007,7 +2039,7 @@ async function main(): Promise<void> {
         }
         const cfg = await db.getGovRoles(BigInt(interaction.guildId));
         await interaction.update({
-          embeds: [await buildGovPanelEmbed(interaction.guild, cfg as Record<string, string | null>)],
+          embeds: [await buildGovPanelEmbed(interaction.guild, cfg as Record<string, string | null>, true)],
           components: buildGovPanelComponents(),
         });
         return;
@@ -2872,8 +2904,14 @@ Message: ${cfg.message}`)],
         return void interaction.reply({ content: text || 'No recruiter subscriptions configured.', flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'infra') {
-        const from = interaction.options.getNumber('from', true);
-        const to = interaction.options.getNumber('to', true);
+        const from = interaction.options.getNumber('from') ?? interaction.options.getNumber('current');
+        const to = interaction.options.getNumber('to') ?? interaction.options.getNumber('target');
+        if (from == null || to == null) {
+          return void interaction.reply({
+            content: 'Missing required options. Please run `/infra from:<current infra> to:<target infra>` and try again. If this keeps happening, run `/admin_sync_commands` to refresh slash command definitions.',
+            flags: MessageFlags.Ephemeral,
+          });
+        }
         const cities = interaction.options.getInteger('cities') ?? 1;
         const urbanPlanning = interaction.options.getBoolean('urban_planning') ?? false;
         const advancedUrbanPlanning = interaction.options.getBoolean('advanced_urban_planning') ?? false;
