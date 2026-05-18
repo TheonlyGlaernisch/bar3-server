@@ -148,8 +148,17 @@ async function sendVerificationCode(nationId: number, code: string): Promise<Sen
     if (PNW_SUCCESS_STRING_VALUES.has(responseText)) {
       return { ok: true };
     }
-    if (responseText.includes('"success":true') || responseText.includes('"success":1')) {
-      return { ok: true };
+
+    try {
+      const parsed = JSON.parse(responseText) as Record<string, unknown>;
+      const parsedSuccess = parsed?.success;
+      if (parsedSuccess === true) return { ok: true };
+      if (typeof parsedSuccess === 'number' && Number.isFinite(parsedSuccess) && parsedSuccess > 0) return { ok: true };
+      if (typeof parsedSuccess === 'string' && PNW_SUCCESS_STRING_VALUES.has(parsedSuccess.trim().toLowerCase())) {
+        return { ok: true };
+      }
+    } catch {
+      // non-JSON response text
     }
   }
 
