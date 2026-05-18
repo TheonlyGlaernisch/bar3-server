@@ -99,6 +99,9 @@ const DISCORD_COMMAND_COOLDOWN_SECONDS = 2.0;
 const INVITE_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const GRANT_REQUEST_BUTTON_TTL_MS = 48 * 60 * 60 * 1000;
 
+const GOV_MEMBER_CACHE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const govMemberCacheRefreshByGuild = new Map<string, number>();
+
 const DEBUG_ENABLED = LOG_LEVEL === 'DEBUG';
 const logInfo = (...args: unknown[]): void => console.log(...args);
 const logWarn = (...args: unknown[]): void => console.warn(...args);
@@ -699,6 +702,16 @@ async function buildGovPanelEmbed(guild: Guild, cfg: Record<string, string | nul
     await guild.roles.fetch();
   } catch {
     // fall back to currently cached roles only
+  }
+  const now = Date.now();
+  const lastMemberRefresh = govMemberCacheRefreshByGuild.get(guild.id) ?? 0;
+  if (now - lastMemberRefresh >= GOV_MEMBER_CACHE_REFRESH_INTERVAL_MS) {
+    try {
+      await guild.members.fetch();
+      govMemberCacheRefreshByGuild.set(guild.id, now);
+    } catch {
+      // fall back to currently cached members only
+    }
   }
   const guildRoles = new Map(guild.roles.cache.map((role) => [role.id, role]));
   for (const [key, label] of Object.entries(GOV_DEPT_LABELS)) {
