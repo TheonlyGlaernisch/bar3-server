@@ -2286,7 +2286,10 @@ async function main(): Promise<void> {
         if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const interactionChannel = interaction.channel
-          ?? await interaction.guild.channels.fetch(interaction.channelId).catch(() => null);
+          ?? await interaction.guild.channels.fetch(interaction.channelId).catch((err) => {
+            logWarn(`[gov] Failed to fetch interaction channel ${interaction.channelId}:`, err);
+            return null;
+          });
         const preferredChannel = interactionChannel?.isTextBased() && 'send' in interactionChannel
           ? interactionChannel as TextChannel
           : null;
