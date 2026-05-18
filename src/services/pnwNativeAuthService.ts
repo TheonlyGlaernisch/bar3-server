@@ -35,6 +35,13 @@ function nowMs(): number {
   return Date.now();
 }
 
+function isPnwSuccess(value: unknown): boolean {
+  if (value === true) return true;
+  if (typeof value === 'number') return Number.isFinite(value) && value > 0;
+  if (typeof value === 'string') return PNW_SUCCESS_STRING_VALUES.has(value.trim().toLowerCase());
+  return false;
+}
+
 function cleanupExpiredPending(now = nowMs()): void {
   for (const [nationId, pending] of pendingVerifications) {
     if (pending.expiresAt <= now) {
@@ -139,9 +146,7 @@ async function sendVerificationCode(nationId: number, code: string): Promise<Sen
 
   const body = response?.body as Record<string, unknown> | undefined;
   const success = body?.success;
-  if (success === true) return { ok: true };
-  if (typeof success === 'number' && Number.isFinite(success) && success > 0) return { ok: true };
-  if (typeof success === 'string' && PNW_SUCCESS_STRING_VALUES.has(success.trim().toLowerCase())) return { ok: true };
+  if (isPnwSuccess(success)) return { ok: true };
 
   const responseText = typeof response?.text === 'string' ? response.text.trim().toLowerCase() : '';
   if (responseText) {
@@ -151,12 +156,7 @@ async function sendVerificationCode(nationId: number, code: string): Promise<Sen
 
     try {
       const parsed = JSON.parse(responseText) as Record<string, unknown>;
-      const parsedSuccess = parsed?.success;
-      if (parsedSuccess === true) return { ok: true };
-      if (typeof parsedSuccess === 'number' && Number.isFinite(parsedSuccess) && parsedSuccess > 0) return { ok: true };
-      if (typeof parsedSuccess === 'string' && PNW_SUCCESS_STRING_VALUES.has(parsedSuccess.trim().toLowerCase())) {
-        return { ok: true };
-      }
+      if (isPnwSuccess(parsed?.success)) return { ok: true };
     } catch {
       // non-JSON response text
     }
