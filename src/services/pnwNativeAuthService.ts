@@ -27,6 +27,7 @@ const CLEANUP_INTERVAL_MS = 60 * 1000;
 const DUMMY_PASSWORD_HASH = '$2b$12$KIX1B5Q7E09gM08fN6hKjem9eQxQxB8N6H9Q2fYMSQ3fWXwoQ9C8W';
 
 const pendingVerifications = new Map<number, PendingVerification>();
+const PNW_SUCCESS_STRINGS = new Set(['true', '1', 'yes', 'ok', 'success']);
 
 function nowMs(): number {
   return Date.now();
@@ -135,14 +136,10 @@ async function sendVerificationCode(nationId: number, code: string): Promise<boo
     .catch(() => undefined);
 
   const success = response?.body?.success;
-  if (success === true || success === 1 || success === '1') {
-    return true;
-  }
-  if (typeof success === 'string') {
-    const normalized = success.trim().toLowerCase();
-    return normalized === 'true' || normalized === 'yes' || normalized === 'ok' || normalized === 'success';
-  }
-  return false;
+  if (success === true) return true;
+  if (typeof success === 'number') return Number.isFinite(success) && success !== 0;
+  if (typeof success === 'string') return PNW_SUCCESS_STRINGS.has(success.trim().toLowerCase());
+  return Boolean(success);
 }
 
 export async function startVerification(
