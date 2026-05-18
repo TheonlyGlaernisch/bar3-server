@@ -37,7 +37,7 @@ function getPnwGraphqlApiKey(): string {
 }
 
 function getPnwMessageSendApiKey(): string {
-  return (process.env.PNW_MESSAGE_SEND_API_KEY || '').trim() || getPnwGraphqlApiKey();
+  return (process.env.PW_SCAN_API_KEY || '').trim() || getPnwGraphqlApiKey();
 }
 
 function nowMs(): number {
