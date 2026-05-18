@@ -696,11 +696,6 @@ async function buildGovPanelEmbed(guild: Guild, cfg: Record<string, string | nul
     .setTimestamp();
   let total = 0;
   try {
-    await guild.members.fetch();
-  } catch {
-    // fall back to currently cached members only
-  }
-  try {
     await guild.roles.fetch();
   } catch {
     // fall back to currently cached roles only
