@@ -32,6 +32,14 @@ const PNW_ERROR_FIELDS = ['general_message', 'error_msg', 'message', 'error'] as
 
 type SendVerificationResult = { ok: true } | { ok: false; error?: string };
 
+function getPnwGraphqlApiKey(): string {
+  return (process.env.PNW_API_KEY || '').trim();
+}
+
+function getPnwMessageSendApiKey(): string {
+  return (process.env.PW_SCAN_API_KEY || '').trim() || getPnwGraphqlApiKey();
+}
+
 function nowMs(): number {
   return Date.now();
 }
@@ -91,7 +99,7 @@ function validatePassword(password: string): string | null {
 }
 
 async function nationExists(nationId: number): Promise<boolean> {
-  const apiKey = (process.env.PNW_API_KEY || '').trim();
+  const apiKey = getPnwGraphqlApiKey();
   if (!apiKey) {
     return false;
   }
@@ -135,9 +143,9 @@ async function nationExists(nationId: number): Promise<boolean> {
 }
 
 async function sendVerificationCode(nationId: number, code: string): Promise<SendVerificationResult> {
-  const apiKey = (process.env.PNW_API_KEY || '').trim();
+  const apiKey = getPnwMessageSendApiKey();
   if (!apiKey) {
-    return { ok: false, error: 'PnW API key is not configured.' };
+    return { ok: false, error: 'PnW message send API key is not configured (set PW_SCAN_API_KEY or PNW_API_KEY).' };
   }
 
   const message = `Your Bar3 verification code is ${code}. This code expires in 10 minutes. If you did not request this, you can ignore this message.`;
