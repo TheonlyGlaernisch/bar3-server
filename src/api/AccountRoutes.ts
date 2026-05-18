@@ -42,15 +42,10 @@ router.get('/account', authenticateApiKey, (req: Request, res: Response) => {
 });
 
 router.post('/api-key/create', async (_req: Request, res: Response) => {
-  try {
-    const newApiKey = await AccountService.createNewApiKey();
-    return res.json({
-      success: true,
-      apiKey: newApiKey,
-    });
-  } catch (error) {
-    return res.status(500).json({ error: 'Failed to create API key' });
-  }
+  return res.status(410).json({
+    success: false,
+    error: 'Legacy API key creation has been disabled',
+  });
 });
 
 export default router;

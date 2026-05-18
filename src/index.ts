@@ -391,6 +391,8 @@ const connectDB = async () => {
     const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/bar3';
     await mongoose.connect(mongoUri);
     console.log('MongoDB connected successfully');
+    const migration = await AccountService.migrateLegacyAccountsToPwAccounts();
+    console.log(`Legacy account migration complete: ${migration.migrated}/${migration.total} migrated to pw_accounts, ${migration.deleted} deleted from legacy accounts`);
   } catch (error) {
     console.error('MongoDB connection failed:', error);
     process.exit(1);

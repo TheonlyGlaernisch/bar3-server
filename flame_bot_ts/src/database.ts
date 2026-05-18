@@ -13,13 +13,11 @@ export interface RegistrationDoc {
 export interface GuildConfigDoc {
   guild_id: string;
   slots_alliances?: number[];
-  gov_roles?: Record<string, string | null>;
+  gov_roles?: Record<string, number | null>;
   grant_channel_id?: number | null;
-  gov_panel_channel_id?: string | null;
-  gov_panel_message_id?: string | null;
   alliance_id?: number | null;
   welcome_enabled?: boolean;
-  welcome_channel_id?: string | null;
+  welcome_channel_id?: number | null;
   welcome_message?: string;
 }
 
@@ -45,14 +43,6 @@ export interface WarAlertSubscriptionDoc {
 export interface RecruiterSubscriptionDoc {
   guild_id: string;
   channel_id: string;
-}
-
-export interface CounterRequestDoc {
-  war_id: number;
-  defender_discord_id: string;
-  defender_nation_id: number;
-  defender_alliance_id: number;
-  requested_at: string;
 }
 
 const GOV_ROLE_KEYS = [
@@ -143,18 +133,18 @@ export class Database {
 
   // Gov-role config helpers ---------------------------------------------------
 
-  async getGovRoles(guildId: bigint): Promise<Record<GovRoleKey, string | null>> {
+  async getGovRoles(guildId: bigint): Promise<Record<GovRoleKey, number | null>> {
     const doc = await this._guildConfig.findOne({ guild_id: guildId.toString() }, { projection: { _id: 0 } });
     const stored = (doc?.gov_roles) || {};
-    const result: Partial<Record<GovRoleKey, string | null>> = {};
+    const result: Partial<Record<GovRoleKey, number | null>> = {};
     for (const k of GOV_ROLE_KEYS) {
       const val = stored[k];
-      result[k] = val != null ? String(val) : null;
+      result[k] = val != null ? Number(val) : null;
     }
-    return result as Record<GovRoleKey, string | null>;
+    return result as Record<GovRoleKey, number | null>;
   }
 
-  async setGovRoles(guildId: bigint, roles: Record<GovRoleKey, string | null>): Promise<void> {
+  async setGovRoles(guildId: bigint, roles: Record<GovRoleKey, number | null>): Promise<void> {
     await this._guildConfig.updateOne(
       { guild_id: guildId.toString() },
       { $set: { guild_id: guildId.toString(), gov_roles: roles } },
@@ -178,28 +168,6 @@ export class Database {
     );
   }
 
-  async getGovPanel(guildId: bigint): Promise<{ channelId: string | null; messageId: string | null }> {
-    const doc = await this._guildConfig.findOne({ guild_id: guildId.toString() }, { projection: { _id: 0 } });
-    return {
-      channelId: doc?.gov_panel_channel_id != null ? String(doc.gov_panel_channel_id) : null,
-      messageId: doc?.gov_panel_message_id != null ? String(doc.gov_panel_message_id) : null,
-    };
-  }
-
-  async setGovPanel(guildId: bigint, channelId: string | null, messageId: string | null): Promise<void> {
-    await this._guildConfig.updateOne(
-      { guild_id: guildId.toString() },
-      {
-        $set: {
-          guild_id: guildId.toString(),
-          gov_panel_channel_id: channelId,
-          gov_panel_message_id: messageId,
-        },
-      },
-      { upsert: true }
-    );
-  }
-
   // Alliance ID config helpers ---------------------------------------------
 
   async getAllianceId(guildId: bigint): Promise<number | null> {
@@ -218,22 +186,22 @@ export class Database {
 
   // Welcome message config helpers ----------------------------------------
 
-  async getWelcomeConfig(guildId: bigint): Promise<{ enabled: boolean; channel_id: string | null; message: string }> {
+  async getWelcomeConfig(guildId: bigint): Promise<{ enabled: boolean; channel_id: number | null; message: string }> {
     const doc = await this._guildConfig.findOne({ guild_id: guildId.toString() }, { projection: { _id: 0 } });
     return {
       enabled: Boolean(doc?.welcome_enabled ?? false),
-      channel_id: doc?.welcome_channel_id != null ? String(doc.welcome_channel_id) : null,
+      channel_id: doc?.welcome_channel_id != null ? Number(doc.welcome_channel_id) : null,
       message: String(doc?.welcome_message ?? 'Welcome !(user)!'),
     };
   }
 
   async setWelcomeConfig(
     guildId: bigint,
-    opts: { enabled?: boolean; channelId?: string | number | null; message?: string }
+    opts: { enabled?: boolean; channelId?: number | null; message?: string }
   ): Promise<void> {
     const updates: Record<string, unknown> = { guild_id: guildId.toString() };
     if (opts.enabled !== undefined) updates['welcome_enabled'] = opts.enabled;
-    if (opts.channelId !== undefined) updates['welcome_channel_id'] = opts.channelId == null ? null : String(opts.channelId);
+    if (opts.channelId !== undefined) updates['welcome_channel_id'] = opts.channelId;
     if (opts.message !== undefined) updates['welcome_message'] = opts.message;
     await this._guildConfig.updateOne(
       { guild_id: guildId.toString() },
@@ -279,19 +247,6 @@ export class Database {
     await this._botConfig.updateOne(
       { key: 'pnw_api_key' },
       { $set: { key: 'pnw_api_key', value: apiKey } },
-      { upsert: true }
-    );
-  }
-
-  async getBotConfig(key: string): Promise<string | null> {
-    const doc = await this._botConfig.findOne({ key }, { projection: { _id: 0 } });
-    return doc?.value ?? null;
-  }
-
-  async setBotConfig(key: string, value: string): Promise<void> {
-    await this._botConfig.updateOne(
-      { key },
-      { $set: { key, value } },
       { upsert: true }
     );
   }
@@ -380,62 +335,6 @@ export class Database {
 
   async getAllRecruiterSubscriptions(): Promise<RecruiterSubscriptionDoc[]> {
     return this._recruiterCol.find({}, { projection: { _id: 0 } }).toArray();
-  }
-
-  // Counter request helpers --------------------------------------------------
-
-  private get _counterRequestsCol(): Collection<CounterRequestDoc> {
-    return this._client.db('TRF').collection<CounterRequestDoc>('counter_requests');
-  }
-
-  async ensureCounterRequestIndexes(): Promise<void> {
-    await this._counterRequestsCol.createIndex(
-      { war_id: 1, defender_discord_id: 1 },
-      { unique: true }
-    );
-    await this._counterRequestsCol.createIndex({ defender_alliance_id: 1 });
-    await this._counterRequestsCol.createIndex({ requested_at: 1 });
-  }
-
-  async addCounterRequest(
-    warId: number,
-    defenderDiscordId: bigint,
-    defenderNationId: number,
-    defenderAllianceId: number
-  ): Promise<string> {
-    const requestedAt = new Date().toISOString();
-    await this._counterRequestsCol.updateOne(
-      { war_id: warId, defender_discord_id: defenderDiscordId.toString() },
-      {
-        $set: {
-          war_id: warId,
-          defender_discord_id: defenderDiscordId.toString(),
-          defender_nation_id: defenderNationId,
-          defender_alliance_id: defenderAllianceId,
-          requested_at: requestedAt,
-        },
-      },
-      { upsert: true }
-    );
-    return requestedAt;
-  }
-
-  async getCounterRequestsByAlliance(defenderAllianceId: number): Promise<CounterRequestDoc[]> {
-    return this._counterRequestsCol.find(
-      { defender_alliance_id: defenderAllianceId },
-      { projection: { _id: 0 } }
-    ).toArray();
-  }
-
-  async removeCounterRequestsForAllianceExceptWarIds(
-    defenderAllianceId: number,
-    activeWarIds: number[]
-  ): Promise<number> {
-    const query = activeWarIds.length
-      ? { defender_alliance_id: defenderAllianceId, war_id: { $nin: activeWarIds } }
-      : { defender_alliance_id: defenderAllianceId };
-    const result = await this._counterRequestsCol.deleteMany(query);
-    return result.deletedCount ?? 0;
   }
 
   async close(): Promise<void> {
