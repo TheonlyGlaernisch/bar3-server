@@ -11,7 +11,7 @@
           <v-img
             class="shrink mr-2"
             contain
-            src="@/assets/bar3.png"
+            src="/src/favicon.ico"
             width="45"
           />
           <div class="ml-2"> 

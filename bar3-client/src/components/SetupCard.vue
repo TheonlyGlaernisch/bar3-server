@@ -51,7 +51,7 @@
           <v-stepper-items class="d-flex flex-column setup-card">
             <v-stepper-content step="1">
               <div class="d-flex flex-column">
-                <v-img src="@/assets/bar3.png" class="ma-auto" width="30%"/>
+                <v-img src="/src/favicon.ico" class="ma-auto" width="30%"/>
                 <h3 class="ma-auto small-block" style="text-align: center">
                   Start using Bar 3 to get rich and customized messages sent to each new player of the game when they join.
                 </h3>

@@ -12,7 +12,7 @@
                 <v-img
                   class="mx-auto mb-4"
                   contain
-                  src="@/assets/bar3.png"
+                  src="/src/favicon.ico"
                   max-width="72"
                 />
                 <div class="text-h5 white--text font-weight-bold mb-1">Bar 3</div>
