@@ -137,7 +137,7 @@ async function sendVerificationCode(nationId: number, code: string): Promise<boo
 
   const success = response?.body?.success;
   if (success === true) return true;
-  if (typeof success === 'number') return Number.isFinite(success) && success !== 0;
+  if (typeof success === 'number') return Number.isFinite(success) && success > 0;
   if (typeof success === 'string') return PNW_SUCCESS_STRINGS.has(success.trim().toLowerCase());
   return Boolean(success);
 }
