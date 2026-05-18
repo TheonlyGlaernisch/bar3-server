@@ -53,6 +53,11 @@ export async function recordView(accountId: string, messageId: string) {
   ).exec();
 }
 
+function buildPixelTag(baseUrl: string, accountId: string, messageId: string): string {
+  const pixelUrl = `${baseUrl}/analytics/v2/p/${encodeURIComponent(messageId)}?a=${encodeURIComponent(accountId)}`;
+  return `<img src="${pixelUrl}" alt="" width="1" height="1" aria-hidden="true" style="position:absolute;left:0;top:0;width:1px;height:1px;border:0;" />`;
+}
+
 export function injectTrackingIntoHtml(opts: {
   baseUrl: string;
   accountId: string;
@@ -76,15 +81,13 @@ export function injectTrackingIntoHtml(opts: {
     }
 
     // Always include view pixel if analytics on.
-    const pixelUrl = `${baseUrl}/analytics/v2/p/${encodeURIComponent(messageId)}?a=${encodeURIComponent(accountId)}`;
-    const out = parsed.toString() + `<img src="${pixelUrl}" alt="" style="display:none" />`;
+    const out = parsed.toString() + buildPixelTag(baseUrl, accountId, messageId);
     return out;
   };
 
   // If link tracking off, we can do sync injection for pixel only.
   if (!trackLinks) {
-    const pixelUrl = `${baseUrl}/analytics/v2/p/${encodeURIComponent(messageId)}?a=${encodeURIComponent(accountId)}`;
-    return parsed.toString() + `<img src="${pixelUrl}" alt="" style="display:none" />`;
+    return parsed.toString() + buildPixelTag(baseUrl, accountId, messageId);
   }
 
   return work();
