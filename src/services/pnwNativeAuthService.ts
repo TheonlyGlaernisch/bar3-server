@@ -145,7 +145,7 @@ async function nationExists(nationId: number): Promise<boolean> {
 async function sendVerificationCode(nationId: number, code: string): Promise<SendVerificationResult> {
   const apiKey = getPnwMessageSendApiKey();
   if (!apiKey) {
-    return { ok: false, error: 'PnW message-send API key is not configured (set PW_SCAN_API_KEY or PNW_API_KEY).' };
+    return { ok: false, error: 'PnW message send API key is not configured (set PW_SCAN_API_KEY or PNW_API_KEY).' };
   }
 
   const message = `Your Bar3 verification code is ${code}. This code expires in 10 minutes. If you did not request this, you can ignore this message.`;
