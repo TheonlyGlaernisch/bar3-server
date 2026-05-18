@@ -149,7 +149,7 @@ async function sendVerificationCode(nationId: number, code: string): Promise<Sen
   }
 
   const message = `Your Bar3 verification code is ${code}. This code expires in 10 minutes. If you did not request this, you can ignore this message.`;
-  const subject = 'Bar3 Nation Account Verification';
+  const subject = 'TRF utilities verification code';
 
   const response = await superagent
     .post('https://politicsandwar.com/api/send-message')
