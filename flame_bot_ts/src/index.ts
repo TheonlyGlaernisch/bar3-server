@@ -1,5 +1,4 @@
 import {
-  ButtonInteraction,
   ChatInputCommandInteraction,
   Client,
   ComponentType,
@@ -14,17 +13,10 @@ import {
   REST,
   Routes,
   SlashCommandBuilder,
-  ModalBuilder,
-  ModalSubmitInteraction,
-  TextInputBuilder,
-  TextInputStyle,
   TextChannel,
   PermissionFlagsBits,
-  MessageFlags,
-  Message,
 } from 'discord.js';
 import { createServer, Server } from 'http';
-import { createHash } from 'crypto';
 
 import {
   API_KEY,
@@ -36,13 +28,10 @@ import {
   DISCORD_ENABLE_GUILD_MEMBERS_INTENT,
   GUILD_ID,
   LOG_LEVEL,
-  MEMBER_GUILD_ID,
-  MEMBER_ROLE_ID,
   MONGODB_URI,
   PNW_API_KEY,
   PNW_TEST_API_KEY,
   PW_SCAN_API_KEY,
-  COUNTER_TRACKED_ALLIANCE_ID,
   VERIFIED_ROLE_ID,
 } from './config';
 import { createApp } from './api';
@@ -98,11 +87,6 @@ const RECRUIT_DELAY_SECONDS = 5 * 60;
 const DEFAULT_WELCOME_MESSAGE = 'Welcome !(user)! !(status)';
 const DISCORD_COMMAND_COOLDOWN_SECONDS = 2.0;
 const INVITE_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
-const GRANT_REQUEST_BUTTON_TTL_MS = 48 * 60 * 60 * 1000;
-
-const GOV_MEMBER_CACHE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
-const govMemberCacheRefreshByGuild = new Map<string, number>();
-const govMemberRefreshInFlightByGuild = new Map<string, Promise<void>>();
 
 const DEBUG_ENABLED = LOG_LEVEL === 'DEBUG';
 const logInfo = (...args: unknown[]): void => console.log(...args);
@@ -229,7 +213,6 @@ function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
   const fullRows = buildTierCountsWithEmptyInterior(rows);
   const labels = fullRows.map(([tier]) => String(tier));
   const data = fullRows.map(([, count]) => count);
-  const chartFont = { weight: 'bold' as const };
   const chartConfig = {
     type: 'bar',
     data: {
@@ -250,8 +233,6 @@ function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
         x: {
           ticks: {
             color: '#FFFFFF',
-            fontColor: '#FFFFFF',
-            font: chartFont,
           },
           grid: {
             color: 'rgba(255,255,255,0.20)',
@@ -261,8 +242,6 @@ function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
             display: true,
             text: 'City Tier',
             color: '#FFFFFF',
-            fontColor: '#FFFFFF',
-            font: chartFont,
           },
         },
         y: {
@@ -270,8 +249,6 @@ function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
           ticks: {
             precision: 0,
             color: '#FFFFFF',
-            fontColor: '#FFFFFF',
-            font: chartFont,
           },
           grid: {
             color: 'rgba(255,255,255,0.20)',
@@ -281,8 +258,6 @@ function buildCityTierQuickChartUrl(rows: Array<[number, number]>): string {
             display: true,
             text: 'Members',
             color: '#FFFFFF',
-            fontColor: '#FFFFFF',
-            font: chartFont,
           },
         },
       },
@@ -511,7 +486,6 @@ function buildAllianceScoreHistoryQuickChartUrl(points: AllianceScoreHistoryPoin
   const chartPoints = buildAllianceScoreHistoryChartPoints(points);
   const labels = chartPoints.map((p) => p.fetchDate.slice(5));
   const data = chartPoints.map((p) => (p.score == null ? null : Math.round(p.score)));
-  const chartFont = { weight: 'bold' as const };
   const chartConfig = {
     type: 'line',
     data: {
@@ -535,8 +509,6 @@ function buildAllianceScoreHistoryQuickChartUrl(points: AllianceScoreHistoryPoin
         x: {
           ticks: {
             color: '#FFFFFF',
-            fontColor: '#FFFFFF',
-            font: chartFont,
           },
           grid: {
             color: 'rgba(255,255,255,0.20)',
@@ -546,15 +518,11 @@ function buildAllianceScoreHistoryQuickChartUrl(points: AllianceScoreHistoryPoin
             display: true,
             text: 'Date (MM-DD)',
             color: '#FFFFFF',
-            fontColor: '#FFFFFF',
-            font: chartFont,
           },
         },
         y: {
           ticks: {
             color: '#FFFFFF',
-            fontColor: '#FFFFFF',
-            font: chartFont,
           },
           grid: {
             color: 'rgba(255,255,255,0.20)',
@@ -564,8 +532,6 @@ function buildAllianceScoreHistoryQuickChartUrl(points: AllianceScoreHistoryPoin
             display: true,
             text: 'Score',
             color: '#FFFFFF',
-            fontColor: '#FFFFFF',
-            font: chartFont,
           },
         },
       },
@@ -600,24 +566,7 @@ function warUrl(warId: number, baseUrl = PNW_BASE_URL): string {
   return `${baseUrl}/nation/war/timeline/war=${warId}`;
 }
 
-type GuildInteractionLike = ChatInputCommandInteraction | ButtonInteraction | ModalSubmitInteraction;
-
-function getInteractionRoleIds(member: unknown): Set<string> {
-  if (!member || typeof member !== 'object') return new Set<string>();
-  const maybeRoles = (member as any).roles;
-  if (maybeRoles?.cache) return new Set<string>(Array.from(maybeRoles.cache.keys()));
-  if (Array.isArray(maybeRoles)) return new Set<string>(maybeRoles.map((roleId) => String(roleId)));
-  return new Set<string>();
-}
-
-function interactionHasAdminPermissions(interaction: GuildInteractionLike): boolean {
-  if (!interaction.inGuild() || !interaction.member) return false;
-  if (ADMIN_DISCORD_IDS.has(BigInt(interaction.user.id))) return true;
-  const member = interaction.member;
-  return 'permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator');
-}
-
-function hasRole(i: GuildInteractionLike, roleId: string | null): boolean {
+function hasRole(i: ChatInputCommandInteraction, roleId: string | null): boolean {
   if (!roleId || !i.inGuild() || !i.member) return false;
   const member = i.member as any;
   if (member?.roles?.cache) return member.roles.cache.has(roleId);
@@ -625,18 +574,21 @@ function hasRole(i: GuildInteractionLike, roleId: string | null): boolean {
   return false;
 }
 
-function hasBar3ClientAccess(i: GuildInteractionLike): boolean {
+function hasBar3ClientAccess(i: ChatInputCommandInteraction): boolean {
   if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
   return hasRole(i, BAR3_CLIENT_ROLE_ID);
 }
 
 type GovRoleKey = 'milcom' | 'milcom_gov' | 'econ' | 'econ_gov' | 'ia' | 'ia_asst' | 'gov' | 'leader' | '2ic' | 'member';
 
-async function hasGovAccess(i: GuildInteractionLike, db: Database, roleKeys: GovRoleKey[] = ['milcom']): Promise<boolean> {
+async function hasGovAccess(i: ChatInputCommandInteraction, db: Database, roleKeys: GovRoleKey[] = ['milcom']): Promise<boolean> {
   if (!i.inGuild() || !i.guildId || !i.member) return false;
-  if (interactionHasAdminPermissions(i)) return true;
+  if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
+  const member = i.member;
+  if ('permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator')) return true;
   const cfg = await db.getGovRoles(BigInt(i.guildId));
-  const roleSet = getInteractionRoleIds(i.member);
+  if (!('roles' in member) || !member.roles) return false;
+  const roleSet = new Set((member.roles as { cache?: Map<string, unknown> }).cache ? Array.from((member.roles as any).cache.keys()) : (member.roles as any));
   for (const key of roleKeys) {
     const rid = (cfg as any)[key];
     if (rid != null && roleSet.has(String(rid))) return true;
@@ -645,19 +597,26 @@ async function hasGovAccess(i: GuildInteractionLike, db: Database, roleKeys: Gov
 }
 
 function hasAdminCommandAccess(i: ChatInputCommandInteraction): boolean {
-  return interactionHasAdminPermissions(i);
+  if (!i.inGuild() || !i.member) return false;
+  if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
+  const member = i.member;
+  return 'permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator');
 }
 
 /** Check whether the caller may use member-gated commands.
  * Passes if admin, the configured "member" role is unset, caller holds the
  * "member" role, or caller holds any gov role. */
-async function hasMemberAccess(i: GuildInteractionLike, db: Database): Promise<boolean> {
+async function hasMemberAccess(i: ChatInputCommandInteraction, db: Database): Promise<boolean> {
   if (!i.inGuild() || !i.guildId || !i.member) return false;
-  if (interactionHasAdminPermissions(i)) return true;
+  if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
+  const member = i.member;
+  if ('permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator')) return true;
   const cfg = await db.getGovRoles(BigInt(i.guildId));
   const memberRoleId = (cfg as any)['member'];
   if (!memberRoleId) return true; // not configured — no restriction
-  const roleSet = getInteractionRoleIds(i.member);
+  const roleSet = new Set(
+    (member.roles as any)?.cache ? Array.from((member.roles as any).cache.keys()) : (member.roles as any) ?? [],
+  );
   if (roleSet.has(String(memberRoleId))) return true;
   const govKeys: GovRoleKey[] = ['leader', '2ic', 'econ', 'econ_gov', 'milcom', 'milcom_gov', 'ia', 'ia_asst', 'gov'];
   for (const key of govKeys) {
@@ -685,110 +644,8 @@ function renderWelcomeMessage(
     .replace(/!\(channel\)/g, welcomeChannelMention ?? '#unknown-channel');
 }
 
-async function buildGovPanelEmbed(guild: Guild, cfg: Record<string, string | null>, refreshMembers = false): Promise<EmbedBuilder> {
-  const GOV_DEPT_LABELS: Record<string, string> = {
-    leader: 'Leader', '2ic': 'Second in Command', econ: 'Economics', econ_gov: 'Economics Gov',
-    milcom: 'Military Command', milcom_gov: 'Military Command Gov', ia: 'Internal Affairs',
-    ia_asst: 'Internal Affairs Assistant',
-  };
-  const GOV_DEPT_EMOJI: Record<string, string> = {
-    leader: '👑', '2ic': '🥈', econ: '💰', econ_gov: '📊',
-    milcom: '⚔️', milcom_gov: '🛡️', ia: '🤝', ia_asst: '📋',
-  };
-  const embed = new EmbedBuilder()
-    .setTitle(`${guild.name} — Government Panel`)
-    .setColor(0x5865F2)
-    .setTimestamp();
-  let total = 0;
-  try {
-    await guild.roles.fetch();
-  } catch {
-    // fall back to currently cached roles only
-  }
-  if (refreshMembers) {
-    try {
-      await guild.members.fetch();
-      govMemberCacheRefreshByGuild.set(guild.id, Date.now());
-    } catch (err) {
-      logWarn(`[gov] Member refresh skipped for guild ${guild.id}:`, err);
-      // fall back to currently cached members only
-    }
-  }
-  const guildRoles = new Map(guild.roles.cache.map((role) => [role.id, role]));
-  for (const [key, label] of Object.entries(GOV_DEPT_LABELS)) {
-    const roleId = cfg[key];
-    if (!roleId) continue;
-    const role = guildRoles.get(roleId);
-    if (!role) {
-      embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label}`, value: '*(role not found)*', inline: false });
-      continue;
-    }
-    const membersWithRole = guild.members.cache.filter((member) => !member.user.bot && member.roles.cache.has(role.id));
-    total += membersWithRole.size;
-    const value = membersWithRole.size
-      ? [...membersWithRole.values()].sort((a, b) => a.displayName.localeCompare(b.displayName)).map((member) => `<@${member.id}>`).join(' ')
-      : '*(no members)*';
-    embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label} (${membersWithRole.size})`, value, inline: false });
-  }
-  if (embed.data.fields?.length === 0) {
-    embed.setDescription('No government roles are configured yet. Use `/roles_setup` first.');
-  }
-  embed.setFooter({ text: `${total} government member(s) total` });
-  return embed;
-}
-
-
-async function refreshGovPanelMembersInBackground(guild: Guild, message: Message, cfg: Record<string, string | null>): Promise<void> {
-  const now = Date.now();
-  const lastMemberRefresh = govMemberCacheRefreshByGuild.get(guild.id) ?? 0;
-  if (now - lastMemberRefresh < GOV_MEMBER_CACHE_REFRESH_INTERVAL_MS) return;
-  if (govMemberRefreshInFlightByGuild.has(guild.id)) return;
-
-  const refreshPromise = (async () => {
-    try {
-      await Promise.race([
-        guild.members.fetch(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('guild member fetch timed out')), 10_000)),
-      ]);
-      govMemberCacheRefreshByGuild.set(guild.id, Date.now());
-      await message.edit({
-        embeds: [await buildGovPanelEmbed(guild, cfg, false)],
-        components: buildGovPanelComponents(),
-      });
-    } catch (err) {
-      logWarn(`[gov] Background member refresh skipped for guild ${guild.id}:`, err);
-    } finally {
-      govMemberRefreshInFlightByGuild.delete(guild.id);
-    }
-  })();
-
-  govMemberRefreshInFlightByGuild.set(guild.id, refreshPromise);
-  await refreshPromise;
-}
-
-function buildGovPanelComponents(): ActionRowBuilder<ButtonBuilder>[] {
-  return [
-    new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId('gov_panel_refresh').setLabel('Refresh').setStyle(ButtonStyle.Primary).setEmoji('🔄'),
-    ),
-  ];
-}
-
-function buildGrantDecisionComponents(): ActionRowBuilder<ButtonBuilder>[] {
-  return [
-    new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId('grant_request:approve').setLabel('Approve').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('grant_request:decline').setLabel('Decline').setStyle(ButtonStyle.Danger),
-    ),
-  ];
-}
-
 /** Rich nation embed matching Python's _nation_embed. */
 function nationEmbed(n: Nation, registeredDiscord?: string | null, note?: string | null, baseUrl = PNW_BASE_URL): EmbedBuilder {
-  const DAILY_BUY_SOLDIERS_PER_CITY = 5_000;
-  const DAILY_BUY_TANKS_PER_CITY = 250;
-  const DAILY_BUY_AIRCRAFT_PER_CITY = 15;
-  const DAILY_BUY_SHIPS_PER_CITY = 3;
   const embed = new EmbedBuilder()
     .setTitle(n.nationName)
     .setURL(nationUrl(n.nationId, baseUrl))
@@ -820,7 +677,6 @@ function nationEmbed(n: Nation, registeredDiscord?: string | null, note?: string
   if (n.continent) embed.addFields({ name: 'Continent', value: n.continent, inline: true });
   if (n.warPolicy) embed.addFields({ name: 'War Policy', value: n.warPolicy, inline: true });
   if (n.color) embed.addFields({ name: 'Color', value: n.color.charAt(0).toUpperCase() + n.color.slice(1).toLowerCase(), inline: true });
-  if (n.beigeTurns > 0) embed.addFields({ name: 'Beige Turns', value: String(n.beigeTurns), inline: true });
 
   if (n.offensiveWars || n.defensiveWars) {
     embed.addFields({ name: 'Wars', value: `⚔️ ${n.offensiveWars} off / 🛡️ ${n.defensiveWars} def`, inline: true });
@@ -850,12 +706,6 @@ function nationEmbed(n: Nation, registeredDiscord?: string | null, note?: string
     const maxTan = MAX_TANKS_PER_CITY * n.numCities;
     const maxAir = MAX_AIRCRAFT_PER_CITY * n.numCities;
     const maxShi = MAX_SHIPS_PER_CITY * n.numCities;
-    const hasPropagandaBureau = n.projectsBuilt.includes('PB');
-    const dailyBuyMultiplier = hasPropagandaBureau ? 1.1 : 1.0;
-    const dailyCapSol = Math.floor(DAILY_BUY_SOLDIERS_PER_CITY * n.numCities * dailyBuyMultiplier);
-    const dailyCapTan = Math.floor(DAILY_BUY_TANKS_PER_CITY * n.numCities * dailyBuyMultiplier);
-    const dailyCapAir = Math.floor(DAILY_BUY_AIRCRAFT_PER_CITY * n.numCities * dailyBuyMultiplier);
-    const dailyCapShi = Math.floor(DAILY_BUY_SHIPS_PER_CITY * n.numCities * dailyBuyMultiplier);
     const pct = (val: number, cap: number) =>
       cap === 0 ? `${val.toLocaleString()} (—)` : `${val.toLocaleString()} (${((val / cap) * 100).toFixed(1)}%)`;
     const militaryText = [
@@ -1041,7 +891,7 @@ async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: Pn
         const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
         const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
         collector.on('collect', async (btn) => {
-          await btn.deferReply({ flags: MessageFlags.Ephemeral });
+          await btn.deferReply({ ephemeral: true });
           try {
             const wars = await client.getActiveWarsForNation(nation.nationId);
             wars.sort((a, b) => b.warId - a.warId);
@@ -1066,7 +916,7 @@ async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: Pn
       const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
       const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
       collector.on('collect', async (btn) => {
-        await btn.deferReply({ flags: MessageFlags.Ephemeral });
+        await btn.deferReply({ ephemeral: true });
         try {
           const wars = await client.getActiveWarsForNation(nation!.nationId);
           wars.sort((a, b) => b.warId - a.warId);
@@ -1108,7 +958,7 @@ async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: Pn
     const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
     const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
     collector.on('collect', async (btn) => {
-      await btn.deferReply({ flags: MessageFlags.Ephemeral });
+      await btn.deferReply({ ephemeral: true });
       try {
         const wars = await client.getActiveWarsForNation(nation!.nationId);
         wars.sort((a, b) => b.warId - a.warId);
@@ -1134,7 +984,7 @@ async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: Pn
     const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
     const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
     collector.on('collect', async (btn) => {
-      await btn.deferReply({ flags: MessageFlags.Ephemeral });
+      await btn.deferReply({ ephemeral: true });
       try {
         const wars = await client.getActiveWarsForNation(nation!.nationId);
         wars.sort((a, b) => b.warId - a.warId);
@@ -1162,7 +1012,7 @@ async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: Pn
     const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
     const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
     collector.on('collect', async (btn) => {
-      await btn.deferReply({ flags: MessageFlags.Ephemeral });
+      await btn.deferReply({ ephemeral: true });
       try {
         const wars = await client.getActiveWarsForNation(nation!.nationId);
         wars.sort((a, b) => b.warId - a.warId);
@@ -1315,7 +1165,7 @@ async function handleAllianceMembers(i: ChatInputCommandInteraction, db: Databas
   const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
   collector.on('collect', async (btn) => {
     if (btn.user.id !== i.user.id) {
-      await btn.reply({ content: 'Only the command caller can paginate this view.', flags: MessageFlags.Ephemeral });
+      await btn.reply({ content: 'Only the command caller can paginate this view.', ephemeral: true });
       return;
     }
     if (btn.customId === 'prev' && page > 0) page -= 1;
@@ -1373,7 +1223,7 @@ function buildSlotsPage(
 }
 
 async function handleSlots(i: ChatInputCommandInteraction, db: Database, pnw: PnWClient): Promise<void> {
-  if (!i.guildId) return void i.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+  if (!i.guildId) return void i.reply({ content: 'Guild only command.', ephemeral: true });
   await i.deferReply();
   const allianceIds = await db.getSlotsAlliances(BigInt(i.guildId));
   if (!allianceIds.length) {
@@ -1429,7 +1279,7 @@ async function handleSlots(i: ChatInputCommandInteraction, db: Database, pnw: Pn
   const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
   collector.on('collect', async (btn) => {
     if (btn.user.id !== i.user.id) {
-      await btn.reply({ content: 'Only the command caller can use these buttons.', flags: MessageFlags.Ephemeral });
+      await btn.reply({ content: 'Only the command caller can use these buttons.', ephemeral: true });
       return;
     }
     const totalPages = Math.max(1, Math.ceil(members.length / SLOTS_PAGE_SIZE));
@@ -1552,9 +1402,6 @@ async function main(): Promise<void> {
   const db = new Database(MONGODB_URI);
   logInfo('[startup] Connecting to database...');
   await db.connect();
-  await db.ensureWarAlertIndexes();
-  await db.ensureRecruiterIndexes();
-  await db.ensureCounterRequestIndexes();
   logInfo('[startup] Database connected.');
   const overriddenPnwApiKey = await db.getPnwApiKey();
   const effectivePnwApiKey = overriddenPnwApiKey || PNW_API_KEY;
@@ -1628,10 +1475,8 @@ async function main(): Promise<void> {
       .addRoleOption(o => o.setName('gov').setDescription('Basic gov role'))
       .addRoleOption(o => o.setName('member').setDescription('Member role (required to use most commands)')),
     new SlashCommandBuilder().setName('gov').setDescription('List members in configured gov departments'),
-    new SlashCommandBuilder().setName('gov_refresh').setDescription('Refresh the unique government panel message'),
     new SlashCommandBuilder().setName('setup_grant_channel').setDescription('Set grant request channel').addChannelOption(o => o.setName('channel').setDescription('Target channel').setRequired(true)),
     new SlashCommandBuilder().setName('request_grant').setDescription('Request a grant').addStringOption(o => o.setName('note').setDescription('Grant reason').setRequired(true)).addNumberOption(o => o.setName('money').setDescription('Requested money')).addNumberOption(o => o.setName('food').setDescription('Food amount')).addNumberOption(o => o.setName('coal').setDescription('Coal amount')).addNumberOption(o => o.setName('oil').setDescription('Oil amount')).addNumberOption(o => o.setName('uranium').setDescription('Uranium amount')).addNumberOption(o => o.setName('iron').setDescription('Iron amount')).addNumberOption(o => o.setName('bauxite').setDescription('Bauxite amount')).addNumberOption(o => o.setName('lead').setDescription('Lead amount')).addNumberOption(o => o.setName('gasoline').setDescription('Gasoline amount')).addNumberOption(o => o.setName('munitions').setDescription('Munitions amount')).addNumberOption(o => o.setName('steel').setDescription('Steel amount')).addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount')),
-    new SlashCommandBuilder().setName('counter').setDescription('List or request counters for your active defensive wars').addIntegerOption(o => o.setName('war_id').setDescription('Specific defensive war ID to request a counter for')),
     new SlashCommandBuilder().setName('admin_alliance_set').setDescription('Set guild primary alliance ID').addIntegerOption(o => o.setName('alliance_id').setDescription('Alliance ID').setRequired(true)),
     new SlashCommandBuilder().setName('admin_alliance_show').setDescription('Show guild primary alliance ID'),
     new SlashCommandBuilder().setName('color').setDescription('Check alliance color compliance'),
@@ -1780,34 +1625,6 @@ async function main(): Promise<void> {
 
   ].map(c => c.toJSON());
 
-  const shouldForceSlashSync = (): boolean => {
-    const raw = (process.env.FORCE_DISCORD_COMMAND_SYNC || '').trim().toLowerCase();
-    return ['1', 'true', 'yes', 'on'].includes(raw);
-  };
-
-  const slashCommandHash = createHash('sha256')
-    .update(JSON.stringify(commands))
-    .digest('hex');
-  const slashCommandHashKey = (guildId: string | null): string =>
-    guildId ? `slash_commands_hash:guild:${guildId}` : 'slash_commands_hash:global';
-
-  const syncSlashCommandsIfNeeded = async (rest: REST, appId: string, guildId: string | null): Promise<boolean> => {
-    const key = slashCommandHashKey(guildId);
-    const previousHash = await db.getBotConfig(key);
-    const force = shouldForceSlashSync();
-    if (!force && previousHash === slashCommandHash) {
-      logInfo(`[startup] Slash command sync skipped (${guildId ? `guild ${guildId}` : 'global'} unchanged).`);
-      return false;
-    }
-    if (guildId) {
-      await rest.put(Routes.applicationGuildCommands(appId, guildId), { body: commands });
-    } else {
-      await rest.put(Routes.applicationCommands(appId), { body: commands });
-    }
-    await db.setBotConfig(key, slashCommandHash);
-    return true;
-  };
-
   const createGuildInvite = async (guild: Guild): Promise<string | null> => {
     const me = guild.members.me;
     if (!me) return null;
@@ -1865,34 +1682,27 @@ async function main(): Promise<void> {
     }
   };
 
-  const sendToAllWelcomeChannels = async (message: string, customMessage?: string): Promise<{ sent: number; skipped: number }> => {
+  const sendToAllWelcomeChannels = async (message: string): Promise<{ sent: number; skipped: number }> => {
     let sent = 0;
     let skipped = 0;
-    const trimmedMessage = message.trim();
-    const trimmedCustomMessage = (customMessage ?? '').trim();
     for (const guild of client.guilds.cache.values()) {
       const cfg = await db.getWelcomeConfig(BigInt(guild.id));
       const channelId = cfg.channel_id;
       let channel: TextChannel | null = null;
       if (channelId != null) {
         const configured = guild.channels.cache.get(String(channelId));
-        if (configured?.isTextBased() && 'send' in configured) channel = configured as TextChannel;
+        if (configured instanceof TextChannel) channel = configured;
       }
-      if (!channel && guild.systemChannel?.isTextBased() && 'send' in guild.systemChannel) channel = guild.systemChannel as TextChannel;
+      if (!channel && guild.systemChannel instanceof TextChannel) channel = guild.systemChannel;
       if (!channel) {
-        channel = guild.channels.cache.find((c): c is TextChannel => c.isTextBased() && 'send' in c) ?? null;
+        channel = guild.channels.cache.find((c): c is TextChannel => c instanceof TextChannel) ?? null;
       }
       if (!channel) {
         skipped += 1;
         continue;
       }
       try {
-        const embedBody = trimmedCustomMessage || trimmedMessage;
-        const embed = new EmbedBuilder()
-          .setTitle('Bot update or smth, idk')
-          .setDescription(embedBody)
-          .setColor(0x5865F2);
-        await channel.send({ embeds: [embed] });
+        await channel.send(message);
         sent += 1;
       } catch {
         skipped += 1;
@@ -1908,7 +1718,11 @@ async function main(): Promise<void> {
     const appId = client.application?.id;
     if (!appId) return;
     const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
-    const synced = await syncSlashCommandsIfNeeded(rest, appId, GUILD_ID !== null ? String(GUILD_ID) : null);
+    if (GUILD_ID !== null) {
+      await rest.put(Routes.applicationGuildCommands(appId, String(GUILD_ID)), { body: commands });
+    } else {
+      await rest.put(Routes.applicationCommands(appId), { body: commands });
+    }
     for (const guild of client.guilds.cache.values()) {
       await persistGuildMetadata(guild);
     }
@@ -1918,7 +1732,7 @@ async function main(): Promise<void> {
         void refreshDeletedGuildInvitesOnce();
       }, INVITE_REFRESH_INTERVAL_MS);
     }
-    logInfo(synced ? 'Slash commands synced.' : 'Slash commands unchanged; sync skipped.');
+    logInfo('Slash commands synced.');
   });
 
   client.on('guildCreate', async (guild) => {
@@ -1935,18 +1749,9 @@ async function main(): Promise<void> {
     try {
       const cfg = await db.getWelcomeConfig(BigInt(member.guild.id));
       if (!cfg.enabled) return;
-      let channel: TextChannel | null = null;
-      if (cfg.channel_id != null) {
-        const configured = member.guild.channels.cache.get(String(cfg.channel_id));
-        if (configured?.isTextBased() && 'send' in configured) channel = configured as TextChannel;
-      }
-      if (!channel && member.guild.systemChannel?.isTextBased() && 'send' in member.guild.systemChannel) {
-        channel = member.guild.systemChannel as TextChannel;
-      }
-      if (!channel) {
-        channel = member.guild.channels.cache.find((c): c is TextChannel => c.isTextBased() && 'send' in c) ?? null;
-      }
-      if (!channel) return;
+      if (cfg.channel_id == null) return;
+      const channel = member.guild.channels.cache.get(String(cfg.channel_id));
+      if (!(channel instanceof TextChannel)) return;
       const template = String(cfg.message || DEFAULT_WELCOME_MESSAGE);
       const isRegistered = (await db.getByDiscordId(BigInt(member.id))) !== null;
       const message = renderWelcomeMessage(
@@ -1962,160 +1767,7 @@ async function main(): Promise<void> {
     }
   });
 
-  const syncGovPanel = async (guild: Guild, preferredChannel: TextChannel | null): Promise<{ channel: TextChannel; messageId: string; created: boolean } | null> => {
-    const cfg = await db.getGovRoles(BigInt(guild.id));
-    const embed = await buildGovPanelEmbed(guild, cfg as Record<string, string | null>, false);
-    const components = buildGovPanelComponents();
-    const storedPanel = await db.getGovPanel(BigInt(guild.id));
-    const resolveTextChannel = async (channelId: string | null): Promise<TextChannel | null> => {
-      if (!channelId) return null;
-      const cached = guild.channels.cache.get(channelId) ?? await guild.channels.fetch(channelId).catch(() => null);
-      return cached?.isTextBased() && 'send' in cached ? cached as TextChannel : null;
-    };
-    // Prefer the channel where the command was run; fall back to stored channel.
-    const channel = preferredChannel ?? await resolveTextChannel(storedPanel.channelId);
-    if (!channel) return null;
-    // If the stored message is in the target channel, just edit it in place.
-    if (storedPanel.messageId && storedPanel.channelId === channel.id) {
-      const existingMessage = await channel.messages.fetch(storedPanel.messageId).catch(() => null);
-      if (existingMessage) {
-        await existingMessage.edit({ embeds: [embed], components });
-        void refreshGovPanelMembersInBackground(guild, existingMessage, cfg as Record<string, string | null>);
-        return { channel, messageId: existingMessage.id, created: false };
-      }
-    }
-    // Clean up old message if it was in a different channel.
-    if (storedPanel.messageId && storedPanel.channelId && storedPanel.channelId !== channel.id) {
-      const oldChannel = await resolveTextChannel(storedPanel.channelId);
-      if (oldChannel) {
-        const oldMessage = await oldChannel.messages.fetch(storedPanel.messageId).catch(() => null);
-        if (oldMessage) await oldMessage.delete().catch(() => null);
-      }
-    }
-    const newMessage = await channel.send({ embeds: [embed], components });
-    await db.setGovPanel(BigInt(guild.id), channel.id, newMessage.id);
-    void refreshGovPanelMembersInBackground(guild, newMessage, cfg as Record<string, string | null>);
-    return { channel, messageId: newMessage.id, created: true };
-  };
-
-  const handleCounterRequestByDiscordId = async (discordId: string, warId: number) => {
-    if (!/^\d+$/.test(discordId)) {
-      return { ok: false as const, status: 400, error: 'Invalid discord_id' };
-    }
-    const registration = await db.getByDiscordId(BigInt(discordId));
-    if (!registration) {
-      return { ok: false as const, status: 404, error: 'No registered nation found' };
-    }
-    const nation = await pnw.getNation(Number(registration.nation_id));
-    if (!nation) {
-      return { ok: false as const, status: 404, error: 'Nation not found' };
-    }
-    if (COUNTER_TRACKED_ALLIANCE_ID !== null && nation.allianceId !== COUNTER_TRACKED_ALLIANCE_ID) {
-      return { ok: false as const, status: 403, error: 'Counters are disabled for this alliance' };
-    }
-    const activeWars = await pnw.getActiveWarsForNation(nation.nationId);
-    const war = activeWars.find((row) => row.warId === warId && row.defenderId === nation.nationId);
-    if (!war) {
-      return { ok: false as const, status: 403, error: 'Counter request allowed only for your active defensive wars' };
-    }
-    const requestedAt = await db.addCounterRequest(
-      warId,
-      BigInt(discordId),
-      nation.nationId,
-      nation.allianceId
-    );
-    return { ok: true as const, warId, requestedAt };
-  };
-
   client.on('interactionCreate', async (interaction: Interaction) => {
-    if (interaction.isButton()) {
-      if (interaction.customId === 'gov_panel_refresh') {
-        if (!interaction.inGuild() || !interaction.guildId || !interaction.guild) {
-          return void interaction.reply({ content: 'Guild only button.', flags: MessageFlags.Ephemeral });
-        }
-        const storedPanel = await db.getGovPanel(BigInt(interaction.guildId));
-        if (!storedPanel.messageId || storedPanel.messageId !== interaction.message.id) {
-          return void interaction.reply({ content: 'This government panel has been replaced. Use `/gov` to locate the current panel.', flags: MessageFlags.Ephemeral });
-        }
-        const cfg = await db.getGovRoles(BigInt(interaction.guildId));
-        await interaction.update({
-          embeds: [await buildGovPanelEmbed(interaction.guild, cfg as Record<string, string | null>, true)],
-          components: buildGovPanelComponents(),
-        });
-        return;
-      }
-      if (interaction.customId === 'grant_request:approve' || interaction.customId === 'grant_request:decline') {
-        if (!interaction.inGuild() || !interaction.guildId) {
-          return void interaction.reply({ content: 'Guild only button.', flags: MessageFlags.Ephemeral });
-        }
-        if (!await hasGovAccess(interaction, db, ['econ', 'econ_gov', 'leader', '2ic'])) {
-          return void interaction.reply({ content: 'You need grant approval permissions to use this button.', flags: MessageFlags.Ephemeral });
-        }
-        if (Date.now() - interaction.message.createdTimestamp > GRANT_REQUEST_BUTTON_TTL_MS) {
-          try { await interaction.message.edit({ components: [] }); } catch { /**/ }
-          return void interaction.reply({ content: 'These grant-request buttons expired after 48 hours.', flags: MessageFlags.Ephemeral });
-        }
-        const action = interaction.customId.endsWith(':approve') ? 'approve' : 'decline';
-        const modal = new ModalBuilder()
-          .setCustomId(`grant_request_reason:${action}:${interaction.message.id}`)
-          .setTitle(action === 'approve' ? 'Approve Grant Request' : 'Decline Grant Request');
-        modal.addComponents(
-          new ActionRowBuilder<TextInputBuilder>().addComponents(
-            new TextInputBuilder()
-              .setCustomId('reason')
-              .setLabel('Reason')
-              .setStyle(TextInputStyle.Paragraph)
-              .setRequired(true)
-              .setMaxLength(1000),
-          ),
-        );
-        await interaction.showModal(modal);
-        return;
-      }
-      return;
-    }
-    if (interaction.isModalSubmit()) {
-      const modalMatch = /^grant_request_reason:(approve|decline):(\d+)$/.exec(interaction.customId);
-      if (!modalMatch) return;
-      if (!interaction.inGuild() || !interaction.guildId || !interaction.channel?.isTextBased() || !('messages' in interaction.channel)) {
-        return void interaction.reply({ content: 'Grant request message not available.', flags: MessageFlags.Ephemeral });
-      }
-      if (!await hasGovAccess(interaction, db, ['econ', 'econ_gov', 'leader', '2ic'])) {
-        return void interaction.reply({ content: 'You need grant approval permissions to use this modal.', flags: MessageFlags.Ephemeral });
-      }
-      const [, action, messageId] = modalMatch;
-      const reason = interaction.fields.getTextInputValue('reason').trim();
-      if (!reason) {
-        return void interaction.reply({ content: 'Reason is required.', flags: MessageFlags.Ephemeral });
-      }
-      const message = await interaction.channel.messages.fetch(messageId).catch(() => null);
-      if (!message) {
-        return void interaction.reply({ content: 'Grant request message could not be found.', flags: MessageFlags.Ephemeral });
-      }
-      if (Date.now() - message.createdTimestamp > GRANT_REQUEST_BUTTON_TTL_MS) {
-        try { await message.edit({ components: [] }); } catch { /**/ }
-        return void interaction.reply({ content: 'These grant-request buttons expired after 48 hours.', flags: MessageFlags.Ephemeral });
-      }
-      if (!message.components.length) {
-        return void interaction.reply({ content: 'This grant request was already handled.', flags: MessageFlags.Ephemeral });
-      }
-      const existingEmbed = message.embeds[0];
-      const existingJson = existingEmbed?.toJSON() ?? {};
-      const existingFields = Array.isArray(existingJson.fields) ? existingJson.fields.filter((field) => field.name !== 'Status' && field.name !== 'Reason') : [];
-      const decisionLabel = action === 'approve' ? 'Approved' : 'Declined';
-      const updatedEmbed = new EmbedBuilder(existingJson)
-        .setColor(action === 'approve' ? 0x2ECC71 : 0xE74C3C)
-        .setFields(
-          ...existingFields.map((field) => ({ name: String(field.name), value: String(field.value), inline: Boolean(field.inline) })),
-          { name: 'Status', value: `${decisionLabel} by <@${interaction.user.id}>`, inline: false },
-          { name: 'Reason', value: reason, inline: false },
-        )
-        .setFooter({ text: `${decisionLabel} · ${interaction.user.tag}` })
-        .setTimestamp();
-      await message.edit({ embeds: [updatedEmbed], components: [] });
-      await interaction.reply({ content: `Grant request ${action === 'approve' ? 'approved' : 'declined'}.`, flags: MessageFlags.Ephemeral });
-      return;
-    }
     if (!interaction.isChatInputCommand()) return;
     const now = Date.now() / 1000;
     const lastUsed = commandCooldowns.get(interaction.user.id);
@@ -2123,25 +1775,19 @@ async function main(): Promise<void> {
       const retryAfter = Math.max(0, DISCORD_COMMAND_COOLDOWN_SECONDS - (now - lastUsed));
       return void interaction.reply({
         embeds: [new EmbedBuilder().setDescription(`⏳ You're sending commands too quickly. Please wait **${retryAfter.toFixed(1)}s** and try again.`).setColor(0xE74C3C)],
-        flags: MessageFlags.Ephemeral,
+        ephemeral: true,
       });
     }
     commandCooldowns.set(interaction.user.id, now);
     const commandName = resolveCanonicalCommandNameFromInteraction(interaction);
     commandUsage.set(commandName, (commandUsage.get(commandName) ?? 0) + 1);
     try {
-      const replyEphemeral = async (content: string) => {
-        if (interaction.deferred) return await interaction.editReply({ content });
-        if (interaction.replied) return await interaction.followUp({ content, flags: MessageFlags.Ephemeral });
-        return await interaction.reply({ content, flags: MessageFlags.Ephemeral });
-      };
-
       if (commandName === 'register') {
         return await handleRegister(interaction, db, pnw);
       }
       if (commandName === 'unregister') {
         const deleted = await db.delete(BigInt(interaction.user.id));
-        return void interaction.reply({ content: deleted ? 'Unregistered.' : 'No registration found.', flags: MessageFlags.Ephemeral });
+        return void interaction.reply({ content: deleted ? 'Unregistered.' : 'No registration found.', ephemeral: true });
       }
       if (commandName === 'whois') return await handleWhois(interaction, db, pnw, pnwTest, false);
       if (commandName === 'test_whois') return await handleWhois(interaction, db, pnw, pnwTest, true);
@@ -2152,72 +1798,72 @@ async function main(): Promise<void> {
       if (commandName === 'slots') return await handleSlots(interaction, db, pnw);
 
       if (commandName === 'config_slots_set') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const raw = interaction.options.getString('alliance_ids', true);
         const ids = raw.split(',').map((x) => parseInt(x.trim(), 10)).filter((n) => Number.isFinite(n) && n > 0);
-        if (!ids.length) return void interaction.reply({ content: 'No valid alliance IDs provided.', flags: MessageFlags.Ephemeral });
+        if (!ids.length) return void interaction.reply({ content: 'No valid alliance IDs provided.', ephemeral: true });
         await db.setSlotsAlliances(BigInt(interaction.guildId), ids);
         return void interaction.reply({ content: `Configured slots alliances: ${ids.join(', ')}` });
       }
       if (commandName === 'config_slots_show') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         const ids = await db.getSlotsAlliances(BigInt(interaction.guildId));
-        return void interaction.reply({ content: ids.length ? `Configured slots alliances: ${ids.join(', ')}` : 'No slot alliances configured.', flags: MessageFlags.Ephemeral });
+        return void interaction.reply({ content: ids.length ? `Configured slots alliances: ${ids.join(', ')}` : 'No slot alliances configured.', ephemeral: true });
       }
       if (commandName === 'config_slots_clear') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         await db.setSlotsAlliances(BigInt(interaction.guildId), []);
         return void interaction.reply({ content: 'Cleared slot alliances.' });
       }
 
       if (commandName === 'setup_war_alerts_add') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const channel = interaction.options.getChannel('channel', true);
         const minCities = interaction.options.getInteger('min_cities');
         const maxCities = interaction.options.getInteger('max_cities');
         const allianceId = await db.getAllianceId(BigInt(interaction.guildId));
         if (!allianceId) {
-          return void interaction.reply({ content: 'No primary alliance configured for this server. An admin must run `/admin_alliance_set` first.', flags: MessageFlags.Ephemeral });
+          return void interaction.reply({ content: 'No primary alliance configured for this server. An admin must run `/admin_alliance_set` first.', ephemeral: true });
         }
         if (minCities != null && minCities < 1) {
-          return void interaction.reply({ content: 'min_cities must be at least 1.', flags: MessageFlags.Ephemeral });
+          return void interaction.reply({ content: 'min_cities must be at least 1.', ephemeral: true });
         }
         if (maxCities != null && maxCities < 1) {
-          return void interaction.reply({ content: 'max_cities must be at least 1.', flags: MessageFlags.Ephemeral });
+          return void interaction.reply({ content: 'max_cities must be at least 1.', ephemeral: true });
         }
         if (minCities != null && maxCities != null && minCities > maxCities) {
-          return void interaction.reply({ content: 'min_cities must be ≤ max_cities.', flags: MessageFlags.Ephemeral });
+          return void interaction.reply({ content: 'min_cities must be ≤ max_cities.', ephemeral: true });
         }
         await db.addWarAlertSubscription(BigInt(interaction.guildId), BigInt(channel.id), minCities, maxCities);
         return void interaction.reply({ content: `War alerts enabled for <#${channel.id}> (${minCities ?? 'any'}-${maxCities ?? 'any'} cities).` });
       }
       if (commandName === 'setup_war_alerts_remove') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const channel = interaction.options.getChannel('channel', true);
         const removed = await db.removeWarAlertSubscription(BigInt(interaction.guildId), BigInt(channel.id));
-        return void interaction.reply({ content: removed ? `War alerts removed from <#${channel.id}>.` : `No subscription found for <#${channel.id}>.`, flags: MessageFlags.Ephemeral });
+        return void interaction.reply({ content: removed ? `War alerts removed from <#${channel.id}>.` : `No subscription found for <#${channel.id}>.`, ephemeral: true });
       }
       if (commandName === 'setup_war_alerts_list') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
         const subs = await db.getWarAlertSubscriptions(BigInt(interaction.guildId));
         const lines = subs.map((row) => `• <#${row.channel_id}> cities ${row.min_cities ?? 'any'}-${row.max_cities ?? 'any'}`);
-        return void interaction.reply({ content: lines.length ? lines.join('\n') : 'No war alert subscriptions configured.', flags: MessageFlags.Ephemeral });
+        return void interaction.reply({ content: lines.length ? lines.join('\n') : 'No war alert subscriptions configured.', ephemeral: true });
       }
 
       if (commandName === 'send') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        await interaction.deferReply({ ephemeral: true });
         if (!await hasMemberAccess(interaction, db)) {
-          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], ephemeral: true });
         }
         const isAdmin = (() => {
           const m = interaction.member as any;
@@ -2225,7 +1871,7 @@ async function main(): Promise<void> {
             (m?.permissions && typeof m.permissions !== 'string' && m.permissions.has('Administrator'));
         })();
         if (!isAdmin && !await hasGovAccess(interaction, db, ['econ', 'econ_gov'])) {
-          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Economics** role to use this command.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Economics** role to use this command.').setColor(0xE74C3C)], ephemeral: true });
         }
         const receiverRaw = interaction.options.getString('receiver', true).trim();
         const sender = interaction.options.getString('sender')?.trim() ?? '';
@@ -2247,7 +1893,7 @@ async function main(): Promise<void> {
           if (v > 0) resources[key] = v;
         }
         if (!Object.keys(resources).length) {
-          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Please provide at least one resource amount greater than zero.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Please provide at least one resource amount greater than zero.').setColor(0xE74C3C)], ephemeral: true });
         }
         const transferJson = '{' + Object.entries(resources).map(([k, v]) => `${k}:${fmtAmt(v)}`).join(',') + '}';
         const locutusCmd = `/transfer resources receiver:${receiver} transfer:${transferJson} bank_note:${bankNote}`;
@@ -2265,13 +1911,13 @@ async function main(): Promise<void> {
       }
 
       if (commandName === 'suggestion') {
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        await interaction.deferReply({ ephemeral: true });
         if (!await hasMemberAccess(interaction, db)) {
-          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], ephemeral: true });
         }
         const content = interaction.options.getString('content', true).trim();
-        if (!content) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Suggestion content cannot be empty.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
-        if (content.length > 1800) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Suggestion is too long. Please keep it under 1800 characters.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
+        if (!content) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Suggestion content cannot be empty.').setColor(0xE74C3C)], ephemeral: true });
+        if (content.length > 1800) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Suggestion is too long. Please keep it under 1800 characters.').setColor(0xE74C3C)], ephemeral: true });
         const SUGGESTION_DM_USERNAMES = ['glaernisch', 'glaernischtheonly'];
         const dmMessage = `📬 **New /suggestion submission**\nFrom: ${interaction.user} (ID: ${interaction.user.id})\nGuild: ${interaction.guild?.name ?? 'DM/Unknown'}\nContent:\n${content}`;
         const sentTo: string[] = [];
@@ -2296,13 +1942,13 @@ async function main(): Promise<void> {
           : '⚠️ No suggestion DMs were delivered.');
         if (missing.length) statusLines.push(`ℹ️ Could not DM: ${missing.map((u) => `\`${u}\``).join(', ')}.`);
         console.log(`Suggestion from ${interaction.user.id}: ${content}`);
-        return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(statusLines.join('\n')).setColor(0x2ECC71)], flags: MessageFlags.Ephemeral });
+        return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(statusLines.join('\n')).setColor(0x2ECC71)], ephemeral: true });
       }
 
 
       if (commandName === 'roles_setup') {
-        if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const current = await db.getGovRoles(BigInt(interaction.guildId));
         const fields: Array<[string, string]> = [
           ['leader','leader'], ['two_ic','2ic'], ['econ','econ'], ['econ_gov','econ_gov'],
@@ -2311,7 +1957,7 @@ async function main(): Promise<void> {
         ];
         for (const [optName, dbKey] of fields) {
           const role = interaction.options.getRole(optName);
-          if (role) (current as Record<string, string | null>)[dbKey] = role.id;
+          if (role) (current as Record<string, number | null>)[dbKey] = Number(role.id);
         }
         await db.setGovRoles(BigInt(interaction.guildId), current as any);
         const GOV_DEPT_LABELS: Record<string, string> = {
@@ -2321,69 +1967,66 @@ async function main(): Promise<void> {
         };
         const lines: string[] = ['✅ Government role configuration updated:'];
         for (const [key, label] of Object.entries(GOV_DEPT_LABELS)) {
-          const rid = (current as Record<string, string | null>)[key];
+          const rid = (current as Record<string, number | null>)[key];
           if (rid && interaction.guild) {
-            const role = interaction.guild.roles.cache.get(rid);
+            const role = interaction.guild.roles.cache.get(String(rid));
             lines.push(`**${label}:** ${role ? role.toString() : `<@&${rid}>`}`);
           } else {
             lines.push(`**${label}:** *(not set)*`);
           }
         }
-        return void interaction.reply({ content: lines.join('\n'), flags: MessageFlags.Ephemeral });
+        return void interaction.reply({ content: lines.join('\n'), ephemeral: true });
       }
       if (commandName === 'gov') {
-        if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        const interactionChannel = interaction.channel
-          ?? await interaction.guild.channels.fetch(interaction.channelId).catch((err) => {
-            logWarn(`[gov] Failed to fetch interaction channel ${interaction.channelId}:`, err);
-            return null;
-          });
-        const preferredChannel = interactionChannel?.isTextBased() && 'send' in interactionChannel
-          ? interactionChannel as TextChannel
-          : null;
-        const panel = await syncGovPanel(interaction.guild, preferredChannel);
-        if (!panel) {
-          return void interaction.editReply({ content: 'Could not create a government panel in this guild.' });
+        if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        const cfg = await db.getGovRoles(BigInt(interaction.guildId));
+        const GOV_DEPT_LABELS: Record<string, string> = {
+          leader: 'Leader', '2ic': 'Second in Command', econ: 'Economics', econ_gov: 'Economics Gov',
+          milcom: 'Military Command', milcom_gov: 'Military Command Gov', ia: 'Internal Affairs',
+          ia_asst: 'Internal Affairs Assistant',
+        };
+        const GOV_DEPT_EMOJI: Record<string, string> = {
+          leader: '👑', '2ic': '🥈', econ: '💰', econ_gov: '📊',
+          milcom: '⚔️', milcom_gov: '🛡️', ia: '🤝', ia_asst: '📋',
+        };
+        const embed = new EmbedBuilder().setTitle('Government').setColor(0x5865F2);
+        const guildRoles = new Map(interaction.guild.roles.cache.map((r) => [r.id, r]));
+        let total = 0;
+        for (const [key, label] of Object.entries(GOV_DEPT_LABELS)) {
+          const rid = (cfg as Record<string, number | null>)[key];
+          if (!rid) continue;
+          const role = guildRoles.get(String(rid));
+          if (!role) {
+            embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label}`, value: '*(role not found)*', inline: false });
+            continue;
+          }
+          const membersWithRole = role.members.filter((m) => !m.user.bot);
+          total += membersWithRole.size;
+          const value = membersWithRole.size
+            ? [...membersWithRole.values()].sort((a, b) => a.displayName.localeCompare(b.displayName)).map((m) => `<@${m.id}>`).join(' ')
+            : '*(no members)*';
+          embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label} (${membersWithRole.size})`, value, inline: false });
         }
-        return void interaction.editReply({
-          content: `${panel.created ? 'Created' : 'Updated'} the government panel in <#${panel.channel.id}>.`,
-        });
-      }
-      if (commandName === 'gov_refresh') {
-        if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        const storedPanel = await db.getGovPanel(BigInt(interaction.guildId));
-        if (!storedPanel.channelId) {
-          return void interaction.editReply({ content: 'No government panel is configured yet. Use `/gov` first.' });
-        }
-        const channel = interaction.guild.channels.cache.get(storedPanel.channelId) ?? await interaction.guild.channels.fetch(storedPanel.channelId).catch(() => null);
-        if (!channel || !channel.isTextBased() || !('send' in channel)) {
-          return void interaction.editReply({ content: 'Stored government panel channel is unavailable. Run `/gov` to recreate it.' });
-        }
-        const panel = await syncGovPanel(interaction.guild, channel as TextChannel);
-        if (!panel) {
-          return void interaction.editReply({ content: 'Could not refresh the government panel.' });
-        }
-        return void interaction.editReply({ content: `Refreshed the government panel in <#${panel.channel.id}>.` });
+        embed.setFooter({ text: `${total} government member(s) total` });
+        return void interaction.reply({ embeds: [embed] });
       }
 
       if (commandName === 'roles_show') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         const roles = await db.getGovRoles(BigInt(interaction.guildId));
         const text = Object.entries(roles).map(([k,v]) => `• ${k}: ${v ? `<@&${v}>` : 'not set'}`).join('\n');
-        return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('Configured gov roles').setDescription(text)] , flags: MessageFlags.Ephemeral});
+        return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('Configured gov roles').setDescription(text)] , ephemeral: true});
       }
       if (commandName === 'setup_grant_channel') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['econ','econ_gov','ia','ia_asst'])) return void interaction.reply({ content: 'You need Economics or Internal Affairs gov access to use this command.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['econ','econ_gov','ia','ia_asst'])) return void interaction.reply({ content: 'You need Economics or Internal Affairs gov access to use this command.', ephemeral: true });
         const ch = interaction.options.getChannel('channel', true);
         await db.setGrantChannel(BigInt(interaction.guildId), Number(ch.id));
         return void interaction.reply({ content: `Grant channel set to <#${ch.id}>.` });
       }
       if (commandName === 'request_grant') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         const note = interaction.options.getString('note', true);
         const resources: Record<string, number> = {
           money: interaction.options.getNumber('money') ?? 0,
@@ -2400,10 +2043,10 @@ async function main(): Promise<void> {
           aluminum: interaction.options.getNumber('aluminum') ?? 0,
         };
         const grantChannelId = await db.getGrantChannel(BigInt(interaction.guildId));
-        if (!grantChannelId) return void interaction.reply({ content: 'Grant channel is not configured.', flags: MessageFlags.Ephemeral });
+        if (!grantChannelId) return void interaction.reply({ content: 'Grant channel is not configured.', ephemeral: true });
         const guild = interaction.guild;
         const ch = guild?.channels.cache.get(String(grantChannelId)) as TextChannel | undefined;
-        if (!ch) return void interaction.reply({ content: 'Configured grant channel not found.', flags: MessageFlags.Ephemeral });
+        if (!ch) return void interaction.reply({ content: 'Configured grant channel not found.', ephemeral: true });
         const govRoles = await db.getGovRoles(BigInt(interaction.guildId));
         const pingRole = govRoles.econ_gov ?? govRoles.econ;
         const bankNote = note.startsWith('#') ? note : `#${note.replace(/\s+/g,'_')}`;
@@ -2423,84 +2066,29 @@ Reason: ${note}
 ${resourceLines}
 
 \`\`\`${transferCmd}\`\`\``)],
-          components: buildGrantDecisionComponents(),
         });
-        return void interaction.reply({ content: `Grant request submitted in <#${grantChannelId}>.`, flags: MessageFlags.Ephemeral });
-      }
-
-      if (commandName === 'counter') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        const registration = await db.getByDiscordId(BigInt(interaction.user.id));
-        if (!registration) {
-          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ You are not registered. Use `/register <nation_id>` first.').setColor(0x3498DB)], flags: MessageFlags.Ephemeral });
-        }
-        const nation = await pnw.getNation(Number(registration.nation_id));
-        if (!nation) {
-          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ Your registered nation could not be found right now.').setColor(0x3498DB)], flags: MessageFlags.Ephemeral });
-        }
-        if (COUNTER_TRACKED_ALLIANCE_ID !== null && nation.allianceId !== COUNTER_TRACKED_ALLIANCE_ID) {
-          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ Counter tracking is not enabled for your alliance.').setColor(0x3498DB)], flags: MessageFlags.Ephemeral });
-        }
-        const requestedWarId = interaction.options.getInteger('war_id');
-        if (requestedWarId != null) {
-          const result = await handleCounterRequestByDiscordId(interaction.user.id, requestedWarId);
-          if (!result.ok) {
-            return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ ${result.error}`).setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
-          }
-          return void interaction.followUp({
-            embeds: [
-              new EmbedBuilder()
-                .setTitle('Counter Requested')
-                .setDescription(`Counter request recorded for [war #${requestedWarId}](${warUrl(requestedWarId)}).`)
-                .setColor(0x2ECC71)
-                .setFooter({ text: `Requested at ${new Date(result.requestedAt).toLocaleString()}` }),
-            ],
-            flags: MessageFlags.Ephemeral,
-          });
-        }
-        const activeWars = await pnw.getActiveWarsForNation(nation.nationId);
-        const defensiveWars = activeWars.filter((war) => war.defenderId === nation.nationId && war.warId > 0);
-        if (!defensiveWars.length) {
-          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ You have no active defensive wars to request counters for.').setColor(0x3498DB)], flags: MessageFlags.Ephemeral });
-        }
-        const counterRequests = nation.allianceId > 0 ? await db.getCounterRequestsByAlliance(nation.allianceId) : [];
-        const requestedByWarId = new Set(counterRequests.map((row) => row.war_id));
-        const lines = defensiveWars.map((war) =>
-          `• [War #${war.warId}](${warUrl(war.warId)}) vs **${war.attackerName}**${requestedByWarId.has(war.warId) ? ' — already requested' : ''}`
-        );
-        return void interaction.followUp({
-          embeds: [
-            new EmbedBuilder()
-              .setTitle('Active Defensive Wars')
-              .setDescription(lines.join('\n'))
-              .setColor(0x5865F2)
-              .setFooter({ text: 'Use /counter war_id:<id> to record a counter request.' }),
-          ],
-          flags: MessageFlags.Ephemeral,
-        });
+        return void interaction.reply({ content: `Grant request submitted in <#${grantChannelId}>.`, ephemeral: true });
       }
 
       if (commandName === 'admin_alliance_set') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const allianceId = interaction.options.getInteger('alliance_id', true);
         await db.setAllianceId(BigInt(interaction.guildId), allianceId);
         return void interaction.reply({ content: `Primary alliance set to ${allianceId}.` });
       }
       if (commandName === 'admin_alliance_show') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         const allianceId = await db.getAllianceId(BigInt(interaction.guildId));
-        return void interaction.reply({ content: allianceId ? `Primary alliance: ${allianceId}` : 'No primary alliance configured.', flags: MessageFlags.Ephemeral });
+        return void interaction.reply({ content: allianceId ? `Primary alliance: ${allianceId}` : 'No primary alliance configured.', ephemeral: true });
       }
       if (commandName === 'admin_api_key_set') {
-        if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const apiKey = interaction.options.getString('api_key', true).trim();
-        if (apiKey.length === 0) return void interaction.reply({ content: 'API key cannot be empty.', flags: MessageFlags.Ephemeral });
+        if (apiKey.length === 0) return void interaction.reply({ content: 'API key cannot be empty.', ephemeral: true });
         await db.setPnwApiKey(apiKey);
         pnw.apiKey = apiKey;
-        return void interaction.reply({ content: 'PnW API key updated successfully.', flags: MessageFlags.Ephemeral });
+        return void interaction.reply({ content: 'PnW API key updated successfully.', ephemeral: true });
       }
 
 
@@ -2511,34 +2099,12 @@ ${resourceLines}
         const useTestApi = commandName === 'test_alliance_lots_of_info';
         const apiClient = useTestApi ? new PnWClient(PNW_TEST_API_KEY, { restUrl: PNW_TEST_REST_URL }) : pnw;
         const baseUrl = useTestApi ? PNW_TEST_BASE_URL : PNW_BASE_URL;
-        const MENTION_RE = /^<@!?(\d+)>$/;
-        const mentionMatch = MENTION_RE.exec(query);
         let alliance: AllianceInfo | null;
         let lotsMembers: Nation[];
         try {
-          if (mentionMatch) {
-            const targetId = query.replace(/^<@!?|>$/g, '');
-            const row = await db.getByDiscordId(BigInt(targetId));
-            let nation: Nation | null = null;
-            if (row) {
-              try {
-                nation = await apiClient.getNation(Number(row.nation_id));
-              } catch (err) {
-                nation = null;
-                logWarn(`alliance_lots_of_info failed to load registered nation ${row.nation_id}`, err);
-              }
-            }
-            if (!nation) nation = await resolveMentionedNationViaApi(interaction, apiClient, targetId);
-            if (!nation || !nation.allianceId) {
-              await interaction.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ Could not resolve <@${targetId}> to an alliance.`).setColor(0x3498DB)] });
-              return;
-            }
-            alliance = await apiClient.getAllianceById(nation.allianceId);
-          } else {
-            alliance = /^\d+$/.test(query)
-              ? await apiClient.getAllianceById(parseInt(query, 10))
-              : await apiClient.getAllianceByName(query);
-          }
+          alliance = /^\d+$/.test(query)
+            ? await apiClient.getAllianceById(parseInt(query, 10))
+            : await apiClient.getAllianceByName(query);
           if (!alliance) {
             await interaction.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ No alliance found for \`${query}\`.`).setColor(0x3498DB)] });
             return;
@@ -2557,26 +2123,11 @@ ${resourceLines}
         const infoEmbed = allianceEmbed(alliance, baseUrl);
         const totalCities = lotsMembers.reduce((s, n) => s + n.numCities, 0);
         if (totalCities > 0) {
-          const totalSoldiers = lotsMembers.reduce((s, n) => s + n.soldiers, 0);
-          const totalTanks = lotsMembers.reduce((s, n) => s + n.tanks, 0);
-          const totalAircraft = lotsMembers.reduce((s, n) => s + n.aircraft, 0);
-          const totalShips = lotsMembers.reduce((s, n) => s + n.ships, 0);
-          const soldierRate = (totalSoldiers / (totalCities * MAX_SOLDIERS_PER_CITY)) * 100;
-          const tankRate = (totalTanks / (totalCities * MAX_TANKS_PER_CITY)) * 100;
-          const aircraftRate = (totalAircraft / (totalCities * MAX_AIRCRAFT_PER_CITY)) * 100;
-          const shipRate = (totalShips / (totalCities * MAX_SHIPS_PER_CITY)) * 100;
-          const totalMilRate = (
-            (totalTanks / (totalCities * MAX_TANKS_PER_CITY)) +
-            (totalAircraft / (totalCities * MAX_AIRCRAFT_PER_CITY)) +
-            (totalSoldiers / (totalCities * MAX_SOLDIERS_PER_CITY)) +
-            (totalShips / (totalCities * MAX_SHIPS_PER_CITY))
-          ) * 100;
           const avgMil = [
-            `📈 Total Rate: ${totalMilRate.toFixed(1)}%`,
-            `🪖 Soldiers: ${soldierRate.toFixed(1)}%`,
-            `⚔️ Tanks: ${tankRate.toFixed(1)}%`,
-            `✈️ Aircraft: ${aircraftRate.toFixed(1)}%`,
-            `🚢 Ships: ${shipRate.toFixed(1)}%`,
+            `🪖 Soldiers: ${(lotsMembers.reduce((s,n)=>s+n.soldiers,0)/(totalCities*MAX_SOLDIERS_PER_CITY)*100).toFixed(1)}%`,
+            `⚔️ Tanks: ${(lotsMembers.reduce((s,n)=>s+n.tanks,0)/(totalCities*MAX_TANKS_PER_CITY)*100).toFixed(1)}%`,
+            `✈️ Aircraft: ${(lotsMembers.reduce((s,n)=>s+n.aircraft,0)/(totalCities*MAX_AIRCRAFT_PER_CITY)*100).toFixed(1)}%`,
+            `🚢 Ships: ${(lotsMembers.reduce((s,n)=>s+n.ships,0)/(totalCities*MAX_SHIPS_PER_CITY)*100).toFixed(1)}%`,
           ].join('\n');
           infoEmbed.addFields({ name: 'Avg Militarization', value: avgMil, inline: false });
         }
@@ -2612,12 +2163,17 @@ ${resourceLines}
           logWarn(`alliance score history fetch failed for alliance ${alliance.allianceId}`, err);
         }
         const historyChartPoints = buildAllianceScoreHistoryChartPoints(historyPoints);
+        const firstHistoryPoint = historyChartPoints[0];
+        const lastHistoryPoint = historyChartPoints[historyChartPoints.length - 1];
+        const historyRangeNote = firstHistoryPoint && lastHistoryPoint
+          ? `\nGraph shows full interior date range (${firstHistoryPoint.fetchDate} to ${lastHistoryPoint.fetchDate}) with missing dates included as empty points.`
+          : '';
         const scoreDevEmbed = new EmbedBuilder()
           .setTitle(`${alliance.name} — Score History`)
           .setURL(allianceUrl(alliance.allianceId, baseUrl))
+          .setDescription(`${renderAllianceScoreHistoryTable(historyPoints)}${historyRangeNote}`)
           .setColor(0x0F766E)
           .setFooter({ text: 'Page 3 · Alliance score history' });
-        if (!historyChartPoints.length) scoreDevEmbed.setDescription('*(no score history data)*');
         if (historyChartPoints.length) scoreDevEmbed.setImage(buildAllianceScoreHistoryQuickChartUrl(historyPoints));
         pages.push(scoreDevEmbed);
 
@@ -2666,8 +2222,8 @@ ${resourceLines}
       }
 
       if (commandName === 'color') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: '❌ You need the **Member** role to use this command.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: '❌ You need the **Member** role to use this command.', ephemeral: true });
         await interaction.deferReply();
         const allianceId = await db.getAllianceId(BigInt(interaction.guildId));
         if (!allianceId) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ No primary alliance configured. An admin can use `/admin_alliance_set` to set one.').setColor(0x3498DB)] });
@@ -2708,10 +2264,10 @@ ${resourceLines}
         return void interaction.followUp({ embeds: [embed] });
       }
       if (commandName === 'damage_leaderboard') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
         const allianceId = await db.getAllianceId(BigInt(interaction.guildId));
-        if (!allianceId) return void interaction.reply({ content: 'Primary alliance is not configured.', flags: MessageFlags.Ephemeral });
+        if (!allianceId) return void interaction.reply({ content: 'Primary alliance is not configured.', ephemeral: true });
         await interaction.deferReply();
         const after = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
         let damageData: Map<number, Record<string, unknown>>;
@@ -2827,7 +2383,7 @@ ${resourceLines}
         const lbMsg = await interaction.followUp({ embeds: [buildLbEmbed(sorted, lbPage, sortMode)], components: buildLbRow(sorted, lbPage, sortMode) });
         const lbCollector = lbMsg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
         lbCollector.on('collect', async (btn) => {
-          if (btn.user.id !== interaction.user.id) { await btn.reply({ content: 'Only the command caller can use these buttons.', flags: MessageFlags.Ephemeral }); return; }
+          if (btn.user.id !== interaction.user.id) { await btn.reply({ content: 'Only the command caller can use these buttons.', ephemeral: true }); return; }
           if (btn.customId.startsWith('lb_sort_')) {
             sortMode = btn.customId.replace('lb_sort_', '') as SortMode;
             lbPage = 0;
@@ -2842,82 +2398,73 @@ ${resourceLines}
 
 
       if (commandName === 'welcome_set') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const message = interaction.options.getString('message', true);
         await db.setWelcomeConfig(BigInt(interaction.guildId), { message });
         return void interaction.reply({ content: 'Welcome message updated.' });
       }
       if (commandName === 'welcome_channel_set') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const ch = interaction.options.getChannel('channel', true);
-        if (!('send' in ch)) {
-          return void interaction.reply({ content: 'Please choose a text-based channel.', flags: MessageFlags.Ephemeral });
-        }
-        await db.setWelcomeConfig(BigInt(interaction.guildId), { channelId: ch.id });
+        await db.setWelcomeConfig(BigInt(interaction.guildId), { channelId: Number(ch.id) });
         return void interaction.reply({ content: `Welcome channel set to <#${ch.id}>.` });
       }
       if (commandName === 'welcome_enable') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         await db.setWelcomeConfig(BigInt(interaction.guildId), { enabled: true });
         return void interaction.reply({ content: 'Welcome messages enabled.' });
       }
       if (commandName === 'welcome_disable') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         await db.setWelcomeConfig(BigInt(interaction.guildId), { enabled: false });
         return void interaction.reply({ content: 'Welcome messages disabled.' });
       }
       if (commandName === 'welcome_show') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         const cfg = await db.getWelcomeConfig(BigInt(interaction.guildId));
         return void interaction.reply({
           embeds: [new EmbedBuilder().setTitle('Welcome config').setDescription(`Enabled: **${cfg.enabled ? 'yes' : 'no'}**
 Channel: ${cfg.channel_id ? `<#${cfg.channel_id}>` : 'not set'}
 Message: ${cfg.message}`)],
-          flags: MessageFlags.Ephemeral,
+          ephemeral: true,
         });
       }
       if (commandName === 'setup_recruiter_add') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov','ia','ia_asst'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov','ia','ia_asst'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const ch = interaction.options.getChannel('channel', true);
         await db.addRecruiterSubscription(BigInt(interaction.guildId), BigInt(ch.id));
         return void interaction.reply({ content: `Recruiter subscription added for <#${ch.id}>.` });
       }
       if (commandName === 'setup_recruiter_remove') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov','ia','ia_asst'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov','ia','ia_asst'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const ch = interaction.options.getChannel('channel', true);
         const removed = await db.removeRecruiterSubscription(BigInt(interaction.guildId), BigInt(ch.id));
-        return void interaction.reply({ content: removed ? `Recruiter subscription removed from <#${ch.id}>.` : `No recruiter subscription found for <#${ch.id}>.` , flags: MessageFlags.Ephemeral});
+        return void interaction.reply({ content: removed ? `Recruiter subscription removed from <#${ch.id}>.` : `No recruiter subscription found for <#${ch.id}>.` , ephemeral: true});
       }
       if (commandName === 'setup_recruiter_list') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
         const subs = await db.getRecruiterSubscriptions(BigInt(interaction.guildId));
         const text = subs.map((r) => `• <#${r.channel_id}>`).join('\n');
-        return void interaction.reply({ content: text || 'No recruiter subscriptions configured.', flags: MessageFlags.Ephemeral });
+        return void interaction.reply({ content: text || 'No recruiter subscriptions configured.', ephemeral: true });
       }
       if (commandName === 'infra') {
-        const from = interaction.options.getNumber('from') ?? interaction.options.getNumber('current');
-        const to = interaction.options.getNumber('to') ?? interaction.options.getNumber('target');
-        if (from == null || to == null) {
-          return void interaction.reply({
-            content: 'Missing required options. Please run `/infra from:<current infra> to:<target infra>` and try again. If this keeps happening, run `/admin_sync_commands` to refresh slash command definitions.',
-            flags: MessageFlags.Ephemeral,
-          });
-        }
+        const from = interaction.options.getNumber('from', true);
+        const to = interaction.options.getNumber('to', true);
         const cities = interaction.options.getInteger('cities') ?? 1;
         const urbanPlanning = interaction.options.getBoolean('urban_planning') ?? false;
         const advancedUrbanPlanning = interaction.options.getBoolean('advanced_urban_planning') ?? false;
-        if (to <= from) return void interaction.reply({ content: 'Target infra must be greater than current infra.', flags: MessageFlags.Ephemeral });
-        if (from < 0 || to > 100_000) return void interaction.reply({ content: 'Infrastructure values must be between 0 and 100,000.', flags: MessageFlags.Ephemeral });
-        if (cities < 1) return void interaction.reply({ content: 'Number of cities must be at least 1.', flags: MessageFlags.Ephemeral });
+        if (to <= from) return void interaction.reply({ content: 'Target infra must be greater than current infra.', ephemeral: true });
+        if (from < 0 || to > 100_000) return void interaction.reply({ content: 'Infrastructure values must be between 0 and 100,000.', ephemeral: true });
+        if (cities < 1) return void interaction.reply({ content: 'Number of cities must be at least 1.', ephemeral: true });
         const baseCostPerCity = calculateInfraCost(from, to);
         let discount = 0.0;
         const discountParts: string[] = [];
@@ -2948,7 +2495,7 @@ Message: ${cfg.message}`)],
         const governmentSupportAgency = interaction.options.getBoolean('government_support_agency') ?? false;
 
         if (!await hasMemberAccess(interaction, db)) {
-          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], ephemeral: true });
         }
         if (current < 0) {
           return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Current city count must be 0 or greater.').setColor(0xE74C3C)] });
@@ -3095,8 +2642,8 @@ Message: ${cfg.message}`)],
         return void interaction.followUp({ embeds: [revEmbed] });
       }
       if (commandName === 'war_range_targets') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
         await interaction.deferReply();
         const targetUser = interaction.options.getUser('user') ?? interaction.user;
         let me: Nation | null = null;
@@ -3169,7 +2716,7 @@ Message: ${cfg.message}`)],
         if (totalWrPages <= 1) return;
         const wrCollector = wrMsg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 300_000 });
         wrCollector.on('collect', async (btn) => {
-          if (btn.user.id !== interaction.user.id) { await btn.reply({ content: 'Only the command caller can use these buttons.', flags: MessageFlags.Ephemeral }); return; }
+          if (btn.user.id !== interaction.user.id) { await btn.reply({ content: 'Only the command caller can use these buttons.', ephemeral: true }); return; }
           if (btn.customId === 'wr_prev' && wrPage > 0) wrPage -= 1;
           else if (btn.customId === 'wr_next' && wrPage < totalWrPages - 1) wrPage += 1;
           await btn.update({ embeds: [buildWrEmbed(wrPage)], components: [buildWrRow(wrPage)] });
@@ -3179,11 +2726,11 @@ Message: ${cfg.message}`)],
       }
 
       if (commandName === 'spy_target_find') {
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
         const alliancesRaw = interaction.options.getString('alliances', true);
         const ignoreRange = interaction.options.getBoolean('ignore_score_range') ?? false;
         const names = alliancesRaw.split(',').map(s => s.trim()).filter(Boolean);
-        if (!names.length) return void interaction.reply({ content: 'Please provide at least one alliance name or ID.', flags: MessageFlags.Ephemeral });
+        if (!names.length) return void interaction.reply({ content: 'Please provide at least one alliance name or ID.', ephemeral: true });
         await interaction.deferReply();
         const allianceIds: number[] = [];
         const allianceNames: string[] = [];
@@ -3194,7 +2741,7 @@ Message: ${cfg.message}`)],
           if (!info) { notFound.push(name); } else if (!allianceIds.includes(info.allianceId)) { allianceIds.push(info.allianceId); allianceNames.push(info.name); }
         }
         if (notFound.length) {
-          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Alliance${notFound.length > 1 ? 's' : ''} not found: ${notFound.map(n => `**${n}**`).join(', ')}`).setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Alliance${notFound.length > 1 ? 's' : ''} not found: ${notFound.map(n => `**${n}**`).join(', ')}`).setColor(0xE74C3C)], ephemeral: true });
         }
         let spyMembers: Nation[];
         try { spyMembers = await pnw.getAllianceMembers(allianceIds); } catch (err) {
@@ -3203,7 +2750,7 @@ Message: ${cfg.message}`)],
         }
         spyMembers = spyMembers.filter(m => !['APPLICANT', 'NOALLIANCE', ''].includes(m.alliancePosition));
         spyMembers.sort((a, b) => b.numCities - a.numCities);
-        if (!spyMembers.length) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ No active members found in the given alliances.').setColor(0x3498DB)], flags: MessageFlags.Ephemeral });
+        if (!spyMembers.length) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ No active members found in the given alliances.').setColor(0x3498DB)], ephemeral: true });
         let spyRange: [number, number] | null = null;
         if (!ignoreRange) {
           const reg = await db.getByDiscordId(BigInt(interaction.user.id));
@@ -3241,7 +2788,7 @@ Message: ${cfg.message}`)],
         if (totalSpyPages <= 1) return;
         const spyCollector = spyMsg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
         spyCollector.on('collect', async (btn) => {
-          if (btn.user.id !== interaction.user.id) { await btn.reply({ content: 'Only the command caller can use these buttons.', flags: MessageFlags.Ephemeral }); return; }
+          if (btn.user.id !== interaction.user.id) { await btn.reply({ content: 'Only the command caller can use these buttons.', ephemeral: true }); return; }
           if (btn.customId === 'spy_prev' && spyPage > 0) spyPage -= 1;
           else if (btn.customId === 'spy_next' && spyPage < totalSpyPages - 1) spyPage += 1;
           await btn.update({ embeds: [buildSpyEmbed(spyPage)], components: [buildSpyRow(spyPage)] });
@@ -3251,8 +2798,8 @@ Message: ${cfg.message}`)],
       }
 
       if (commandName === 'missile_targets_find') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
         const ignoreRange = interaction.options.getBoolean('ignore_score_range') ?? false;
         await interaction.deferReply();
         const allianceIds = await db.getSlotsAlliances(BigInt(interaction.guildId));
@@ -3310,45 +2857,43 @@ Message: ${cfg.message}`)],
 
 
       if (commandName === 'admin_sync_commands') {
-        if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const appId = client.application?.id;
-        if (!appId) return void interaction.reply({ content: 'Application not ready.', flags: MessageFlags.Ephemeral });
+        if (!appId) return void interaction.reply({ content: 'Application not ready.', ephemeral: true });
         const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         if (interaction.guildId) {
           await rest.put(Routes.applicationGuildCommands(appId, interaction.guildId), { body: commands });
-          await db.setBotConfig(slashCommandHashKey(interaction.guildId), slashCommandHash);
-          return void (await replyEphemeral('Guild commands synced.'));
+          return void interaction.reply({ content: 'Guild commands synced.', ephemeral: true });
         }
         await rest.put(Routes.applicationCommands(appId), { body: commands });
-        await db.setBotConfig(slashCommandHashKey(null), slashCommandHash);
-        return void (await replyEphemeral('Global commands synced.'));
+        return void interaction.reply({ content: 'Global commands synced.', ephemeral: true });
       }
       if (commandName === 'admin_clear_guild_commands') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const appId = client.application?.id;
-        if (!appId) return void interaction.reply({ content: 'Application not ready.', flags: MessageFlags.Ephemeral });
+        if (!appId) return void interaction.reply({ content: 'Application not ready.', ephemeral: true });
         const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         await rest.put(Routes.applicationGuildCommands(appId, interaction.guildId), { body: [] });
-        return void (await replyEphemeral('Cleared guild commands for this server.'));
+        return void interaction.reply({ content: 'Cleared guild commands for this server.', ephemeral: true });
       }
 
       if (commandName === 'help') {
         if (Math.floor(Math.random() * 3) === 0) {
           return void interaction.reply({ content: 'bot is striking for its rights' });
         }
-        return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('flame_bot commands').setDescription(renderCommandHelp())], flags: MessageFlags.Ephemeral });
+        return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('flame_bot commands').setDescription(renderCommandHelp())], ephemeral: true });
       }
 
       logWarn(`[commands] Unhandled slash command: ${commandName} (raw: ${interaction.commandName})`);
       return void interaction.reply({
         content: `This command is not handled yet (\`${commandName}\`). Please run \`/admin_sync_commands\` and try again.`,
-        flags: MessageFlags.Ephemeral,
+        ephemeral: true,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unexpected error';
-      if (interaction.deferred || interaction.replied) await interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
-      else await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+      if (interaction.deferred || interaction.replied) await interaction.followUp({ content: msg, ephemeral: true });
+      else await interaction.reply({ content: msg, ephemeral: true });
     }
   });
 
@@ -3361,169 +2906,11 @@ Message: ${cfg.message}`)],
         verifiedRoleId: VERIFIED_ROLE_ID,
         bar3ClientRoleId: BAR3_CLIENT_ROLE_ID,
         bar3ServerRoleId: BAR3_SERVER_ROLE_ID,
-        memberGuildId: MEMBER_GUILD_ID,
-        memberRoleId: MEMBER_ROLE_ID,
       },
-      guildByIdGetter: (guildId: string) => client.guilds.cache.get(guildId) ?? null,
       guildsGetter: () => [...client.guilds.cache.values()],
       sendToWelcomeFn: sendToAllWelcomeChannels,
       commandUsageGetter: () => Object.fromEntries(commandUsage.entries()),
       adminIds: ADMIN_DISCORD_IDS,
-      memberNationContextGetter: async (discordId: string) => {
-        if (!/^\d+$/.test(discordId)) {
-          return {
-            registered: false,
-            nation: null,
-            alliance: null,
-            activeDefensiveWars: [],
-            nationDefensiveWars: [],
-            counterRequests: [],
-          };
-        }
-        const registration = await db.getByDiscordId(BigInt(discordId));
-        if (!registration) {
-          return {
-            registered: false,
-            nation: null,
-            alliance: null,
-            activeDefensiveWars: [],
-            nationDefensiveWars: [],
-            counterRequests: [],
-          };
-        }
-        const nation = await pnw.getNation(Number(registration.nation_id));
-        if (!nation) {
-          return {
-            registered: true,
-            nation: null,
-            alliance: null,
-            activeDefensiveWars: [],
-            nationDefensiveWars: [],
-            counterRequests: [],
-          };
-        }
-        if (COUNTER_TRACKED_ALLIANCE_ID !== null && nation.allianceId !== COUNTER_TRACKED_ALLIANCE_ID) {
-          return {
-            registered: true,
-            nation: {
-              nationId: nation.nationId,
-              nationName: nation.nationName,
-              leaderName: nation.leaderName,
-              numCities: nation.numCities,
-              score: nation.score,
-              allianceId: nation.allianceId,
-              allianceName: nation.allianceName,
-              alliancePosition: nation.alliancePosition,
-              url: nationUrl(nation.nationId),
-            },
-            alliance: null,
-            activeDefensiveWars: [],
-            nationDefensiveWars: [],
-            counterRequests: [],
-          };
-        }
-        const alliance = nation.allianceId > 0 ? await pnw.getAllianceById(nation.allianceId) : null;
-        const activeDefensiveWars = nation.allianceId > 0
-          ? await pnw.getActiveDefensiveWarsForAlliance(nation.allianceId)
-          : [];
-        const activeDefensiveWarIds = activeDefensiveWars.map((war) => war.warId).filter((warId) => warId > 0);
-        if (nation.allianceId > 0) {
-          await db.removeCounterRequestsForAllianceExceptWarIds(nation.allianceId, activeDefensiveWarIds);
-        }
-        const counterRequests = nation.allianceId > 0
-          ? await db.getCounterRequestsByAlliance(nation.allianceId)
-          : [];
-        const counterRequestsByWarId = new Map<number, string>();
-        for (const req of counterRequests) {
-          if (!counterRequestsByWarId.has(req.war_id)) {
-            counterRequestsByWarId.set(req.war_id, req.requested_at);
-          }
-        }
-        const activeNationWars = await pnw.getActiveWarsForNation(nation.nationId);
-        const defensiveWarIds = activeNationWars
-          .filter((war) => war.defenderId === nation.nationId && war.warId > 0)
-          .map((war) => war.warId);
-        const nationDefensiveWarDetails = await Promise.all(
-          defensiveWarIds.map(async (warId) => {
-            try {
-              return await pnw.getWarDetail(warId);
-            } catch {
-              return null;
-            }
-          }),
-        );
-        return {
-          registered: true,
-          nation: {
-            nationId: nation.nationId,
-            nationName: nation.nationName,
-            leaderName: nation.leaderName,
-            numCities: nation.numCities,
-            score: nation.score,
-            allianceId: nation.allianceId,
-            allianceName: nation.allianceName,
-            alliancePosition: nation.alliancePosition,
-            url: nationUrl(nation.nationId),
-          },
-          alliance: alliance ? {
-            allianceId: alliance.allianceId,
-            name: alliance.name,
-            acronym: alliance.acronym,
-            rank: alliance.rank,
-            score: alliance.score,
-            averageScore: alliance.averageScore,
-            numMembers: alliance.numMembers,
-            totalCities: alliance.totalCities,
-            url: allianceUrl(alliance.allianceId),
-          } : null,
-          activeDefensiveWars: activeDefensiveWars.map((war) => ({
-            warId: war.warId,
-            date: war.date.toISOString(),
-            warType: war.warType,
-            attackerId: war.attackerId,
-            attackerName: war.attackerName,
-            attackerAllianceId: war.attackerAllianceId,
-            attackerAllianceName: war.attackerAllianceName,
-            defenderId: war.defenderId,
-            defenderName: war.defenderName,
-            defenderAllianceId: war.defenderAllianceId,
-            defenderAllianceName: war.defenderAllianceName,
-            url: warUrl(war.warId),
-            counterRequested: counterRequestsByWarId.has(war.warId),
-            counterRequestedAt: counterRequestsByWarId.get(war.warId) || null,
-          })),
-          nationDefensiveWars: nationDefensiveWarDetails
-            .filter((war): war is WarDetail => war !== null && war.defenderId === nation.nationId)
-            .map((war) => ({
-              warId: war.warId,
-              date: war.date.toISOString(),
-              reason: war.warType,
-              attackerId: war.attackerId,
-              attackerName: war.attackerName,
-              attackerCities: war.attackerCities,
-              attackerUnits: {
-                soldiers: war.attackerSoldiers,
-                tanks: war.attackerTanks,
-                aircraft: war.attackerAircraft,
-                ships: war.attackerShips,
-                missiles: war.attackerMissiles,
-                nukes: war.attackerNukes,
-              },
-              url: warUrl(war.warId),
-            }))
-            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-          counterRequests: counterRequests
-            .filter((req) => activeDefensiveWarIds.includes(req.war_id))
-            .map((req) => ({
-              warId: req.war_id,
-              requestedAt: req.requested_at,
-              defenderNationId: req.defender_nation_id,
-              defenderDiscordId: req.defender_discord_id,
-            }))
-            .sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime()),
-        };
-      },
-      memberNationCounterRequestHandler: handleCounterRequestByDiscordId,
     });
     httpServer = createServer(app);
     httpServer.listen(API_PORT, () => logInfo(`API listening on :${API_PORT}`));
@@ -3607,42 +2994,14 @@ Message: ${cfg.message}`)],
       return nation;
     }
   };
-  const getRelevantWarAlertAllianceIds = async (): Promise<number[]> => {
-    const subs = await db.getAllWarAlertSubscriptions();
-    if (!subs.length) return [];
-    const ids = new Set<number>();
-    const seenGuilds = new Set<string>();
-    for (const sub of subs) {
-      if (seenGuilds.has(sub.guild_id)) continue;
-      seenGuilds.add(sub.guild_id);
-      let guildId: bigint;
-      try {
-        guildId = BigInt(sub.guild_id);
-      } catch {
-        continue;
-      }
-      const allianceId = await db.getAllianceId(guildId);
-      if (allianceId && allianceId > 0) ids.add(allianceId);
-    }
-    return [...ids];
-  };
   const warLoopTask = (async () => {
-    for await (const war of warSubClient.iterWarCreates({ getAllianceIds: getRelevantWarAlertAllianceIds, idleDelaySeconds: 60 })) {
+    for await (const war of warSubClient.iterWarCreates()) {
       if (warLoopStopped) break;
       try {
         const fullWar = await enrichWarFromApi(war);
         const subs = await db.getAllWarAlertSubscriptions();
-        const allianceByGuild = new Map<string, number | null>();
         for (const sub of subs) {
-          let allianceId = allianceByGuild.get(sub.guild_id);
-          if (allianceId === undefined) {
-            try {
-              allianceId = await db.getAllianceId(BigInt(sub.guild_id));
-            } catch {
-              allianceId = null;
-            }
-            allianceByGuild.set(sub.guild_id, allianceId);
-          }
+          const allianceId = await db.getAllianceId(BigInt(sub.guild_id));
           if (!allianceId) continue;
           const involvesAlliance = fullWar.attackerAllianceId === allianceId || fullWar.defenderAllianceId === allianceId;
           if (!involvesAlliance) continue;

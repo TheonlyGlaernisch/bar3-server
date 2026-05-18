@@ -11,7 +11,7 @@
   import { sanitizeHtml } from '@/utilities/sanitizeHtml';
 
   const markdownParser = new MarkdownIt({
-    html: false,
+    html: true,
     linkify: true,
     breaks: true,
   });
