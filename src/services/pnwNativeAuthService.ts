@@ -28,9 +28,19 @@ const DUMMY_PASSWORD_HASH = '$2b$12$KIX1B5Q7E09gM08fN6hKjem9eQxQxB8N6H9Q2fYMSQ3f
 
 const pendingVerifications = new Map<number, PendingVerification>();
 const PNW_SUCCESS_STRING_VALUES = new Set(['true', '1', 'yes', 'ok', 'success']);
+const PNW_ERROR_FIELDS = ['general_message', 'error_msg', 'message', 'error'] as const;
+
+type SendVerificationResult = { ok: true } | { ok: false; error?: string };
 
 function nowMs(): number {
   return Date.now();
+}
+
+function isPnwSuccess(value: unknown): boolean {
+  if (value === true) return true;
+  if (typeof value === 'number') return Number.isFinite(value) && value > 0;
+  if (typeof value === 'string') return PNW_SUCCESS_STRING_VALUES.has(value.trim().toLowerCase());
+  return false;
 }
 
 function cleanupExpiredPending(now = nowMs()): void {
@@ -39,6 +49,17 @@ function cleanupExpiredPending(now = nowMs()): void {
       pendingVerifications.delete(nationId);
     }
   }
+}
+
+function extractPnwError(body?: Record<string, unknown>): string | undefined {
+  if (!body) return undefined;
+  for (const field of PNW_ERROR_FIELDS) {
+    const value = body[field];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
 }
 
 const cleanupTimer = setInterval(() => cleanupExpiredPending(), CLEANUP_INTERVAL_MS);
@@ -113,10 +134,10 @@ async function nationExists(nationId: number): Promise<boolean> {
   return false;
 }
 
-async function sendVerificationCode(nationId: number, code: string): Promise<boolean> {
+async function sendVerificationCode(nationId: number, code: string): Promise<SendVerificationResult> {
   const apiKey = (process.env.PNW_API_KEY || '').trim();
   if (!apiKey) {
-    return false;
+    return { ok: false, error: 'PnW API key is not configured.' };
   }
 
   const message = `Your Bar3 verification code is ${code}. This code expires in 10 minutes. If you did not request this, you can ignore this message.`;
@@ -135,11 +156,26 @@ async function sendVerificationCode(nationId: number, code: string): Promise<boo
     .ok(() => true)
     .catch(() => undefined);
 
-  const success = response?.body?.success;
-  if (success === true) return true;
-  if (typeof success === 'number') return Number.isFinite(success) && success > 0;
-  if (typeof success === 'string') return PNW_SUCCESS_STRING_VALUES.has(success.trim().toLowerCase());
-  return false;
+  const body = response?.body as Record<string, unknown> | undefined;
+  const success = body?.success;
+  if (isPnwSuccess(success)) return { ok: true };
+
+  const responseText = typeof response?.text === 'string' ? response.text.trim().toLowerCase() : '';
+  if (responseText) {
+    if (PNW_SUCCESS_STRING_VALUES.has(responseText)) {
+      return { ok: true };
+    }
+
+    try {
+      const parsed = JSON.parse(responseText) as Record<string, unknown>;
+      if (isPnwSuccess(parsed?.success)) return { ok: true };
+    } catch {
+      // non-JSON response text
+    }
+  }
+
+  const error = extractPnwError(body);
+  return { ok: false, error };
 }
 
 export async function startVerification(
@@ -186,8 +222,9 @@ export async function startVerification(
   const code = String(crypto.randomInt(VERIFICATION_CODE_MIN, VERIFICATION_CODE_MAX));
 
   const sent = await sendVerificationCode(nationId, code);
-  if (!sent) {
-    return { ok: false, status: 502, error: 'Failed to send verification code.' };
+  if (!sent.ok) {
+    const suffix = sent.error ? ` ${sent.error}` : '';
+    return { ok: false, status: 502, error: `Failed to send verification code.${suffix}` };
   }
 
   pendingVerifications.set(nationId, {
