@@ -28,6 +28,7 @@ const DUMMY_PASSWORD_HASH = '$2b$12$KIX1B5Q7E09gM08fN6hKjem9eQxQxB8N6H9Q2fYMSQ3f
 
 const pendingVerifications = new Map<number, PendingVerification>();
 const PNW_SUCCESS_STRING_VALUES = new Set(['true', '1', 'yes', 'ok', 'success']);
+const PNW_ERROR_FIELDS = ['general_message', 'error_msg', 'message', 'error'] as const;
 
 type SendVerificationResult = { ok: true } | { ok: false; error?: string };
 
@@ -48,6 +49,17 @@ function cleanupExpiredPending(now = nowMs()): void {
       pendingVerifications.delete(nationId);
     }
   }
+}
+
+function extractPnwError(body?: Record<string, unknown>): string | undefined {
+  if (!body) return undefined;
+  for (const field of PNW_ERROR_FIELDS) {
+    const value = body[field];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
 }
 
 const cleanupTimer = setInterval(() => cleanupExpiredPending(), CLEANUP_INTERVAL_MS);
@@ -162,10 +174,7 @@ async function sendVerificationCode(nationId: number, code: string): Promise<Sen
     }
   }
 
-  const upstreamError = body?.general_message || body?.error_msg || body?.message || body?.error;
-  const error = typeof upstreamError === 'string' && upstreamError.trim()
-    ? upstreamError.trim()
-    : undefined;
+  const error = extractPnwError(body);
   return { ok: false, error };
 }
 
