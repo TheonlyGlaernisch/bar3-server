@@ -2285,8 +2285,10 @@ async function main(): Promise<void> {
       if (commandName === 'gov') {
         if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        const preferredChannel = interaction.channel?.isTextBased() && 'send' in interaction.channel
-          ? interaction.channel as TextChannel
+        const interactionChannel = interaction.channel
+          ?? await interaction.guild.channels.fetch(interaction.channelId).catch(() => null);
+        const preferredChannel = interactionChannel?.isTextBased() && 'send' in interactionChannel
+          ? interactionChannel as TextChannel
           : null;
         const panel = await syncGovPanel(interaction.guild, preferredChannel);
         if (!panel) {
