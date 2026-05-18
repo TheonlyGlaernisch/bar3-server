@@ -15,7 +15,7 @@
           <v-img
             class="shrink mr-2"
             contain
-            src="@/assets/bar3.png"
+            src="/src/favicon.ico"
             transition="scale-transition"
             width="45"
           />
