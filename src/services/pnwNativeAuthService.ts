@@ -1,7 +1,14 @@
-import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import superagent from 'superagent';
 import { IPnwNativeAccount, PnwNativeAccount } from '../interfaces/schemas/PnwNativeAccountSchema';
+
+type BcryptModule = {
+  hash(data: string, saltOrRounds: string | number): Promise<string>;
+  compare(data: string, encrypted: string): Promise<boolean>;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const bcrypt = require('bcrypt') as BcryptModule;
 
 type ServiceError = { ok: false; status: number; error: string };
 type ServiceOk = { ok: true };
