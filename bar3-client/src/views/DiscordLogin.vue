@@ -7,7 +7,7 @@
       >
         <v-row align="center" justify="center">
           <v-col cols="12" sm="8" md="5" lg="4">
-            <v-card class="discord-login-card pa-8" dark color="#1A1A1A">
+            <v-card v-if="!loading" class="discord-login-card pa-8" dark color="#1A1A1A">
               <div class="text-center mb-6">
                 <v-img
                   class="mx-auto mb-4"
@@ -61,6 +61,7 @@ import { normalizeReturnTo } from '@/utilities/serverUrls';
 
 @Component
 export default class DiscordLogin extends Vue {
+  loading = true;
   error = '';
   errorCode = '';
   errorHint = '';
