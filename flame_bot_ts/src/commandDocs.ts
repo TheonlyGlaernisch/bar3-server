@@ -44,7 +44,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
   { name: '/roles_show', summary: 'Show current gov role mappings.', category: 'setup' },
   { name: '/gov', summary: 'Show members currently mapped to gov departments.', category: 'gov' },
   { name: '/verify_alliance_server', summary: 'Generate in-game verification message(s) and a one-time code for alliance ownership check.', category: 'gov' },
-  { name: '/verify_alliance_server_confirm <code>', summary: 'Confirm a returned alliance verification code in Discord.', category: 'gov' },
+  { name: '/verify_alliance_server_confirm', summary: 'Legacy helper; use the Verify code button popup from /verify_alliance_server.', category: 'gov' },
   { name: '/setup_grant_channel <channel>', summary: 'Set grant request destination channel.', category: 'setup' },
   { name: '/welcome_set <message>', summary: 'Set welcome message template.', category: 'setup' },
   { name: '/welcome_channel_set <channel>', summary: 'Set welcome channel.', category: 'setup' },
