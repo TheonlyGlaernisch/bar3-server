@@ -16,6 +16,9 @@ import {
   TextChannel,
   PermissionFlagsBits,
   MessageFlags,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } from 'discord.js';
 import { createServer, Server } from 'http';
 
@@ -554,6 +557,8 @@ function buildAllianceScoreHistoryQuickChartUrl(points: AllianceScoreHistoryPoin
 
 const PNW_BASE_URL = 'https://politicsandwar.com';
 const PNW_TEST_BASE_URL = 'https://test.politicsandwar.com';
+const ALLIANCE_VERIFY_TTL_MS = 30 * 60 * 1000;
+const pendingAllianceVerifications = new Map<string, { code: string; createdAt: number; createdBy: string }>();
 
 function nationUrl(nationId: number, baseUrl = PNW_BASE_URL): string {
   return `${baseUrl}/nation/id=${nationId}/`;
@@ -1476,6 +1481,8 @@ async function main(): Promise<void> {
       .addRoleOption(o => o.setName('gov').setDescription('Basic gov role'))
       .addRoleOption(o => o.setName('member').setDescription('Member role (required to use most commands)')),
     new SlashCommandBuilder().setName('gov').setDescription('List members in configured gov departments'),
+    new SlashCommandBuilder().setName('verify_alliance_server').setDescription('Create an in-game verification message for the configured alliance leader'),
+    new SlashCommandBuilder().setName('verify_alliance_server_confirm').setDescription('Open a popup to confirm alliance verification code'),
     new SlashCommandBuilder().setName('setup_grant_channel').setDescription('Set grant request channel').addChannelOption(o => o.setName('channel').setDescription('Target channel').setRequired(true)),
     new SlashCommandBuilder().setName('request_grant').setDescription('Request a grant').addStringOption(o => o.setName('note').setDescription('Grant reason').setRequired(true)).addNumberOption(o => o.setName('money').setDescription('Requested money')).addNumberOption(o => o.setName('food').setDescription('Food amount')).addNumberOption(o => o.setName('coal').setDescription('Coal amount')).addNumberOption(o => o.setName('oil').setDescription('Oil amount')).addNumberOption(o => o.setName('uranium').setDescription('Uranium amount')).addNumberOption(o => o.setName('iron').setDescription('Iron amount')).addNumberOption(o => o.setName('bauxite').setDescription('Bauxite amount')).addNumberOption(o => o.setName('lead').setDescription('Lead amount')).addNumberOption(o => o.setName('gasoline').setDescription('Gasoline amount')).addNumberOption(o => o.setName('munitions').setDescription('Munitions amount')).addNumberOption(o => o.setName('steel').setDescription('Steel amount')).addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount')),
     new SlashCommandBuilder().setName('admin_alliance_set').setDescription('Set guild primary alliance ID').addIntegerOption(o => o.setName('alliance_id').setDescription('Alliance ID').setRequired(true)),
@@ -1769,6 +1776,33 @@ async function main(): Promise<void> {
   });
 
   client.on('interactionCreate', async (interaction: Interaction) => {
+    if (interaction.isButton() && interaction.customId === 'verify_alliance_open_modal') {
+      const modal = new ModalBuilder().setCustomId('verify_alliance_modal').setTitle('Verify Alliance Server');
+      const codeInput = new TextInputBuilder()
+        .setCustomId('verification_code')
+        .setLabel('Verification code')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setPlaceholder('BAR3-VERIFY-...');
+      modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(codeInput));
+      return void interaction.showModal(modal);
+    }
+    if (interaction.isModalSubmit() && interaction.customId === 'verify_alliance_modal') {
+      if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only interaction.', flags: MessageFlags.Ephemeral });
+      if (!await hasGovAccess(interaction as unknown as ChatInputCommandInteraction, db, ['leader', '2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+      const providedCode = (interaction.fields.getTextInputValue('verification_code') || '').trim().toUpperCase();
+      const pending = pendingAllianceVerifications.get(interaction.guildId);
+      if (!pending) return void interaction.reply({ content: 'No pending verification for this server. Run `/verify_alliance_server` first.', flags: MessageFlags.Ephemeral });
+      if ((Date.now() - pending.createdAt) > ALLIANCE_VERIFY_TTL_MS) {
+        pendingAllianceVerifications.delete(interaction.guildId);
+        return void interaction.reply({ content: 'The pending verification code expired (30 minutes). Run `/verify_alliance_server` again.', flags: MessageFlags.Ephemeral });
+      }
+      if (providedCode !== pending.code) {
+        return void interaction.reply({ content: 'Verification code mismatch. Double-check the code from the alliance leader and try again.', flags: MessageFlags.Ephemeral });
+      }
+      pendingAllianceVerifications.delete(interaction.guildId);
+      return void interaction.reply({ content: `✅ Alliance server verification confirmed for this guild.\nConfirmed by <@${interaction.user.id}> with code \`${providedCode}\`.`, flags: MessageFlags.Ephemeral });
+    }
     if (!interaction.isChatInputCommand()) return;
     const now = Date.now() / 1000;
     const lastUsed = commandCooldowns.get(interaction.user.id);
@@ -1986,11 +2020,11 @@ async function main(): Promise<void> {
         const GOV_DEPT_LABELS: Record<string, string> = {
           leader: 'Leader', '2ic': 'Second in Command', econ: 'Economics', econ_gov: 'Economics Gov',
           milcom: 'Military Command', milcom_gov: 'Military Command Gov', ia: 'Internal Affairs',
-          ia_asst: 'Internal Affairs Assistant',
+          ia_asst: 'Internal Affairs Assistant', gov: 'Basic Gov', member: 'Member',
         };
         const GOV_DEPT_EMOJI: Record<string, string> = {
           leader: '👑', '2ic': '🥈', econ: '💰', econ_gov: '📊',
-          milcom: '⚔️', milcom_gov: '🛡️', ia: '🤝', ia_asst: '📋',
+          milcom: '⚔️', milcom_gov: '🛡️', ia: '🤝', ia_asst: '📋', gov: '🏛️', member: '🧑‍🤝‍🧑',
         };
         const embed = new EmbedBuilder().setTitle('Government').setColor(0x5865F2);
         const guildRoles = new Map(interaction.guild.roles.cache.map((r) => [r.id, r]));
@@ -2007,11 +2041,60 @@ async function main(): Promise<void> {
           total += membersWithRole.size;
           const value = membersWithRole.size
             ? [...membersWithRole.values()].sort((a, b) => a.displayName.localeCompare(b.displayName)).map((m) => `<@${m.id}>`).join(' ')
-            : '*(no members)*';
+            : '\u200B';
           embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label} (${membersWithRole.size})`, value, inline: false });
         }
         embed.setFooter({ text: `${total} government member(s) total` });
         return void interaction.editReply({ embeds: [embed] });
+      }
+      if (commandName === 'verify_alliance_server') {
+        if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['leader', '2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const allianceId = await db.getAllianceId(BigInt(interaction.guildId));
+        if (!allianceId) return void interaction.editReply({ content: 'No primary alliance configured. Run `/admin_alliance_set` first.' });
+        const info = await pnw.getAllianceById(allianceId);
+        if (!info) return void interaction.editReply({ content: `Alliance ${allianceId} was not found via PnW API.` });
+        const members = await pnw.getAllianceMembers([allianceId]);
+        const leaderCandidates = members.filter((m) => {
+          const pos = m.alliancePosition.toLowerCase();
+          return pos.includes('leader') || pos.includes('heir');
+        });
+        if (!leaderCandidates.length) return void interaction.editReply({ content: 'Could not determine alliance leader/heir members from the API member list right now. Please try again shortly.' });
+        const guildName = interaction.guild.name;
+        const verificationCode = `BAR3-VERIFY-${interaction.guildId}-${Date.now().toString(36).toUpperCase()}`;
+        pendingAllianceVerifications.set(interaction.guildId, {
+          code: verificationCode,
+          createdAt: Date.now(),
+          createdBy: interaction.user.id,
+        });
+        const blocks = leaderCandidates.map((leader) => {
+          const verificationMessage = [
+            `Hello ${leader.leaderName},`,
+            `Please verify that this Discord server belongs to ${info.name} (${info.allianceId}).`,
+            `Verification code: ${verificationCode}`,
+            `Discord server: ${guildName}`,
+            `Requested by: ${interaction.user.tag} (${interaction.user.id})`,
+          ].join('\n');
+          return (
+            `Send this in-game message to **${leader.leaderName}** (${nationUrl(leader.nationId)}):\n` +
+            '```text\n' + verificationMessage + '\n```'
+          );
+        });
+        return void interaction.editReply({
+          content:
+            `Found ${leaderCandidates.length} alliance leader target(s).\n` +
+            `After you send one of the messages below in-game, have the leader copy the verification code and give it to your gov. Then click **Verify code** below and paste it into the popup.\n\n` +
+            `${blocks.join('\n\n')}`,
+          components: [
+            new ActionRowBuilder<ButtonBuilder>().addComponents(
+              new ButtonBuilder().setCustomId('verify_alliance_open_modal').setLabel('Verify code').setStyle(ButtonStyle.Success),
+            ),
+          ],
+        });
+      }
+      if (commandName === 'verify_alliance_server_confirm') {
+        return void interaction.reply({ content: 'Use `/verify_alliance_server` and click the **Verify code** button to open the code input popup.', flags: MessageFlags.Ephemeral });
       }
 
       if (commandName === 'roles_show') {
