@@ -32,6 +32,8 @@ import {
   DISCORD_ENABLE_GUILD_MEMBERS_INTENT,
   GUILD_ID,
   LOG_LEVEL,
+  MEMBER_GUILD_ID,
+  MEMBER_ROLE_ID,
   MONGODB_URI,
   PNW_API_KEY,
   PNW_TEST_API_KEY,
@@ -592,7 +594,6 @@ async function hasGovAccess(i: ChatInputCommandInteraction, db: Database, roleKe
   if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
   const member = i.member;
   if ('permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator')) return true;
-  const cfg = await db.getGovRoles(BigInt(i.guildId));
   if (!('roles' in member) || !member.roles) return false;
   const roleSet = new Set((member.roles as { cache?: Map<string, unknown> }).cache ? Array.from((member.roles as any).cache.keys()) : (member.roles as any));
   for (const key of roleKeys) {
@@ -612,23 +613,17 @@ function hasAdminCommandAccess(i: ChatInputCommandInteraction): boolean {
 /** Check whether the caller may use member-gated commands.
  * Passes if admin, the configured "member" role is unset, caller holds the
  * "member" role, or caller holds any gov role. */
-async function hasMemberAccess(i: ChatInputCommandInteraction, db: Database): Promise<boolean> {
+async function hasMemberAccess(i: ChatInputCommandInteraction, _db: Database): Promise<boolean> {
   if (!i.inGuild() || !i.guildId || !i.member) return false;
   if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
   const member = i.member;
   if ('permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator')) return true;
-  const cfg = await db.getGovRoles(BigInt(i.guildId));
-  const memberRoleId = (cfg as any)['member'];
+  const memberRoleId = MEMBER_ROLE_ID;
   if (!memberRoleId) return true; // not configured — no restriction
   const roleSet = new Set(
     (member.roles as any)?.cache ? Array.from((member.roles as any).cache.keys()) : (member.roles as any) ?? [],
   );
   if (roleSet.has(String(memberRoleId))) return true;
-  const govKeys: GovRoleKey[] = ['leader', '2ic', 'econ', 'econ_gov', 'milcom', 'milcom_gov', 'ia', 'ia_asst', 'gov'];
-  for (const key of govKeys) {
-    const rid = (cfg as any)[key];
-    if (rid != null && roleSet.has(String(rid))) return true;
-  }
   return false;
 }
 
@@ -2020,7 +2015,6 @@ async function main(): Promise<void> {
         if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         await interaction.deferReply();
         const cfg = await db.getGovRoles(BigInt(interaction.guildId));
-        await interaction.guild.members.fetch();
         const GOV_DEPT_LABELS: Record<string, string> = {
           leader: 'Leader', '2ic': 'Second in Command', econ: 'Economics', econ_gov: 'Economics Gov',
           milcom: 'Military Command', milcom_gov: 'Military Command Gov', ia: 'Internal Affairs',
@@ -2989,9 +2983,6 @@ Message: ${cfg.message}`)],
       }
 
       if (commandName === 'help') {
-        if (Math.floor(Math.random() * 3) === 0) {
-          return void interaction.reply({ content: 'bot is striking for its rights' });
-        }
         return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('flame_bot commands').setDescription(renderCommandHelp())], flags: MessageFlags.Ephemeral });
       }
 
@@ -3016,6 +3007,8 @@ Message: ${cfg.message}`)],
         verifiedRoleId: VERIFIED_ROLE_ID,
         bar3ClientRoleId: BAR3_CLIENT_ROLE_ID,
         bar3ServerRoleId: BAR3_SERVER_ROLE_ID,
+        memberGuildId: MEMBER_GUILD_ID,
+        memberRoleId: MEMBER_ROLE_ID,
       },
       guildsGetter: () => [...client.guilds.cache.values()],
       sendToWelcomeFn: sendToAllWelcomeChannels,
