@@ -18,8 +18,16 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function buildDiscordLoginHtml(errorText: string): string {
-  const discordHref = '/auth/discord';
+function sanitizeReturnTo(value: unknown): string {
+  if (typeof value !== 'string') return '/';
+  const trimmed = value.trim();
+  if (!trimmed) return '/';
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) return trimmed;
+  return '/';
+}
+
+function buildDiscordLoginHtml(errorText: string, returnTo: string): string {
+  const discordHref = `/auth/discord?returnTo=${encodeURIComponent(returnTo)}`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -154,7 +162,7 @@ function buildDiscordLoginHtml(errorText: string): string {
       <section class="panel active" data-panel="discord">
         <h1>Sign in with Discord</h1>
         <p class="sub">Use your Discord account for standard Bar3 authentication.</p>
-        <a class="discord-btn" href="${discordHref}">Login with Discord</a>
+        <a class="discord-btn" href="${escapeHtml(discordHref)}">Login with Discord</a>
       </section>
 
       <section class="panel" data-panel="nation">
@@ -201,7 +209,7 @@ function buildDiscordLoginHtml(errorText: string): string {
 
   <script>
     (function () {
-      const returnTo = '/';
+      const returnTo = ${JSON.stringify(returnTo)};
       const tabs = Array.from(document.querySelectorAll('.tab'));
       const panels = Array.from(document.querySelectorAll('.panel'));
 
@@ -293,7 +301,8 @@ function buildDiscordLoginHtml(errorText: string): string {
 
 router.get('/', discordLoginPageLimiter, (req: Request, res: Response) => {
   const errorText = typeof req.query.error === 'string' ? req.query.error : '';
-  res.status(200).send(buildDiscordLoginHtml(errorText));
+  const returnTo = sanitizeReturnTo(req.session?.discordReturnTo);
+  res.status(200).send(buildDiscordLoginHtml(errorText, returnTo));
 });
 
 export default router;
