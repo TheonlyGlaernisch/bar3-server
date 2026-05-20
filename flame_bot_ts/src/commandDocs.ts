@@ -78,20 +78,16 @@ export const COMMAND_DOCS: CommandDoc[] = [
   { name: '/help', summary: 'Display command help by category.', category: 'core' },
 ];
 
-export function renderCommandHelp(): string {
-  const byCategory = new Map<string, CommandDoc[]>();
-  for (const doc of COMMAND_DOCS) {
-    const arr = byCategory.get(doc.category) ?? [];
-    arr.push(doc);
-    byCategory.set(doc.category, arr);
-  }
-  const sections: string[] = [];
-  for (const [category, docs] of byCategory.entries()) {
-    sections.push(`**${category.toUpperCase()}**`);
-    for (const d of docs) {
-      sections.push(`• ${d.name} — ${d.summary}`);
-    }
-    sections.push('');
-  }
-  return sections.join('\n').trim();
+export interface CommandHelpSection {
+  category: CommandDoc['category'];
+  body: string;
+}
+
+export function renderCommandHelpSections(): CommandHelpSection[] {
+  const categories: CommandDoc['category'][] = ['core', 'alliance', 'gov', 'setup', 'admin', 'fun'];
+  return categories.map((category) => {
+    const docs = COMMAND_DOCS.filter((doc) => doc.category === category);
+    const body = docs.map((d) => `• ${d.name} — ${d.summary}`).join('\n');
+    return { category, body: body || '*(none)*' };
+  });
 }

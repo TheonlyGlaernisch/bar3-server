@@ -64,7 +64,7 @@ import {
   calculateCityCost,
   computeNationRevenue,
 } from './pnw_api';
-import { renderCommandHelp } from './commandDocs';
+import { renderCommandHelpSections } from './commandDocs';
 
 let primaryGuild: Guild | null = null;
 
@@ -2050,6 +2050,11 @@ async function main(): Promise<void> {
       if (commandName === 'gov') {
         if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         await interaction.deferReply();
+        try {
+          await interaction.guild.members.fetch();
+        } catch (err) {
+          logWarn(`[gov] Failed to fetch full guild member list for ${interaction.guildId}: ${String((err as Error)?.message ?? err)}`);
+        }
         const cfg = await db.getGovRoles(BigInt(interaction.guildId));
         const GOV_DEPT_LABELS: Record<string, string> = {
           leader: 'Leader', '2ic': 'Second in Command', econ: 'Economics', econ_gov: 'Economics Gov',
@@ -3029,7 +3034,14 @@ Message: ${cfg.message}`)],
       }
 
       if (commandName === 'help') {
-        return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('flame_bot commands').setDescription(renderCommandHelp())], flags: MessageFlags.Ephemeral });
+        const sections = renderCommandHelpSections();
+        const embeds = sections.map(({ category, body }, idx) =>
+          new EmbedBuilder()
+            .setTitle(idx === 0 ? `flame_bot commands — ${category.toUpperCase()}` : `flame_bot commands (continued) — ${category.toUpperCase()}`)
+            .setDescription(body)
+            .setColor(0x5865F2)
+        );
+        return void interaction.reply({ embeds, flags: MessageFlags.Ephemeral });
       }
 
       logWarn(`[commands] Unhandled slash command: ${commandName} (raw: ${interaction.commandName})`);
