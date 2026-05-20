@@ -166,6 +166,10 @@ function resolveCanonicalCommandNameFromInteraction(i: ChatInputCommandInteracti
     if (sub === 'setup') return 'roles_setup';
     if (sub === 'show') return 'roles_show';
   }
+  if (i.commandName === 'verify') {
+    if (sub === 'guild') return 'verify_alliance_server';
+    if (sub === 'confirm') return 'verify_alliance_server_confirm';
+  }
   if (i.commandName === 'fun' && sub === 'quote') return 'fun_quote';
   if (i.commandName === 'damage' && sub === 'leaderboard') return 'damage_leaderboard';
   if (i.commandName === 'spy' && group === 'target' && sub === 'find') return 'spy_target_find';
@@ -619,12 +623,17 @@ async function hasMemberAccess(i: ChatInputCommandInteraction, _db: Database): P
   if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
   const member = i.member;
   if ('permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator')) return true;
-  const memberRoleId = MEMBER_ROLE_ID;
+  const cfg = await _db.getGovRoles(BigInt(i.guildId));
+  const memberRoleId = cfg.member ?? MEMBER_ROLE_ID;
   if (!memberRoleId) return true; // not configured — no restriction
   const roleSet = new Set(
     (member.roles as any)?.cache ? Array.from((member.roles as any).cache.keys()) : (member.roles as any) ?? [],
   );
   if (roleSet.has(String(memberRoleId))) return true;
+  for (const key of ['leader', '2ic', 'econ', 'econ_gov', 'milcom', 'milcom_gov', 'ia', 'ia_asst', 'gov'] as const) {
+    const roleId = cfg[key];
+    if (roleId && roleSet.has(String(roleId))) return true;
+  }
   return false;
 }
 
@@ -1588,6 +1597,9 @@ async function main(): Promise<void> {
         .addRoleOption(o => o.setName('gov').setDescription('Basic gov role'))
         .addRoleOption(o => o.setName('member').setDescription('Member role (required to use most commands)')))
       .addSubcommand(sc => sc.setName('show').setDescription('Show configured gov role mappings')),
+    new SlashCommandBuilder().setName('verify').setDescription('Alliance verification commands')
+      .addSubcommand(sc => sc.setName('guild').setDescription('Create an in-game verification message for this guild'))
+      .addSubcommand(sc => sc.setName('confirm').setDescription('Open guidance to confirm guild verification code')),
     new SlashCommandBuilder().setName('admin').setDescription('Bot administration commands')
       .addSubcommandGroup(g => g.setName('alliance').setDescription('Alliance administration')
         .addSubcommand(sc => sc.setName('set').setDescription('Set guild primary alliance ID')

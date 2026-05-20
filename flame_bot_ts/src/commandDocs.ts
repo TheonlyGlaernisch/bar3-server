@@ -43,6 +43,8 @@ export const COMMAND_DOCS: CommandDoc[] = [
   { name: '/roles_setup ...', summary: 'Configure gov role mappings.', category: 'setup' },
   { name: '/roles_show', summary: 'Show current gov role mappings.', category: 'setup' },
   { name: '/gov', summary: 'Show members currently mapped to gov departments.', category: 'gov' },
+  { name: '/verify guild', summary: 'Alias for /verify_alliance_server; starts guild verification flow.', category: 'gov' },
+  { name: '/verify confirm', summary: 'Alias for /verify_alliance_server_confirm; shows confirm guidance.', category: 'gov' },
   { name: '/verify_alliance_server', summary: 'Generate in-game verification message(s) and a one-time code for alliance ownership check.', category: 'gov' },
   { name: '/verify_alliance_server_confirm', summary: 'Legacy helper; use the Verify code button popup from /verify_alliance_server.', category: 'gov' },
   { name: '/counter_request_channel_set <channel>', summary: 'Set Bar3 counter-request destination channel (verified guilds only).', category: 'gov' },
