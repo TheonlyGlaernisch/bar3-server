@@ -13,12 +13,14 @@ export interface RegistrationDoc {
 export interface GuildConfigDoc {
   guild_id: string;
   slots_alliances?: number[];
-  gov_roles?: Record<string, number | null>;
-  grant_channel_id?: number | null;
+  gov_roles?: Record<string, string | null>;
+  grant_channel_id?: string | null;
   alliance_id?: number | null;
   welcome_enabled?: boolean;
-  welcome_channel_id?: number | null;
+  welcome_channel_id?: string | null;
   welcome_message?: string;
+  gov_panel_channel_id?: string | null;
+  gov_panel_message_id?: string | null;
 }
 
 export interface GuildDoc {
@@ -133,37 +135,41 @@ export class Database {
 
   // Gov-role config helpers ---------------------------------------------------
 
-  async getGovRoles(guildId: bigint): Promise<Record<GovRoleKey, number | null>> {
+  async getGovRoles(guildId: bigint): Promise<Record<GovRoleKey, string | null>> {
     const doc = await this._guildConfig.findOne({ guild_id: guildId.toString() }, { projection: { _id: 0 } });
     const stored = (doc?.gov_roles) || {};
-    const result: Partial<Record<GovRoleKey, number | null>> = {};
+    const result: Partial<Record<GovRoleKey, string | null>> = {};
     for (const k of GOV_ROLE_KEYS) {
       const val = stored[k];
-      result[k] = val != null ? Number(val) : null;
+      result[k] = val != null ? String(val) : null;
     }
-    return result as Record<GovRoleKey, number | null>;
+    return result as Record<GovRoleKey, string | null>;
   }
 
-  async setGovRoles(guildId: bigint, roles: Record<GovRoleKey, number | null>): Promise<void> {
+  async setGovRoles(guildId: bigint, roles: Record<GovRoleKey, string | null>): Promise<void> {
+    const normalized: Partial<Record<GovRoleKey, string | null>> = {};
+    for (const k of GOV_ROLE_KEYS) {
+      normalized[k] = roles[k] != null ? String(roles[k]) : null;
+    }
     await this._guildConfig.updateOne(
       { guild_id: guildId.toString() },
-      { $set: { guild_id: guildId.toString(), gov_roles: roles } },
+      { $set: { guild_id: guildId.toString(), gov_roles: normalized } },
       { upsert: true }
     );
   }
 
   // Grant channel config helpers -------------------------------------------
 
-  async getGrantChannel(guildId: bigint): Promise<number | null> {
+  async getGrantChannel(guildId: bigint): Promise<string | null> {
     const doc = await this._guildConfig.findOne({ guild_id: guildId.toString() }, { projection: { _id: 0 } });
     if (!doc) return null;
-    return doc.grant_channel_id != null ? Number(doc.grant_channel_id) : null;
+    return doc.grant_channel_id != null ? String(doc.grant_channel_id) : null;
   }
 
-  async setGrantChannel(guildId: bigint, channelId: number | null): Promise<void> {
+  async setGrantChannel(guildId: bigint, channelId: string | null): Promise<void> {
     await this._guildConfig.updateOne(
       { guild_id: guildId.toString() },
-      { $set: { guild_id: guildId.toString(), grant_channel_id: channelId } },
+      { $set: { guild_id: guildId.toString(), grant_channel_id: channelId != null ? String(channelId) : null } },
       { upsert: true }
     );
   }
@@ -186,26 +192,48 @@ export class Database {
 
   // Welcome message config helpers ----------------------------------------
 
-  async getWelcomeConfig(guildId: bigint): Promise<{ enabled: boolean; channel_id: number | null; message: string }> {
+  async getWelcomeConfig(guildId: bigint): Promise<{ enabled: boolean; channel_id: string | null; message: string }> {
     const doc = await this._guildConfig.findOne({ guild_id: guildId.toString() }, { projection: { _id: 0 } });
     return {
       enabled: Boolean(doc?.welcome_enabled ?? false),
-      channel_id: doc?.welcome_channel_id != null ? Number(doc.welcome_channel_id) : null,
+      channel_id: doc?.welcome_channel_id != null ? String(doc.welcome_channel_id) : null,
       message: String(doc?.welcome_message ?? 'Welcome !(user)!'),
     };
   }
 
   async setWelcomeConfig(
     guildId: bigint,
-    opts: { enabled?: boolean; channelId?: number | null; message?: string }
+    opts: { enabled?: boolean; channelId?: string | null; message?: string }
   ): Promise<void> {
     const updates: Record<string, unknown> = { guild_id: guildId.toString() };
     if (opts.enabled !== undefined) updates['welcome_enabled'] = opts.enabled;
-    if (opts.channelId !== undefined) updates['welcome_channel_id'] = opts.channelId;
+    if (opts.channelId !== undefined) updates['welcome_channel_id'] = opts.channelId != null ? String(opts.channelId) : null;
     if (opts.message !== undefined) updates['welcome_message'] = opts.message;
     await this._guildConfig.updateOne(
       { guild_id: guildId.toString() },
       { $set: updates },
+      { upsert: true }
+    );
+  }
+
+  async getGovPanel(guildId: bigint): Promise<{ channelId: string | null; messageId: string | null }> {
+    const doc = await this._guildConfig.findOne({ guild_id: guildId.toString() }, { projection: { _id: 0 } });
+    return {
+      channelId: doc?.gov_panel_channel_id != null ? String(doc.gov_panel_channel_id) : null,
+      messageId: doc?.gov_panel_message_id != null ? String(doc.gov_panel_message_id) : null,
+    };
+  }
+
+  async setGovPanel(guildId: bigint, channelId: string | null, messageId: string | null): Promise<void> {
+    await this._guildConfig.updateOne(
+      { guild_id: guildId.toString() },
+      {
+        $set: {
+          guild_id: guildId.toString(),
+          gov_panel_channel_id: channelId != null ? String(channelId) : null,
+          gov_panel_message_id: messageId != null ? String(messageId) : null,
+        },
+      },
       { upsert: true }
     );
   }

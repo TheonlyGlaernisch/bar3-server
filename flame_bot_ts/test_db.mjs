@@ -234,8 +234,8 @@ test('getGrantChannel returns null for unconfigured guild', async () => {
 
 test('setGrantChannel and getGrantChannel round-trip', async () => {
   const db = await makeDb();
-  await db.setGrantChannel(BigInt(301), 999);
-  assert.equal(await db.getGrantChannel(BigInt(301)), 999);
+  await db.setGrantChannel(BigInt(301), '999');
+  assert.equal(await db.getGrantChannel(BigInt(301)), '999');
   await db.setGrantChannel(BigInt(301), null);
   assert.equal(await db.getGrantChannel(BigInt(301)), null);
 });
@@ -266,7 +266,7 @@ test('getWelcomeConfig returns defaults for unconfigured guild', async () => {
 
 test('setWelcomeConfig and getWelcomeConfig round-trip', async () => {
   const db = await makeDb();
-  await db.setWelcomeConfig(BigInt(401), { enabled: true, channelId: 555, message: 'Hello !(user)!' });
+  await db.setWelcomeConfig(BigInt(401), { enabled: true, channelId: '555', message: 'Hello !(user)!' });
   const cfg = await db.getWelcomeConfig(BigInt(401));
   assert.equal(cfg.enabled, true);
   assert.equal(cfg.channel_id, '555');
@@ -275,7 +275,7 @@ test('setWelcomeConfig and getWelcomeConfig round-trip', async () => {
 
 test('setWelcomeConfig partial update preserves other fields', async () => {
   const db = await makeDb();
-  await db.setWelcomeConfig(BigInt(402), { enabled: true, channelId: 123, message: 'Hi' });
+  await db.setWelcomeConfig(BigInt(402), { enabled: true, channelId: '123', message: 'Hi' });
   await db.setWelcomeConfig(BigInt(402), { enabled: false });
   const cfg = await db.getWelcomeConfig(BigInt(402));
   assert.equal(cfg.enabled, false);

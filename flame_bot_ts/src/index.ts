@@ -1957,7 +1957,7 @@ async function main(): Promise<void> {
         ];
         for (const [optName, dbKey] of fields) {
           const role = interaction.options.getRole(optName);
-          if (role) (current as Record<string, number | null>)[dbKey] = Number(role.id);
+          if (role) (current as Record<string, string | null>)[dbKey] = role.id;
         }
         await db.setGovRoles(BigInt(interaction.guildId), current as any);
         const GOV_DEPT_LABELS: Record<string, string> = {
@@ -1967,7 +1967,7 @@ async function main(): Promise<void> {
         };
         const lines: string[] = ['✅ Government role configuration updated:'];
         for (const [key, label] of Object.entries(GOV_DEPT_LABELS)) {
-          const rid = (current as Record<string, number | null>)[key];
+          const rid = (current as Record<string, string | null>)[key];
           if (rid && interaction.guild) {
             const role = interaction.guild.roles.cache.get(String(rid));
             lines.push(`**${label}:** ${role ? role.toString() : `<@&${rid}>`}`);
@@ -1993,7 +1993,7 @@ async function main(): Promise<void> {
         const guildRoles = new Map(interaction.guild.roles.cache.map((r) => [r.id, r]));
         let total = 0;
         for (const [key, label] of Object.entries(GOV_DEPT_LABELS)) {
-          const rid = (cfg as Record<string, number | null>)[key];
+          const rid = (cfg as Record<string, string | null>)[key];
           if (!rid) continue;
           const role = guildRoles.get(String(rid));
           if (!role) {
@@ -2022,7 +2022,7 @@ async function main(): Promise<void> {
         if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
         if (!await hasGovAccess(interaction, db, ['econ','econ_gov','ia','ia_asst'])) return void interaction.reply({ content: 'You need Economics or Internal Affairs gov access to use this command.', ephemeral: true });
         const ch = interaction.options.getChannel('channel', true);
-        await db.setGrantChannel(BigInt(interaction.guildId), Number(ch.id));
+        await db.setGrantChannel(BigInt(interaction.guildId), ch.id);
         return void interaction.reply({ content: `Grant channel set to <#${ch.id}>.` });
       }
       if (commandName === 'request_grant') {
@@ -2408,7 +2408,7 @@ ${resourceLines}
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
         if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
         const ch = interaction.options.getChannel('channel', true);
-        await db.setWelcomeConfig(BigInt(interaction.guildId), { channelId: Number(ch.id) });
+        await db.setWelcomeConfig(BigInt(interaction.guildId), { channelId: ch.id });
         return void interaction.reply({ content: `Welcome channel set to <#${ch.id}>.` });
       }
       if (commandName === 'welcome_enable') {
