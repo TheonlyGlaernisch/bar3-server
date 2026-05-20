@@ -1,57 +1,5 @@
 <template>
-  <v-app style="background: #0f0f0f;">
-    <v-main>
-      <v-container
-        class="fill-height"
-        fluid
-      >
-        <v-row align="center" justify="center">
-          <v-col cols="12" sm="8" md="5" lg="4">
-            <v-card v-if="!loading" class="discord-login-card pa-8" dark color="#1A1A1A">
-              <div class="text-center mb-6">
-                <v-img
-                  class="mx-auto mb-4"
-                  contain
-                  src="/src/favicon.ico"
-                  max-width="72"
-                />
-                <div class="text-h5 white--text font-weight-bold mb-1">Bar 3</div>
-                <div class="text--secondary body-2">
-                  You must verify your Discord membership before accessing this site.
-                </div>
-              </div>
-
-              <v-alert v-if="error" type="error" dense class="mb-4">
-                {{ error }}
-                <div v-if="errorHint" class="caption mt-1">
-                  {{ errorHint }}
-                </div>
-                <div v-if="errorCode" class="caption mt-1">
-                  Error code: {{ errorCode }}
-                </div>
-              </v-alert>
-
-              <v-btn
-                block
-                large
-                color="#5865F2"
-                dark
-                class="discord-btn"
-                @click="login"
-              >
-                <v-icon left>mdi-discord</v-icon>
-                Login with Discord
-              </v-btn>
-
-              <div class="text-center mt-4 caption text--secondary">
-                Access is restricted to authorized Discord members only.
-              </div>
-            </v-card>
-          </v-col>
-        </v-row>
-      </v-container>
-    </v-main>
-  </v-app>
+  <v-app style="background: #0f0f0f;" />
 </template>
 
 <script lang="ts">
