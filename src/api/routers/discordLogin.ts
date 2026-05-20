@@ -18,6 +18,14 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+function sanitizeReturnTo(value: unknown): string {
+  if (typeof value !== 'string') return '/';
+  const trimmed = value.trim();
+  if (!trimmed) return '/';
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) return trimmed;
+  return '/';
+}
+
 function buildDiscordLoginHtml(errorText: string, returnTo: string): string {
   const discordHref = `/auth/discord?returnTo=${encodeURIComponent(returnTo)}`;
   return `<!DOCTYPE html>
@@ -293,9 +301,7 @@ function buildDiscordLoginHtml(errorText: string, returnTo: string): string {
 
 router.get('/', discordLoginPageLimiter, (req: Request, res: Response) => {
   const errorText = typeof req.query.error === 'string' ? req.query.error : '';
-  const returnTo = typeof req.session?.discordReturnTo === 'string' && req.session.discordReturnTo.trim()
-    ? req.session.discordReturnTo
-    : '/';
+  const returnTo = sanitizeReturnTo(req.session?.discordReturnTo);
   res.status(200).send(buildDiscordLoginHtml(errorText, returnTo));
 });
 

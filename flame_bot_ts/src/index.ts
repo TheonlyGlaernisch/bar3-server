@@ -593,6 +593,10 @@ function hasBar3ClientAccess(i: ChatInputCommandInteraction): boolean {
 
 type GovRoleKey = 'milcom' | 'milcom_gov' | 'econ' | 'econ_gov' | 'ia' | 'ia_asst' | 'gov' | 'leader' | '2ic' | 'member';
 
+function isSnowflakeId(value: string): boolean {
+  return /^\d+$/.test(value);
+}
+
 async function hasGovAccess(i: ChatInputCommandInteraction, db: Database, roleKeys: GovRoleKey[] = ['milcom']): Promise<boolean> {
   if (!i.inGuild() || !i.guildId || !i.member) return false;
   if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
@@ -625,14 +629,14 @@ async function hasMemberAccess(i: ChatInputCommandInteraction, _db: Database): P
   if ('permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator')) return true;
   const cfg = await _db.getGovRoles(BigInt(i.guildId));
   const memberRoleId = (cfg.member ?? MEMBER_ROLE_ID ?? '').trim();
-  if (!memberRoleId || !/^\d+$/.test(memberRoleId)) return true; // not configured — no restriction
+  if (!memberRoleId) return true; // not configured — no restriction
   const roleSet = new Set(
     (member.roles as any)?.cache ? Array.from((member.roles as any).cache.keys()) : (member.roles as any) ?? [],
   );
-  if (roleSet.has(memberRoleId)) return true;
+  if (isSnowflakeId(memberRoleId) && roleSet.has(memberRoleId)) return true;
   for (const key of ['leader', '2ic', 'econ', 'econ_gov', 'milcom', 'milcom_gov', 'ia', 'ia_asst', 'gov'] as const) {
-    const roleId = cfg[key];
-    if (roleId && roleSet.has(String(roleId))) return true;
+    const roleId = (cfg[key] ?? '').trim();
+    if (isSnowflakeId(roleId) && roleSet.has(roleId)) return true;
   }
   return false;
 }
@@ -648,10 +652,8 @@ function formatMentionsForEmbed(memberIds: string[]): string {
     const remaining = memberIds.length - i - 1;
     const suffix = remaining > 0 ? suffixForRemaining(remaining) : '';
     if ((candidate + suffix).length > maxLen) {
-      if (!value) {
-        return (mention + suffix).slice(0, maxLen);
-      }
-      return (value + suffix).slice(0, maxLen);
+      if (!value) return '\u200B';
+      return value + suffix;
     }
     value = candidate;
   }
