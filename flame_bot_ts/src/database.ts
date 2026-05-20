@@ -149,7 +149,7 @@ export class Database {
   async setGovRoles(guildId: bigint, roles: Record<GovRoleKey, string | null>): Promise<void> {
     const normalized: Partial<Record<GovRoleKey, string | null>> = {};
     for (const k of GOV_ROLE_KEYS) {
-      normalized[k] = roles[k] != null ? String(roles[k]) : null;
+      normalized[k] = roles[k] ?? null;
     }
     await this._guildConfig.updateOne(
       { guild_id: guildId.toString() },
