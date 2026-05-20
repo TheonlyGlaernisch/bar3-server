@@ -59,12 +59,10 @@ function buildPixelTag(baseUrl: string, accountId: string, messageId: string): s
 }
 
 function injectPixelIntoMarkup(markup: string, pixelTag: string): string {
-  if (/<\/body\s*>/i.test(markup)) {
-    return markup.replace(/<\/body\s*>/i, `${pixelTag}</body>`);
-  }
-  if (/<\/html\s*>/i.test(markup)) {
-    return markup.replace(/<\/html\s*>/i, `${pixelTag}</html>`);
-  }
+  const withBody = markup.replace(/<\/body\s*>/i, `${pixelTag}</body>`);
+  if (withBody !== markup) return withBody;
+  const withHtml = markup.replace(/<\/html\s*>/i, `${pixelTag}</html>`);
+  if (withHtml !== markup) return withHtml;
   return markup + pixelTag;
 }
 
