@@ -592,6 +592,7 @@ type GovRoleKey = 'milcom' | 'milcom_gov' | 'econ' | 'econ_gov' | 'ia' | 'ia_ass
 async function hasGovAccess(i: ChatInputCommandInteraction, db: Database, roleKeys: GovRoleKey[] = ['milcom']): Promise<boolean> {
   if (!i.inGuild() || !i.guildId || !i.member) return false;
   if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
+  const cfg = await db.getGovRoles(BigInt(i.guildId));
   const member = i.member;
   if ('permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator')) return true;
   if (!('roles' in member) || !member.roles) return false;
