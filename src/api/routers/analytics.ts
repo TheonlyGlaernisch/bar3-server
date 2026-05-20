@@ -1,5 +1,4 @@
 import express, {Request, Response} from 'express';
-import {celebrate, Joi, Segments} from 'celebrate';
 
 import analytics from '../../services/analytics';
 import LogManager from '../../utilities/logManager';
@@ -8,6 +7,16 @@ import database from '../../services/database';
 const router = express.Router();
 router.use(express.json());
 const apiLogs = new LogManager().updateContext('api');
+
+function requireNameInBody(req: Request, res: Response): boolean {
+  const name = req.body?.name;
+  if (typeof name !== 'string' || name.trim().length === 0) {
+    res.status(400).json({error: 'name is required'});
+    return false;
+  }
+  req.body.name = name.trim();
+  return true;
+}
 
 router.get('/campaigns', async (req: Request, res: Response) => {
   const logs = apiLogs.customContext(['campaign']);
@@ -21,11 +30,8 @@ router.get('/campaigns', async (req: Request, res: Response) => {
   res.status(200).contentType('json').send(campaigns).end();
 });
 
-router.post('/newCampaign', celebrate({
-  [Segments.BODY]: {
-    name: Joi.string().required(),
-  },
-}), async (req: Request, res: Response) => {
+router.post('/newCampaign', async (req: Request, res: Response) => {
+  if (!requireNameInBody(req, res)) return;
   const logs = apiLogs.customContext(['newCampaign']);
 
   const name = req.body.name;
@@ -39,11 +45,8 @@ router.post('/newCampaign', celebrate({
   res.status(200).json({ success: true });
 });
 
-router.post('/campaigns', celebrate({
-  [Segments.BODY]: {
-    name: Joi.string().required(),
-  },
-}), async (req: Request, res: Response) => {
+router.post('/campaigns', async (req: Request, res: Response) => {
+  if (!requireNameInBody(req, res)) return;
   const logs = apiLogs.customContext(['campaigns']);
   const name = req.body.name;
 

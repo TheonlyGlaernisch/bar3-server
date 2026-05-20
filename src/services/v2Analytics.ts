@@ -58,6 +58,14 @@ function buildPixelTag(baseUrl: string, accountId: string, messageId: string): s
   return `<img src="${pixelUrl}" alt="" width="1" height="1" aria-hidden="true" style="position:absolute;left:0;top:0;width:1px;height:1px;border:0;" />`;
 }
 
+function injectPixelIntoMarkup(markup: string, pixelTag: string): string {
+  const withBody = markup.replace(/<\/body\s*>/i, `${pixelTag}</body>`);
+  if (withBody !== markup) return withBody;
+  const withHtml = markup.replace(/<\/html\s*>/i, `${pixelTag}</html>`);
+  if (withHtml !== markup) return withHtml;
+  return markup + pixelTag;
+}
+
 export function injectTrackingIntoHtml(opts: {
   baseUrl: string;
   accountId: string;
@@ -81,13 +89,13 @@ export function injectTrackingIntoHtml(opts: {
     }
 
     // Always include view pixel if analytics on.
-    const out = parsed.toString() + buildPixelTag(baseUrl, accountId, messageId);
+    const out = injectPixelIntoMarkup(parsed.toString(), buildPixelTag(baseUrl, accountId, messageId));
     return out;
   };
 
   // If link tracking off, we can do sync injection for pixel only.
   if (!trackLinks) {
-    return parsed.toString() + buildPixelTag(baseUrl, accountId, messageId);
+    return injectPixelIntoMarkup(parsed.toString(), buildPixelTag(baseUrl, accountId, messageId));
   }
 
   return work();
