@@ -43,6 +43,8 @@ export const COMMAND_DOCS: CommandDoc[] = [
   { name: '/roles_setup ...', summary: 'Configure gov role mappings.', category: 'setup' },
   { name: '/roles_show', summary: 'Show current gov role mappings.', category: 'setup' },
   { name: '/gov', summary: 'Show members currently mapped to gov departments.', category: 'gov' },
+  { name: '/verify_alliance_server', summary: 'Generate in-game verification message(s) and a one-time code for alliance ownership check.', category: 'gov' },
+  { name: '/verify_alliance_server_confirm <code>', summary: 'Confirm a returned alliance verification code in Discord.', category: 'gov' },
   { name: '/setup_grant_channel <channel>', summary: 'Set grant request destination channel.', category: 'setup' },
   { name: '/welcome_set <message>', summary: 'Set welcome message template.', category: 'setup' },
   { name: '/welcome_channel_set <channel>', summary: 'Set welcome channel.', category: 'setup' },
