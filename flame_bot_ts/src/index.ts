@@ -1483,6 +1483,9 @@ async function main(): Promise<void> {
     new SlashCommandBuilder().setName('gov').setDescription('List members in configured gov departments'),
     new SlashCommandBuilder().setName('verify_alliance_server').setDescription('Create an in-game verification message for the configured alliance leader'),
     new SlashCommandBuilder().setName('verify_alliance_server_confirm').setDescription('Open a popup to confirm alliance verification code'),
+    new SlashCommandBuilder().setName('counter_request_channel_set').setDescription('Set channel for incoming Bar3 counter requests').addChannelOption(o => o.setName('channel').setDescription('Target channel').setRequired(true)),
+    new SlashCommandBuilder().setName('counter_request_channel_show').setDescription('Show configured counter request channel'),
+    new SlashCommandBuilder().setName('counter_request_channel_clear').setDescription('Clear configured counter request channel'),
     new SlashCommandBuilder().setName('setup_grant_channel').setDescription('Set grant request channel').addChannelOption(o => o.setName('channel').setDescription('Target channel').setRequired(true)),
     new SlashCommandBuilder().setName('request_grant').setDescription('Request a grant').addStringOption(o => o.setName('note').setDescription('Grant reason').setRequired(true)).addNumberOption(o => o.setName('money').setDescription('Requested money')).addNumberOption(o => o.setName('food').setDescription('Food amount')).addNumberOption(o => o.setName('coal').setDescription('Coal amount')).addNumberOption(o => o.setName('oil').setDescription('Oil amount')).addNumberOption(o => o.setName('uranium').setDescription('Uranium amount')).addNumberOption(o => o.setName('iron').setDescription('Iron amount')).addNumberOption(o => o.setName('bauxite').setDescription('Bauxite amount')).addNumberOption(o => o.setName('lead').setDescription('Lead amount')).addNumberOption(o => o.setName('gasoline').setDescription('Gasoline amount')).addNumberOption(o => o.setName('munitions').setDescription('Munitions amount')).addNumberOption(o => o.setName('steel').setDescription('Steel amount')).addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount')),
     new SlashCommandBuilder().setName('admin_alliance_set').setDescription('Set guild primary alliance ID').addIntegerOption(o => o.setName('alliance_id').setDescription('Alliance ID').setRequired(true)),
@@ -1801,6 +1804,7 @@ async function main(): Promise<void> {
         return void interaction.reply({ content: 'Verification code mismatch. Double-check the code from the alliance leader and try again.', flags: MessageFlags.Ephemeral });
       }
       pendingAllianceVerifications.delete(interaction.guildId);
+      await db.markAllianceVerified(BigInt(interaction.guildId));
       return void interaction.reply({ content: `✅ Alliance server verification confirmed for this guild.\nConfirmed by <@${interaction.user.id}> with code \`${providedCode}\`.`, flags: MessageFlags.Ephemeral });
     }
     if (!interaction.isChatInputCommand()) return;
@@ -2095,6 +2099,26 @@ async function main(): Promise<void> {
       }
       if (commandName === 'verify_alliance_server_confirm') {
         return void interaction.reply({ content: 'Use `/verify_alliance_server` and click the **Verify code** button to open the code input popup.', flags: MessageFlags.Ephemeral });
+      }
+      if (commandName === 'counter_request_channel_set') {
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['leader', '2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        const verified = await db.isAllianceVerified(BigInt(interaction.guildId));
+        if (!verified) return void interaction.reply({ content: 'This guild is not alliance-verified yet. Complete `/verify_alliance_server` first.', flags: MessageFlags.Ephemeral });
+        const ch = interaction.options.getChannel('channel', true);
+        await db.setCounterRequestChannel(BigInt(interaction.guildId), ch.id);
+        return void interaction.reply({ content: `Counter request channel set to <#${ch.id}>.`, flags: MessageFlags.Ephemeral });
+      }
+      if (commandName === 'counter_request_channel_show') {
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        const ch = await db.getCounterRequestChannel(BigInt(interaction.guildId));
+        return void interaction.reply({ content: ch ? `Counter request channel: <#${ch}>` : 'No counter request channel configured.', flags: MessageFlags.Ephemeral });
+      }
+      if (commandName === 'counter_request_channel_clear') {
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['leader', '2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        await db.setCounterRequestChannel(BigInt(interaction.guildId), null);
+        return void interaction.reply({ content: 'Counter request channel cleared.', flags: MessageFlags.Ephemeral });
       }
 
       if (commandName === 'roles_show') {
@@ -2997,6 +3021,29 @@ Message: ${cfg.message}`)],
       sendToWelcomeFn: sendToAllWelcomeChannels,
       commandUsageGetter: () => Object.fromEntries(commandUsage.entries()),
       adminIds: ADMIN_DISCORD_IDS,
+      memberNationCounterRequestHandler: async (discordIdStr: string, warId: number) => {
+        const registration = await db.getByDiscordId(BigInt(discordIdStr));
+        if (!registration) return { ok: false as const, status: 404, error: 'Discord user not registered to a nation.' };
+        const nation = await pnw.getNation(registration.nation_id);
+        if (!nation || !nation.allianceId) return { ok: false as const, status: 404, error: 'Nation or alliance not found.' };
+        const targets = await db.getVerifiedGuildCounterChannelsByAlliance(nation.allianceId);
+        if (!targets.length) return { ok: false as const, status: 404, error: 'No verified guild counter channel configured for this alliance.' };
+        const requestedAt = new Date().toISOString();
+        const content = [
+          '🚨 **Counter request received from Bar3**',
+          `Alliance: **${nation.allianceName || nation.allianceId}** (\`${nation.allianceId}\`)`,
+          `Defender: **${nation.nationName}** (${nationUrl(nation.nationId)})`,
+          `War: [#${warId}](${warUrl(warId)})`,
+          `Requested at: ${requestedAt}`,
+        ].join('\n');
+        for (const target of targets) {
+          const guild = client.guilds.cache.get(target.guildId);
+          const channel = guild?.channels?.cache?.get(target.channelId);
+          if (!channel || !('send' in channel)) continue;
+          try { await (channel as TextChannel).send(content); } catch { /**/ }
+        }
+        return { ok: true as const, warId, requestedAt };
+      },
     });
     httpServer = createServer(app);
     httpServer.listen(API_PORT, () => logInfo(`API listening on :${API_PORT}`));

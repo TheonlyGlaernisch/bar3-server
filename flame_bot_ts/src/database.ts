@@ -21,6 +21,8 @@ export interface GuildConfigDoc {
   welcome_message?: string;
   gov_panel_channel_id?: string | null;
   gov_panel_message_id?: string | null;
+  alliance_verified_at?: string | null;
+  counter_request_channel_id?: string | null;
 }
 
 export interface GuildDoc {
@@ -188,6 +190,46 @@ export class Database {
       { $set: { guild_id: guildId.toString(), alliance_id: allianceId } },
       { upsert: true }
     );
+  }
+
+  async markAllianceVerified(guildId: bigint, verifiedAt: string | null = new Date().toISOString()): Promise<void> {
+    await this._guildConfig.updateOne(
+      { guild_id: guildId.toString() },
+      { $set: { guild_id: guildId.toString(), alliance_verified_at: verifiedAt } },
+      { upsert: true }
+    );
+  }
+
+  async isAllianceVerified(guildId: bigint): Promise<boolean> {
+    const doc = await this._guildConfig.findOne({ guild_id: guildId.toString() }, { projection: { _id: 0, alliance_verified_at: 1 } });
+    return Boolean(doc?.alliance_verified_at);
+  }
+
+  async setCounterRequestChannel(guildId: bigint, channelId: string | null): Promise<void> {
+    await this._guildConfig.updateOne(
+      { guild_id: guildId.toString() },
+      { $set: { guild_id: guildId.toString(), counter_request_channel_id: channelId != null ? String(channelId) : null } },
+      { upsert: true }
+    );
+  }
+
+  async getCounterRequestChannel(guildId: bigint): Promise<string | null> {
+    const doc = await this._guildConfig.findOne({ guild_id: guildId.toString() }, { projection: { _id: 0, counter_request_channel_id: 1 } });
+    return doc?.counter_request_channel_id != null ? String(doc.counter_request_channel_id) : null;
+  }
+
+  async getVerifiedGuildCounterChannelsByAlliance(allianceId: number): Promise<Array<{ guildId: string; channelId: string }>> {
+    const docs = await this._guildConfig.find(
+      {
+        alliance_id: allianceId,
+        alliance_verified_at: { $exists: true, $ne: null },
+        counter_request_channel_id: { $exists: true, $ne: null },
+      },
+      { projection: { _id: 0, guild_id: 1, counter_request_channel_id: 1 } }
+    ).toArray();
+    return docs
+      .map((d) => ({ guildId: String(d.guild_id), channelId: String(d.counter_request_channel_id) }))
+      .filter((x) => /^\d+$/.test(x.guildId) && /^\d+$/.test(x.channelId));
   }
 
   // Welcome message config helpers ----------------------------------------
