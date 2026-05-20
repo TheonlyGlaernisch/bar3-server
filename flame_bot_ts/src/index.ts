@@ -624,17 +624,38 @@ async function hasMemberAccess(i: ChatInputCommandInteraction, _db: Database): P
   const member = i.member;
   if ('permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator')) return true;
   const cfg = await _db.getGovRoles(BigInt(i.guildId));
-  const memberRoleId = cfg.member ?? MEMBER_ROLE_ID;
-  if (!memberRoleId) return true; // not configured — no restriction
+  const memberRoleId = (cfg.member ?? MEMBER_ROLE_ID ?? '').trim();
+  if (!memberRoleId || !/^\d+$/.test(memberRoleId)) return true; // not configured — no restriction
   const roleSet = new Set(
     (member.roles as any)?.cache ? Array.from((member.roles as any).cache.keys()) : (member.roles as any) ?? [],
   );
-  if (roleSet.has(String(memberRoleId))) return true;
+  if (roleSet.has(memberRoleId)) return true;
   for (const key of ['leader', '2ic', 'econ', 'econ_gov', 'milcom', 'milcom_gov', 'ia', 'ia_asst', 'gov'] as const) {
     const roleId = cfg[key];
     if (roleId && roleSet.has(String(roleId))) return true;
   }
   return false;
+}
+
+function formatMentionsForEmbed(memberIds: string[]): string {
+  if (!memberIds.length) return '\u200B';
+  const maxLen = 1024;
+  const suffixForRemaining = (count: number): string => ` … (+${count} more)`;
+  let value = '';
+  for (let i = 0; i < memberIds.length; i += 1) {
+    const mention = `<@${memberIds[i]}>`;
+    const candidate = value ? `${value} ${mention}` : mention;
+    const remaining = memberIds.length - i - 1;
+    const suffix = remaining > 0 ? suffixForRemaining(remaining) : '';
+    if ((candidate + suffix).length > maxLen) {
+      if (!value) {
+        return (mention + suffix).slice(0, maxLen);
+      }
+      return (value + suffix).slice(0, maxLen);
+    }
+    value = candidate;
+  }
+  return value || '\u200B';
 }
 
 /** Render a welcome-message template into final message content. */
@@ -2051,7 +2072,11 @@ async function main(): Promise<void> {
           const membersWithRole = role.members.filter((m) => !m.user.bot);
           total += membersWithRole.size;
           const value = membersWithRole.size
-            ? [...membersWithRole.values()].sort((a, b) => a.displayName.localeCompare(b.displayName)).map((m) => `<@${m.id}>`).join(' ')
+            ? formatMentionsForEmbed(
+              [...membersWithRole.values()]
+                .sort((a, b) => a.displayName.localeCompare(b.displayName))
+                .map((m) => m.id)
+            )
             : '\u200B';
           embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label} (${membersWithRole.size})`, value, inline: false });
         }
@@ -2190,8 +2215,14 @@ ${resourceLines}
       if (commandName === 'admin_alliance_set') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        const guildId = BigInt(interaction.guildId);
         const allianceId = interaction.options.getInteger('alliance_id', true);
-        await db.setAllianceId(BigInt(interaction.guildId), allianceId);
+        const previousAllianceId = await db.getAllianceId(guildId);
+        await db.setAllianceId(guildId, allianceId);
+        if (previousAllianceId !== allianceId) {
+          await db.markAllianceVerified(guildId, null);
+          return void interaction.reply({ content: `Primary alliance set to ${allianceId}. Alliance verification has been reset; run \`/verify_alliance_server\` again.` });
+        }
         return void interaction.reply({ content: `Primary alliance set to ${allianceId}.` });
       }
       if (commandName === 'admin_alliance_show') {
