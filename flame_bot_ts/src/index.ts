@@ -594,7 +594,6 @@ async function hasGovAccess(i: ChatInputCommandInteraction, db: Database, roleKe
   if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
   const member = i.member;
   if ('permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator')) return true;
-  const cfg = await db.getGovRoles(BigInt(i.guildId));
   if (!('roles' in member) || !member.roles) return false;
   const roleSet = new Set((member.roles as { cache?: Map<string, unknown> }).cache ? Array.from((member.roles as any).cache.keys()) : (member.roles as any));
   for (const key of roleKeys) {
@@ -614,24 +613,17 @@ function hasAdminCommandAccess(i: ChatInputCommandInteraction): boolean {
 /** Check whether the caller may use member-gated commands.
  * Passes if admin, the configured "member" role is unset, caller holds the
  * "member" role, or caller holds any gov role. */
-async function hasMemberAccess(i: ChatInputCommandInteraction, db: Database): Promise<boolean> {
+async function hasMemberAccess(i: ChatInputCommandInteraction, _db: Database): Promise<boolean> {
   if (!i.inGuild() || !i.guildId || !i.member) return false;
   if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
   const member = i.member;
   if ('permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator')) return true;
-  const cfg = await db.getGovRoles(BigInt(i.guildId));
-  const configuredMemberRoleId = (cfg as any)['member'];
-  const memberRoleId = configuredMemberRoleId || MEMBER_ROLE_ID;
+  const memberRoleId = MEMBER_ROLE_ID;
   if (!memberRoleId) return true; // not configured — no restriction
   const roleSet = new Set(
     (member.roles as any)?.cache ? Array.from((member.roles as any).cache.keys()) : (member.roles as any) ?? [],
   );
   if (roleSet.has(String(memberRoleId))) return true;
-  const govKeys: GovRoleKey[] = ['leader', '2ic', 'econ', 'econ_gov', 'milcom', 'milcom_gov', 'ia', 'ia_asst', 'gov'];
-  for (const key of govKeys) {
-    const rid = (cfg as any)[key];
-    if (rid != null && roleSet.has(String(rid))) return true;
-  }
   return false;
 }
 
