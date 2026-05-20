@@ -15,6 +15,7 @@ import {
   SlashCommandBuilder,
   TextChannel,
   PermissionFlagsBits,
+  MessageFlags,
 } from 'discord.js';
 import { createServer, Server } from 'http';
 
@@ -891,7 +892,7 @@ async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: Pn
         const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
         const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
         collector.on('collect', async (btn) => {
-          await btn.deferReply({ ephemeral: true });
+          await btn.deferReply({ flags: MessageFlags.Ephemeral });
           try {
             const wars = await client.getActiveWarsForNation(nation.nationId);
             wars.sort((a, b) => b.warId - a.warId);
@@ -916,7 +917,7 @@ async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: Pn
       const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
       const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
       collector.on('collect', async (btn) => {
-        await btn.deferReply({ ephemeral: true });
+        await btn.deferReply({ flags: MessageFlags.Ephemeral });
         try {
           const wars = await client.getActiveWarsForNation(nation!.nationId);
           wars.sort((a, b) => b.warId - a.warId);
@@ -958,7 +959,7 @@ async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: Pn
     const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
     const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
     collector.on('collect', async (btn) => {
-      await btn.deferReply({ ephemeral: true });
+      await btn.deferReply({ flags: MessageFlags.Ephemeral });
       try {
         const wars = await client.getActiveWarsForNation(nation!.nationId);
         wars.sort((a, b) => b.warId - a.warId);
@@ -984,7 +985,7 @@ async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: Pn
     const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
     const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
     collector.on('collect', async (btn) => {
-      await btn.deferReply({ ephemeral: true });
+      await btn.deferReply({ flags: MessageFlags.Ephemeral });
       try {
         const wars = await client.getActiveWarsForNation(nation!.nationId);
         wars.sort((a, b) => b.warId - a.warId);
@@ -1012,7 +1013,7 @@ async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: Pn
     const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
     const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
     collector.on('collect', async (btn) => {
-      await btn.deferReply({ ephemeral: true });
+      await btn.deferReply({ flags: MessageFlags.Ephemeral });
       try {
         const wars = await client.getActiveWarsForNation(nation!.nationId);
         wars.sort((a, b) => b.warId - a.warId);
@@ -1165,7 +1166,7 @@ async function handleAllianceMembers(i: ChatInputCommandInteraction, db: Databas
   const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
   collector.on('collect', async (btn) => {
     if (btn.user.id !== i.user.id) {
-      await btn.reply({ content: 'Only the command caller can paginate this view.', ephemeral: true });
+      await btn.reply({ content: 'Only the command caller can paginate this view.', flags: MessageFlags.Ephemeral });
       return;
     }
     if (btn.customId === 'prev' && page > 0) page -= 1;
@@ -1223,7 +1224,7 @@ function buildSlotsPage(
 }
 
 async function handleSlots(i: ChatInputCommandInteraction, db: Database, pnw: PnWClient): Promise<void> {
-  if (!i.guildId) return void i.reply({ content: 'Guild only command.', ephemeral: true });
+  if (!i.guildId) return void i.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
   await i.deferReply();
   const allianceIds = await db.getSlotsAlliances(BigInt(i.guildId));
   if (!allianceIds.length) {
@@ -1279,7 +1280,7 @@ async function handleSlots(i: ChatInputCommandInteraction, db: Database, pnw: Pn
   const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
   collector.on('collect', async (btn) => {
     if (btn.user.id !== i.user.id) {
-      await btn.reply({ content: 'Only the command caller can use these buttons.', ephemeral: true });
+      await btn.reply({ content: 'Only the command caller can use these buttons.', flags: MessageFlags.Ephemeral });
       return;
     }
     const totalPages = Math.max(1, Math.ceil(members.length / SLOTS_PAGE_SIZE));
@@ -1775,7 +1776,7 @@ async function main(): Promise<void> {
       const retryAfter = Math.max(0, DISCORD_COMMAND_COOLDOWN_SECONDS - (now - lastUsed));
       return void interaction.reply({
         embeds: [new EmbedBuilder().setDescription(`⏳ You're sending commands too quickly. Please wait **${retryAfter.toFixed(1)}s** and try again.`).setColor(0xE74C3C)],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
     commandCooldowns.set(interaction.user.id, now);
@@ -1787,7 +1788,7 @@ async function main(): Promise<void> {
       }
       if (commandName === 'unregister') {
         const deleted = await db.delete(BigInt(interaction.user.id));
-        return void interaction.reply({ content: deleted ? 'Unregistered.' : 'No registration found.', ephemeral: true });
+        return void interaction.reply({ content: deleted ? 'Unregistered.' : 'No registration found.', flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'whois') return await handleWhois(interaction, db, pnw, pnwTest, false);
       if (commandName === 'test_whois') return await handleWhois(interaction, db, pnw, pnwTest, true);
@@ -1798,72 +1799,72 @@ async function main(): Promise<void> {
       if (commandName === 'slots') return await handleSlots(interaction, db, pnw);
 
       if (commandName === 'config_slots_set') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const raw = interaction.options.getString('alliance_ids', true);
         const ids = raw.split(',').map((x) => parseInt(x.trim(), 10)).filter((n) => Number.isFinite(n) && n > 0);
-        if (!ids.length) return void interaction.reply({ content: 'No valid alliance IDs provided.', ephemeral: true });
+        if (!ids.length) return void interaction.reply({ content: 'No valid alliance IDs provided.', flags: MessageFlags.Ephemeral });
         await db.setSlotsAlliances(BigInt(interaction.guildId), ids);
         return void interaction.reply({ content: `Configured slots alliances: ${ids.join(', ')}` });
       }
       if (commandName === 'config_slots_show') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         const ids = await db.getSlotsAlliances(BigInt(interaction.guildId));
-        return void interaction.reply({ content: ids.length ? `Configured slots alliances: ${ids.join(', ')}` : 'No slot alliances configured.', ephemeral: true });
+        return void interaction.reply({ content: ids.length ? `Configured slots alliances: ${ids.join(', ')}` : 'No slot alliances configured.', flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'config_slots_clear') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         await db.setSlotsAlliances(BigInt(interaction.guildId), []);
         return void interaction.reply({ content: 'Cleared slot alliances.' });
       }
 
       if (commandName === 'setup_war_alerts_add') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const channel = interaction.options.getChannel('channel', true);
         const minCities = interaction.options.getInteger('min_cities');
         const maxCities = interaction.options.getInteger('max_cities');
         const allianceId = await db.getAllianceId(BigInt(interaction.guildId));
         if (!allianceId) {
-          return void interaction.reply({ content: 'No primary alliance configured for this server. An admin must run `/admin_alliance_set` first.', ephemeral: true });
+          return void interaction.reply({ content: 'No primary alliance configured for this server. An admin must run `/admin_alliance_set` first.', flags: MessageFlags.Ephemeral });
         }
         if (minCities != null && minCities < 1) {
-          return void interaction.reply({ content: 'min_cities must be at least 1.', ephemeral: true });
+          return void interaction.reply({ content: 'min_cities must be at least 1.', flags: MessageFlags.Ephemeral });
         }
         if (maxCities != null && maxCities < 1) {
-          return void interaction.reply({ content: 'max_cities must be at least 1.', ephemeral: true });
+          return void interaction.reply({ content: 'max_cities must be at least 1.', flags: MessageFlags.Ephemeral });
         }
         if (minCities != null && maxCities != null && minCities > maxCities) {
-          return void interaction.reply({ content: 'min_cities must be ≤ max_cities.', ephemeral: true });
+          return void interaction.reply({ content: 'min_cities must be ≤ max_cities.', flags: MessageFlags.Ephemeral });
         }
         await db.addWarAlertSubscription(BigInt(interaction.guildId), BigInt(channel.id), minCities, maxCities);
         return void interaction.reply({ content: `War alerts enabled for <#${channel.id}> (${minCities ?? 'any'}-${maxCities ?? 'any'} cities).` });
       }
       if (commandName === 'setup_war_alerts_remove') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const channel = interaction.options.getChannel('channel', true);
         const removed = await db.removeWarAlertSubscription(BigInt(interaction.guildId), BigInt(channel.id));
-        return void interaction.reply({ content: removed ? `War alerts removed from <#${channel.id}>.` : `No subscription found for <#${channel.id}>.`, ephemeral: true });
+        return void interaction.reply({ content: removed ? `War alerts removed from <#${channel.id}>.` : `No subscription found for <#${channel.id}>.`, flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'setup_war_alerts_list') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
         const subs = await db.getWarAlertSubscriptions(BigInt(interaction.guildId));
         const lines = subs.map((row) => `• <#${row.channel_id}> cities ${row.min_cities ?? 'any'}-${row.max_cities ?? 'any'}`);
-        return void interaction.reply({ content: lines.length ? lines.join('\n') : 'No war alert subscriptions configured.', ephemeral: true });
+        return void interaction.reply({ content: lines.length ? lines.join('\n') : 'No war alert subscriptions configured.', flags: MessageFlags.Ephemeral });
       }
 
       if (commandName === 'send') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        await interaction.deferReply({ ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         if (!await hasMemberAccess(interaction, db)) {
-          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], ephemeral: true });
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
         }
         const isAdmin = (() => {
           const m = interaction.member as any;
@@ -1871,7 +1872,7 @@ async function main(): Promise<void> {
             (m?.permissions && typeof m.permissions !== 'string' && m.permissions.has('Administrator'));
         })();
         if (!isAdmin && !await hasGovAccess(interaction, db, ['econ', 'econ_gov'])) {
-          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Economics** role to use this command.').setColor(0xE74C3C)], ephemeral: true });
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Economics** role to use this command.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
         }
         const receiverRaw = interaction.options.getString('receiver', true).trim();
         const sender = interaction.options.getString('sender')?.trim() ?? '';
@@ -1893,7 +1894,7 @@ async function main(): Promise<void> {
           if (v > 0) resources[key] = v;
         }
         if (!Object.keys(resources).length) {
-          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Please provide at least one resource amount greater than zero.').setColor(0xE74C3C)], ephemeral: true });
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Please provide at least one resource amount greater than zero.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
         }
         const transferJson = '{' + Object.entries(resources).map(([k, v]) => `${k}:${fmtAmt(v)}`).join(',') + '}';
         const locutusCmd = `/transfer resources receiver:${receiver} transfer:${transferJson} bank_note:${bankNote}`;
@@ -1911,13 +1912,13 @@ async function main(): Promise<void> {
       }
 
       if (commandName === 'suggestion') {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         if (!await hasMemberAccess(interaction, db)) {
-          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], ephemeral: true });
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
         }
         const content = interaction.options.getString('content', true).trim();
-        if (!content) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Suggestion content cannot be empty.').setColor(0xE74C3C)], ephemeral: true });
-        if (content.length > 1800) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Suggestion is too long. Please keep it under 1800 characters.').setColor(0xE74C3C)], ephemeral: true });
+        if (!content) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Suggestion content cannot be empty.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
+        if (content.length > 1800) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Suggestion is too long. Please keep it under 1800 characters.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
         const SUGGESTION_DM_USERNAMES = ['glaernisch', 'glaernischtheonly'];
         const dmMessage = `📬 **New /suggestion submission**\nFrom: ${interaction.user} (ID: ${interaction.user.id})\nGuild: ${interaction.guild?.name ?? 'DM/Unknown'}\nContent:\n${content}`;
         const sentTo: string[] = [];
@@ -1942,13 +1943,13 @@ async function main(): Promise<void> {
           : '⚠️ No suggestion DMs were delivered.');
         if (missing.length) statusLines.push(`ℹ️ Could not DM: ${missing.map((u) => `\`${u}\``).join(', ')}.`);
         console.log(`Suggestion from ${interaction.user.id}: ${content}`);
-        return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(statusLines.join('\n')).setColor(0x2ECC71)], ephemeral: true });
+        return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(statusLines.join('\n')).setColor(0x2ECC71)], flags: MessageFlags.Ephemeral });
       }
 
 
       if (commandName === 'roles_setup') {
-        if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const current = await db.getGovRoles(BigInt(interaction.guildId));
         const fields: Array<[string, string]> = [
           ['leader','leader'], ['two_ic','2ic'], ['econ','econ'], ['econ_gov','econ_gov'],
@@ -1975,10 +1976,10 @@ async function main(): Promise<void> {
             lines.push(`**${label}:** *(not set)*`);
           }
         }
-        return void interaction.reply({ content: lines.join('\n'), ephemeral: true });
+        return void interaction.reply({ content: lines.join('\n'), flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'gov') {
-        if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         const cfg = await db.getGovRoles(BigInt(interaction.guildId));
         const GOV_DEPT_LABELS: Record<string, string> = {
           leader: 'Leader', '2ic': 'Second in Command', econ: 'Economics', econ_gov: 'Economics Gov',
@@ -2012,21 +2013,21 @@ async function main(): Promise<void> {
       }
 
       if (commandName === 'roles_show') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         const roles = await db.getGovRoles(BigInt(interaction.guildId));
         const text = Object.entries(roles).map(([k,v]) => `• ${k}: ${v ? `<@&${v}>` : 'not set'}`).join('\n');
-        return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('Configured gov roles').setDescription(text)] , ephemeral: true});
+        return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('Configured gov roles').setDescription(text)] , flags: MessageFlags.Ephemeral});
       }
       if (commandName === 'setup_grant_channel') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['econ','econ_gov','ia','ia_asst'])) return void interaction.reply({ content: 'You need Economics or Internal Affairs gov access to use this command.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['econ','econ_gov','ia','ia_asst'])) return void interaction.reply({ content: 'You need Economics or Internal Affairs gov access to use this command.', flags: MessageFlags.Ephemeral });
         const ch = interaction.options.getChannel('channel', true);
         await db.setGrantChannel(BigInt(interaction.guildId), ch.id);
         return void interaction.reply({ content: `Grant channel set to <#${ch.id}>.` });
       }
       if (commandName === 'request_grant') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         const note = interaction.options.getString('note', true);
         const resources: Record<string, number> = {
           money: interaction.options.getNumber('money') ?? 0,
@@ -2043,10 +2044,10 @@ async function main(): Promise<void> {
           aluminum: interaction.options.getNumber('aluminum') ?? 0,
         };
         const grantChannelId = await db.getGrantChannel(BigInt(interaction.guildId));
-        if (!grantChannelId) return void interaction.reply({ content: 'Grant channel is not configured.', ephemeral: true });
+        if (!grantChannelId) return void interaction.reply({ content: 'Grant channel is not configured.', flags: MessageFlags.Ephemeral });
         const guild = interaction.guild;
         const ch = guild?.channels.cache.get(String(grantChannelId)) as TextChannel | undefined;
-        if (!ch) return void interaction.reply({ content: 'Configured grant channel not found.', ephemeral: true });
+        if (!ch) return void interaction.reply({ content: 'Configured grant channel not found.', flags: MessageFlags.Ephemeral });
         const govRoles = await db.getGovRoles(BigInt(interaction.guildId));
         const pingRole = govRoles.econ_gov ?? govRoles.econ;
         const bankNote = note.startsWith('#') ? note : `#${note.replace(/\s+/g,'_')}`;
@@ -2067,28 +2068,28 @@ ${resourceLines}
 
 \`\`\`${transferCmd}\`\`\``)],
         });
-        return void interaction.reply({ content: `Grant request submitted in <#${grantChannelId}>.`, ephemeral: true });
+        return void interaction.reply({ content: `Grant request submitted in <#${grantChannelId}>.`, flags: MessageFlags.Ephemeral });
       }
 
       if (commandName === 'admin_alliance_set') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const allianceId = interaction.options.getInteger('alliance_id', true);
         await db.setAllianceId(BigInt(interaction.guildId), allianceId);
         return void interaction.reply({ content: `Primary alliance set to ${allianceId}.` });
       }
       if (commandName === 'admin_alliance_show') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         const allianceId = await db.getAllianceId(BigInt(interaction.guildId));
-        return void interaction.reply({ content: allianceId ? `Primary alliance: ${allianceId}` : 'No primary alliance configured.', ephemeral: true });
+        return void interaction.reply({ content: allianceId ? `Primary alliance: ${allianceId}` : 'No primary alliance configured.', flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'admin_api_key_set') {
-        if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const apiKey = interaction.options.getString('api_key', true).trim();
-        if (apiKey.length === 0) return void interaction.reply({ content: 'API key cannot be empty.', ephemeral: true });
+        if (apiKey.length === 0) return void interaction.reply({ content: 'API key cannot be empty.', flags: MessageFlags.Ephemeral });
         await db.setPnwApiKey(apiKey);
         pnw.apiKey = apiKey;
-        return void interaction.reply({ content: 'PnW API key updated successfully.', ephemeral: true });
+        return void interaction.reply({ content: 'PnW API key updated successfully.', flags: MessageFlags.Ephemeral });
       }
 
 
@@ -2222,8 +2223,8 @@ ${resourceLines}
       }
 
       if (commandName === 'color') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: '❌ You need the **Member** role to use this command.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: '❌ You need the **Member** role to use this command.', flags: MessageFlags.Ephemeral });
         await interaction.deferReply();
         const allianceId = await db.getAllianceId(BigInt(interaction.guildId));
         if (!allianceId) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ No primary alliance configured. An admin can use `/admin_alliance_set` to set one.').setColor(0x3498DB)] });
@@ -2264,10 +2265,10 @@ ${resourceLines}
         return void interaction.followUp({ embeds: [embed] });
       }
       if (commandName === 'damage_leaderboard') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
         const allianceId = await db.getAllianceId(BigInt(interaction.guildId));
-        if (!allianceId) return void interaction.reply({ content: 'Primary alliance is not configured.', ephemeral: true });
+        if (!allianceId) return void interaction.reply({ content: 'Primary alliance is not configured.', flags: MessageFlags.Ephemeral });
         await interaction.deferReply();
         const after = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
         let damageData: Map<number, Record<string, unknown>>;
@@ -2383,7 +2384,7 @@ ${resourceLines}
         const lbMsg = await interaction.followUp({ embeds: [buildLbEmbed(sorted, lbPage, sortMode)], components: buildLbRow(sorted, lbPage, sortMode) });
         const lbCollector = lbMsg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
         lbCollector.on('collect', async (btn) => {
-          if (btn.user.id !== interaction.user.id) { await btn.reply({ content: 'Only the command caller can use these buttons.', ephemeral: true }); return; }
+          if (btn.user.id !== interaction.user.id) { await btn.reply({ content: 'Only the command caller can use these buttons.', flags: MessageFlags.Ephemeral }); return; }
           if (btn.customId.startsWith('lb_sort_')) {
             sortMode = btn.customId.replace('lb_sort_', '') as SortMode;
             lbPage = 0;
@@ -2398,63 +2399,63 @@ ${resourceLines}
 
 
       if (commandName === 'welcome_set') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const message = interaction.options.getString('message', true);
         await db.setWelcomeConfig(BigInt(interaction.guildId), { message });
         return void interaction.reply({ content: 'Welcome message updated.' });
       }
       if (commandName === 'welcome_channel_set') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const ch = interaction.options.getChannel('channel', true);
         await db.setWelcomeConfig(BigInt(interaction.guildId), { channelId: ch.id });
         return void interaction.reply({ content: `Welcome channel set to <#${ch.id}>.` });
       }
       if (commandName === 'welcome_enable') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         await db.setWelcomeConfig(BigInt(interaction.guildId), { enabled: true });
         return void interaction.reply({ content: 'Welcome messages enabled.' });
       }
       if (commandName === 'welcome_disable') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         await db.setWelcomeConfig(BigInt(interaction.guildId), { enabled: false });
         return void interaction.reply({ content: 'Welcome messages disabled.' });
       }
       if (commandName === 'welcome_show') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         const cfg = await db.getWelcomeConfig(BigInt(interaction.guildId));
         return void interaction.reply({
           embeds: [new EmbedBuilder().setTitle('Welcome config').setDescription(`Enabled: **${cfg.enabled ? 'yes' : 'no'}**
 Channel: ${cfg.channel_id ? `<#${cfg.channel_id}>` : 'not set'}
 Message: ${cfg.message}`)],
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
       if (commandName === 'setup_recruiter_add') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov','ia','ia_asst'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov','ia','ia_asst'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const ch = interaction.options.getChannel('channel', true);
         await db.addRecruiterSubscription(BigInt(interaction.guildId), BigInt(ch.id));
         return void interaction.reply({ content: `Recruiter subscription added for <#${ch.id}>.` });
       }
       if (commandName === 'setup_recruiter_remove') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
-        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov','ia','ia_asst'])) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['milcom','milcom_gov','ia','ia_asst'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const ch = interaction.options.getChannel('channel', true);
         const removed = await db.removeRecruiterSubscription(BigInt(interaction.guildId), BigInt(ch.id));
-        return void interaction.reply({ content: removed ? `Recruiter subscription removed from <#${ch.id}>.` : `No recruiter subscription found for <#${ch.id}>.` , ephemeral: true});
+        return void interaction.reply({ content: removed ? `Recruiter subscription removed from <#${ch.id}>.` : `No recruiter subscription found for <#${ch.id}>.` , flags: MessageFlags.Ephemeral});
       }
       if (commandName === 'setup_recruiter_list') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
         const subs = await db.getRecruiterSubscriptions(BigInt(interaction.guildId));
         const text = subs.map((r) => `• <#${r.channel_id}>`).join('\n');
-        return void interaction.reply({ content: text || 'No recruiter subscriptions configured.', ephemeral: true });
+        return void interaction.reply({ content: text || 'No recruiter subscriptions configured.', flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'infra') {
         const from = interaction.options.getNumber('from', true);
@@ -2462,9 +2463,9 @@ Message: ${cfg.message}`)],
         const cities = interaction.options.getInteger('cities') ?? 1;
         const urbanPlanning = interaction.options.getBoolean('urban_planning') ?? false;
         const advancedUrbanPlanning = interaction.options.getBoolean('advanced_urban_planning') ?? false;
-        if (to <= from) return void interaction.reply({ content: 'Target infra must be greater than current infra.', ephemeral: true });
-        if (from < 0 || to > 100_000) return void interaction.reply({ content: 'Infrastructure values must be between 0 and 100,000.', ephemeral: true });
-        if (cities < 1) return void interaction.reply({ content: 'Number of cities must be at least 1.', ephemeral: true });
+        if (to <= from) return void interaction.reply({ content: 'Target infra must be greater than current infra.', flags: MessageFlags.Ephemeral });
+        if (from < 0 || to > 100_000) return void interaction.reply({ content: 'Infrastructure values must be between 0 and 100,000.', flags: MessageFlags.Ephemeral });
+        if (cities < 1) return void interaction.reply({ content: 'Number of cities must be at least 1.', flags: MessageFlags.Ephemeral });
         const baseCostPerCity = calculateInfraCost(from, to);
         let discount = 0.0;
         const discountParts: string[] = [];
@@ -2495,7 +2496,7 @@ Message: ${cfg.message}`)],
         const governmentSupportAgency = interaction.options.getBoolean('government_support_agency') ?? false;
 
         if (!await hasMemberAccess(interaction, db)) {
-          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], ephemeral: true });
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
         }
         if (current < 0) {
           return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Current city count must be 0 or greater.').setColor(0xE74C3C)] });
@@ -2642,8 +2643,8 @@ Message: ${cfg.message}`)],
         return void interaction.followUp({ embeds: [revEmbed] });
       }
       if (commandName === 'war_range_targets') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
         await interaction.deferReply();
         const targetUser = interaction.options.getUser('user') ?? interaction.user;
         let me: Nation | null = null;
@@ -2716,7 +2717,7 @@ Message: ${cfg.message}`)],
         if (totalWrPages <= 1) return;
         const wrCollector = wrMsg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 300_000 });
         wrCollector.on('collect', async (btn) => {
-          if (btn.user.id !== interaction.user.id) { await btn.reply({ content: 'Only the command caller can use these buttons.', ephemeral: true }); return; }
+          if (btn.user.id !== interaction.user.id) { await btn.reply({ content: 'Only the command caller can use these buttons.', flags: MessageFlags.Ephemeral }); return; }
           if (btn.customId === 'wr_prev' && wrPage > 0) wrPage -= 1;
           else if (btn.customId === 'wr_next' && wrPage < totalWrPages - 1) wrPage += 1;
           await btn.update({ embeds: [buildWrEmbed(wrPage)], components: [buildWrRow(wrPage)] });
@@ -2726,11 +2727,11 @@ Message: ${cfg.message}`)],
       }
 
       if (commandName === 'spy_target_find') {
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
         const alliancesRaw = interaction.options.getString('alliances', true);
         const ignoreRange = interaction.options.getBoolean('ignore_score_range') ?? false;
         const names = alliancesRaw.split(',').map(s => s.trim()).filter(Boolean);
-        if (!names.length) return void interaction.reply({ content: 'Please provide at least one alliance name or ID.', ephemeral: true });
+        if (!names.length) return void interaction.reply({ content: 'Please provide at least one alliance name or ID.', flags: MessageFlags.Ephemeral });
         await interaction.deferReply();
         const allianceIds: number[] = [];
         const allianceNames: string[] = [];
@@ -2741,7 +2742,7 @@ Message: ${cfg.message}`)],
           if (!info) { notFound.push(name); } else if (!allianceIds.includes(info.allianceId)) { allianceIds.push(info.allianceId); allianceNames.push(info.name); }
         }
         if (notFound.length) {
-          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Alliance${notFound.length > 1 ? 's' : ''} not found: ${notFound.map(n => `**${n}**`).join(', ')}`).setColor(0xE74C3C)], ephemeral: true });
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Alliance${notFound.length > 1 ? 's' : ''} not found: ${notFound.map(n => `**${n}**`).join(', ')}`).setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
         }
         let spyMembers: Nation[];
         try { spyMembers = await pnw.getAllianceMembers(allianceIds); } catch (err) {
@@ -2750,7 +2751,7 @@ Message: ${cfg.message}`)],
         }
         spyMembers = spyMembers.filter(m => !['APPLICANT', 'NOALLIANCE', ''].includes(m.alliancePosition));
         spyMembers.sort((a, b) => b.numCities - a.numCities);
-        if (!spyMembers.length) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ No active members found in the given alliances.').setColor(0x3498DB)], ephemeral: true });
+        if (!spyMembers.length) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('ℹ️ No active members found in the given alliances.').setColor(0x3498DB)], flags: MessageFlags.Ephemeral });
         let spyRange: [number, number] | null = null;
         if (!ignoreRange) {
           const reg = await db.getByDiscordId(BigInt(interaction.user.id));
@@ -2788,7 +2789,7 @@ Message: ${cfg.message}`)],
         if (totalSpyPages <= 1) return;
         const spyCollector = spyMsg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
         spyCollector.on('collect', async (btn) => {
-          if (btn.user.id !== interaction.user.id) { await btn.reply({ content: 'Only the command caller can use these buttons.', ephemeral: true }); return; }
+          if (btn.user.id !== interaction.user.id) { await btn.reply({ content: 'Only the command caller can use these buttons.', flags: MessageFlags.Ephemeral }); return; }
           if (btn.customId === 'spy_prev' && spyPage > 0) spyPage -= 1;
           else if (btn.customId === 'spy_next' && spyPage < totalSpyPages - 1) spyPage += 1;
           await btn.update({ embeds: [buildSpyEmbed(spyPage)], components: [buildSpyRow(spyPage)] });
@@ -2798,8 +2799,8 @@ Message: ${cfg.message}`)],
       }
 
       if (commandName === 'missile_targets_find') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
         const ignoreRange = interaction.options.getBoolean('ignore_score_range') ?? false;
         await interaction.deferReply();
         const allianceIds = await db.getSlotsAlliances(BigInt(interaction.guildId));
@@ -2857,43 +2858,43 @@ Message: ${cfg.message}`)],
 
 
       if (commandName === 'admin_sync_commands') {
-        if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const appId = client.application?.id;
-        if (!appId) return void interaction.reply({ content: 'Application not ready.', ephemeral: true });
+        if (!appId) return void interaction.reply({ content: 'Application not ready.', flags: MessageFlags.Ephemeral });
         const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         if (interaction.guildId) {
           await rest.put(Routes.applicationGuildCommands(appId, interaction.guildId), { body: commands });
-          return void interaction.reply({ content: 'Guild commands synced.', ephemeral: true });
+          return void interaction.reply({ content: 'Guild commands synced.', flags: MessageFlags.Ephemeral });
         }
         await rest.put(Routes.applicationCommands(appId), { body: commands });
-        return void interaction.reply({ content: 'Global commands synced.', ephemeral: true });
+        return void interaction.reply({ content: 'Global commands synced.', flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'admin_clear_guild_commands') {
-        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', ephemeral: true });
-        if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', ephemeral: true });
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const appId = client.application?.id;
-        if (!appId) return void interaction.reply({ content: 'Application not ready.', ephemeral: true });
+        if (!appId) return void interaction.reply({ content: 'Application not ready.', flags: MessageFlags.Ephemeral });
         const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         await rest.put(Routes.applicationGuildCommands(appId, interaction.guildId), { body: [] });
-        return void interaction.reply({ content: 'Cleared guild commands for this server.', ephemeral: true });
+        return void interaction.reply({ content: 'Cleared guild commands for this server.', flags: MessageFlags.Ephemeral });
       }
 
       if (commandName === 'help') {
         if (Math.floor(Math.random() * 3) === 0) {
           return void interaction.reply({ content: 'bot is striking for its rights' });
         }
-        return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('flame_bot commands').setDescription(renderCommandHelp())], ephemeral: true });
+        return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('flame_bot commands').setDescription(renderCommandHelp())], flags: MessageFlags.Ephemeral });
       }
 
       logWarn(`[commands] Unhandled slash command: ${commandName} (raw: ${interaction.commandName})`);
       return void interaction.reply({
         content: `This command is not handled yet (\`${commandName}\`). Please run \`/admin_sync_commands\` and try again.`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unexpected error';
-      if (interaction.deferred || interaction.replied) await interaction.followUp({ content: msg, ephemeral: true });
-      else await interaction.reply({ content: msg, ephemeral: true });
+      if (interaction.deferred || interaction.replied) await interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
+      else await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
     }
   });
 
