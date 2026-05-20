@@ -34,9 +34,9 @@ function parseSessionData(data: unknown): SessionData | null {
   const authenticated = source.authenticated === true;
   const roles: SessionData['roles'] = {
     verified: sourceRoles.verified === true,
-    bar3Client: sourceRoles.bar3_client === true || sourceRoleNames.includes('user'),
-    bar3Server: sourceRoles.bar3_server === true || sourceRoleNames.includes('user'),
-    memberGuild: sourceRoles.member_guild === true || sourceRoleNames.includes('member'),
+    bar3Client: sourceRoles.bar3_client === true || sourceRoles.bar3Client === true || sourceRoleNames.includes('user'),
+    bar3Server: sourceRoles.bar3_server === true || sourceRoles.bar3Server === true || sourceRoleNames.includes('user'),
+    memberGuild: sourceRoles.member_guild === true || sourceRoles.memberGuild === true || sourceRoleNames.includes('member'),
   };
   return {
     authenticated,

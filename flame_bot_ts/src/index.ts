@@ -32,6 +32,8 @@ import {
   DISCORD_ENABLE_GUILD_MEMBERS_INTENT,
   GUILD_ID,
   LOG_LEVEL,
+  MEMBER_GUILD_ID,
+  MEMBER_ROLE_ID,
   MONGODB_URI,
   PNW_API_KEY,
   PNW_TEST_API_KEY,
@@ -618,7 +620,8 @@ async function hasMemberAccess(i: ChatInputCommandInteraction, db: Database): Pr
   const member = i.member;
   if ('permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator')) return true;
   const cfg = await db.getGovRoles(BigInt(i.guildId));
-  const memberRoleId = (cfg as any)['member'];
+  const configuredMemberRoleId = (cfg as any)['member'];
+  const memberRoleId = configuredMemberRoleId || MEMBER_ROLE_ID;
   if (!memberRoleId) return true; // not configured — no restriction
   const roleSet = new Set(
     (member.roles as any)?.cache ? Array.from((member.roles as any).cache.keys()) : (member.roles as any) ?? [],
@@ -2020,7 +2023,6 @@ async function main(): Promise<void> {
         if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         await interaction.deferReply();
         const cfg = await db.getGovRoles(BigInt(interaction.guildId));
-        await interaction.guild.members.fetch();
         const GOV_DEPT_LABELS: Record<string, string> = {
           leader: 'Leader', '2ic': 'Second in Command', econ: 'Economics', econ_gov: 'Economics Gov',
           milcom: 'Military Command', milcom_gov: 'Military Command Gov', ia: 'Internal Affairs',
@@ -2989,9 +2991,6 @@ Message: ${cfg.message}`)],
       }
 
       if (commandName === 'help') {
-        if (Math.floor(Math.random() * 3) === 0) {
-          return void interaction.reply({ content: 'bot is striking for its rights' });
-        }
         return void interaction.reply({ embeds: [new EmbedBuilder().setTitle('flame_bot commands').setDescription(renderCommandHelp())], flags: MessageFlags.Ephemeral });
       }
 
@@ -3016,6 +3015,8 @@ Message: ${cfg.message}`)],
         verifiedRoleId: VERIFIED_ROLE_ID,
         bar3ClientRoleId: BAR3_CLIENT_ROLE_ID,
         bar3ServerRoleId: BAR3_SERVER_ROLE_ID,
+        memberGuildId: MEMBER_GUILD_ID,
+        memberRoleId: MEMBER_ROLE_ID,
       },
       guildsGetter: () => [...client.guilds.cache.values()],
       sendToWelcomeFn: sendToAllWelcomeChannels,
