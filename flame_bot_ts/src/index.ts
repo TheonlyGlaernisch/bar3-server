@@ -1980,7 +1980,9 @@ async function main(): Promise<void> {
       }
       if (commandName === 'gov') {
         if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        await interaction.deferReply();
         const cfg = await db.getGovRoles(BigInt(interaction.guildId));
+        await interaction.guild.members.fetch();
         const GOV_DEPT_LABELS: Record<string, string> = {
           leader: 'Leader', '2ic': 'Second in Command', econ: 'Economics', econ_gov: 'Economics Gov',
           milcom: 'Military Command', milcom_gov: 'Military Command Gov', ia: 'Internal Affairs',
@@ -2009,7 +2011,7 @@ async function main(): Promise<void> {
           embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label} (${membersWithRole.size})`, value, inline: false });
         }
         embed.setFooter({ text: `${total} government member(s) total` });
-        return void interaction.reply({ embeds: [embed] });
+        return void interaction.editReply({ embeds: [embed] });
       }
 
       if (commandName === 'roles_show') {
