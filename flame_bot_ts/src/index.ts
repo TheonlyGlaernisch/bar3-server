@@ -110,32 +110,7 @@ type CanonicalCommandName =
   | 'welcome_show'
   | 'admin_sync_commands'
   | 'admin_clear_guild_commands';
-type LegacyCommandAlias =
-  | 'admin_welcome_set_message'
-  | 'admin_welcome_set_channel'
-  | 'admin_welcome_enable'
-  | 'admin_welcome_disable'
-  | 'admin_welcome_show'
-  | 'admin_sync'
-  | 'admin_clear';
-const LEGACY_COMMAND_ALIASES: Record<LegacyCommandAlias, CanonicalCommandName> = {
-  admin_welcome_set_message: 'welcome_set',
-  admin_welcome_set_channel: 'welcome_channel_set',
-  admin_welcome_enable: 'welcome_enable',
-  admin_welcome_disable: 'welcome_disable',
-  admin_welcome_show: 'welcome_show',
-  admin_sync: 'admin_sync_commands',
-  admin_clear: 'admin_clear_guild_commands',
-};
-
-function resolveCanonicalCommandName(name: string): string {
-  return (LEGACY_COMMAND_ALIASES as Partial<Record<string, CanonicalCommandName>>)[name] ?? name;
-}
-
 function resolveCanonicalCommandNameFromInteraction(i: ChatInputCommandInteraction): string {
-  const commandName = resolveCanonicalCommandName(i.commandName);
-  if (commandName !== i.commandName) return commandName;
-
   const group = i.options.getSubcommandGroup(false);
   const sub = i.options.getSubcommand(false);
 
@@ -191,7 +166,7 @@ function resolveCanonicalCommandNameFromInteraction(i: ChatInputCommandInteracti
     }
   }
 
-  return commandName;
+  return i.commandName;
 }
 
 function getPrimaryGuild(client: Client): Guild | null {
@@ -1473,13 +1448,6 @@ async function main(): Promise<void> {
     ['verify_alliance_server', 0],
   ]);
   const commandCooldowns = new Map<string, number>();
-  // Python grouped command parity matrix (legacy path -> canonical TS command).
-  // /admin welcome set_message -> /welcome_set (alias: /admin_welcome_set_message)
-  // /admin welcome set_channel -> /welcome_channel_set (alias: /admin_welcome_set_channel)
-  // /admin welcome toggle true|false -> /welcome_enable | /welcome_disable (aliases: /admin_welcome_enable, /admin_welcome_disable)
-  // /admin welcome show -> /welcome_show (alias: /admin_welcome_show)
-  // /admin sync -> /admin_sync_commands (alias: /admin_sync)
-  // /admin clear_guild_commands -> /admin_clear_guild_commands (alias: /admin_clear)
   const commands = [
     new SlashCommandBuilder().setName('register').setDescription('Register your nation').addIntegerOption(o => o.setName('nation_id').setDescription('Nation ID').setRequired(true)),
     new SlashCommandBuilder().setName('unregister').setDescription('Unregister your nation'),
@@ -1531,11 +1499,6 @@ async function main(): Promise<void> {
     new SlashCommandBuilder().setName('welcome_enable').setDescription('Enable welcome messages'),
     new SlashCommandBuilder().setName('welcome_disable').setDescription('Disable welcome messages'),
     new SlashCommandBuilder().setName('welcome_show').setDescription('Show welcome config'),
-    new SlashCommandBuilder().setName('admin_welcome_set_message').setDescription('Compatibility alias for /welcome_set').addStringOption(o => o.setName('message').setDescription('Welcome template').setRequired(true)),
-    new SlashCommandBuilder().setName('admin_welcome_set_channel').setDescription('Compatibility alias for /welcome_channel_set').addChannelOption(o => o.setName('channel').setDescription('Welcome channel').setRequired(true)),
-    new SlashCommandBuilder().setName('admin_welcome_enable').setDescription('Compatibility alias for /welcome_enable'),
-    new SlashCommandBuilder().setName('admin_welcome_disable').setDescription('Compatibility alias for /welcome_disable'),
-    new SlashCommandBuilder().setName('admin_welcome_show').setDescription('Compatibility alias for /welcome_show'),
     new SlashCommandBuilder().setName('setup_recruiter_add').setDescription('Add recruiter subscription channel').addChannelOption(o => o.setName('channel').setDescription('Text channel').setRequired(true)),
     new SlashCommandBuilder().setName('setup_recruiter_remove').setDescription('Remove recruiter subscription channel').addChannelOption(o => o.setName('channel').setDescription('Text channel').setRequired(true)),
     new SlashCommandBuilder().setName('setup_recruiter_list').setDescription('List recruiter subscription channels'),
@@ -1561,9 +1524,7 @@ async function main(): Promise<void> {
     new SlashCommandBuilder().setName('missile_targets_find').setDescription('Top 20 nations in /slots alliances with open defensive slots, sorted by avg infra')
       .addBooleanOption(o => o.setName('ignore_score_range').setDescription('If true, do not mark nations in your personal score range')),
     new SlashCommandBuilder().setName('admin_sync_commands').setDescription('Sync slash commands now'),
-    new SlashCommandBuilder().setName('admin_sync').setDescription('Compatibility alias for /admin_sync_commands'),
     new SlashCommandBuilder().setName('admin_clear_guild_commands').setDescription('Clear guild-scoped commands'),
-    new SlashCommandBuilder().setName('admin_clear').setDescription('Compatibility alias for /admin_clear_guild_commands'),
 
     // Legacy grouped command compatibility paths (Python-style).
     new SlashCommandBuilder().setName('alliance').setDescription('Politics and War alliance commands')
