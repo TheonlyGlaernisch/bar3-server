@@ -8,7 +8,6 @@ import Analytics from '@/views/Analytics.vue'
 import AccountManager from '@/components/AccountManager.vue'
 import About from '@/views/About.vue'
 import Help from '@/views/Help.vue'
-import DiscordLogin from '@/views/DiscordLogin.vue'
 import DiscordCallback from '@/views/DiscordCallback.vue'
 import BotPanel from '@/views/BotPanel.vue'
 import Nation from '@/views/Nation.vue'
@@ -18,7 +17,7 @@ import { normalizeReturnTo } from '@/utilities/serverUrls'
 
 Vue.use(VueRouter)
 
-const DISCORD_PUBLIC_PATHS = ['/discord-login', '/auth/discord/callback'];
+const DISCORD_PUBLIC_PATHS = ['/auth/discord/callback'];
 
 const routes: Array<RouteConfig> = [
   { path: '/', redirect: '/dashboard' },
@@ -32,7 +31,6 @@ const routes: Array<RouteConfig> = [
   { path: '/alliance', name: 'Alliance', component: Alliance, meta: { requiresMemberAccess: true } },
   { path: '/about', name: 'About', component: About },
   { path: '/help', name: 'Help', component: Help },
-  { path: '/discord-login', name: 'Discord Login', component: DiscordLogin },
   { path: '/auth/discord/callback', name: 'Discord Callback', component: DiscordCallback },
   { path: '/bot', name: 'Bot Panel', component: BotPanel, meta: { requiresBotAuth: true } },
 ]
@@ -50,7 +48,13 @@ router.beforeEach(async (to, _from, next) => {
 
   const session = await discordAuth.getSession();
   if (!session.authenticated) {
-    next(`/discord-login?returnTo=${encodeURIComponent(to.fullPath)}`);
+    const loginParams = new URLSearchParams();
+    const returnTo = normalizeReturnTo(to.fullPath);
+    if (returnTo) {
+      loginParams.set('returnTo', returnTo);
+    }
+    window.location.assign(`/auth/login?${loginParams.toString()}`);
+    next(false);
     return;
   }
 

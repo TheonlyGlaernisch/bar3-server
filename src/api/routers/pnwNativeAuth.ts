@@ -1,7 +1,13 @@
 import express, { Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { IPnwNativeAccount } from '../../interfaces/schemas/PnwNativeAccountSchema';
-import { confirmVerification, login, startVerification } from '../../services/pnwNativeAuthService';
+import {
+  confirmCredentialResetVerification,
+  confirmVerification,
+  login,
+  startCredentialResetVerification,
+  startVerification,
+} from '../../services/pnwNativeAuthService';
 
 const router = express.Router();
 
@@ -20,6 +26,8 @@ function jsonRateLimit(max: number, windowMs: number) {
 const registerLimiter = jsonRateLimit(5, 15 * 60 * 1000);
 const verifyLimiter = jsonRateLimit(10, 10 * 60 * 1000);
 const loginLimiter = jsonRateLimit(10, 15 * 60 * 1000);
+const resetRequestLimiter = jsonRateLimit(5, 15 * 60 * 1000);
+const resetConfirmLimiter = jsonRateLimit(10, 10 * 60 * 1000);
 
 function parseNationId(input: unknown): number {
   if (typeof input === 'number' && Number.isFinite(input)) return Math.trunc(input);
@@ -109,6 +117,40 @@ router.post('/login', loginLimiter, async (req: Request, res: Response) => {
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
 
   const result = await login(username, password);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+
+  try {
+    await regenerateSession(req);
+    setNativeSession(req, result.account);
+    await saveSession(req);
+    res.status(200).json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'Failed to establish session.' });
+  }
+});
+
+router.post('/reset/request', resetRequestLimiter, async (req: Request, res: Response) => {
+  const nationId = parseNationId(req.body?.nationId);
+  const username = typeof req.body?.username === 'string' ? req.body.username : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+
+  const result = await startCredentialResetVerification(nationId, username, password);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+
+  res.status(200).json({ ok: true, message: 'Reset verification code sent to your Politics and War inbox.' });
+});
+
+router.post('/reset/confirm', resetConfirmLimiter, async (req: Request, res: Response) => {
+  const nationId = parseNationId(req.body?.nationId);
+  const code = typeof req.body?.code === 'string' ? req.body.code : '';
+
+  const result = await confirmCredentialResetVerification(nationId, code);
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;

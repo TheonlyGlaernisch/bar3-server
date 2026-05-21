@@ -42,7 +42,7 @@ export default class DiscordCallback extends Vue {
       // or the OAuth flow failed on the server. Show a helpful error on the
       // login page rather than silently looping back here.
       this.$router.replace(
-        '/discord-login?error=' +
+        '/auth/login?error=' +
           encodeURIComponent(
             'Sign-in failed. If you are on iOS or Safari, try opening the site in Chrome or check that third-party cookies are allowed.'
           )

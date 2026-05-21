@@ -203,6 +203,32 @@ function buildDiscordLoginHtml(errorText: string, returnTo: string): string {
           <button class="primary" type="submit">Login</button>
           <div id="loginMsg" class="msg"></div>
         </form>
+
+        <div class="divider">Need to reset username/password?</div>
+
+        <form id="resetRequestForm" autocomplete="off">
+          <div class="inline">
+            <div>
+              <label for="resetNationId">Nation ID</label>
+              <input id="resetNationId" name="nationId" inputmode="numeric" required />
+            </div>
+            <div>
+              <label for="resetUsername">New Username</label>
+              <input id="resetUsername" name="username" minlength="3" maxlength="32" required />
+            </div>
+          </div>
+          <label for="resetPassword">New Password</label>
+          <input id="resetPassword" name="password" type="password" minlength="8" maxlength="128" required />
+          <button class="primary" type="submit">Send Reset Verification Code</button>
+          <div id="resetRequestMsg" class="msg"></div>
+        </form>
+
+        <form id="resetConfirmForm" autocomplete="off" style="margin-top:14px; display:none;">
+          <label for="resetCode">Reset Verification Code</label>
+          <input id="resetCode" name="code" inputmode="numeric" minlength="10" maxlength="10" required />
+          <button class="primary" type="submit">Apply Reset and Sign In</button>
+          <div id="resetConfirmMsg" class="msg"></div>
+        </form>
       </section>
     </div>
   </div>
@@ -225,10 +251,15 @@ function buildDiscordLoginHtml(errorText: string, returnTo: string): string {
       const registerForm = document.getElementById('registerForm');
       const verifyForm = document.getElementById('verifyForm');
       const loginForm = document.getElementById('loginForm');
+      const resetRequestForm = document.getElementById('resetRequestForm');
+      const resetConfirmForm = document.getElementById('resetConfirmForm');
       const registerMsg = document.getElementById('registerMsg');
       const verifyMsg = document.getElementById('verifyMsg');
       const loginMsg = document.getElementById('loginMsg');
       const nationIdInput = document.getElementById('nationId');
+      const resetRequestMsg = document.getElementById('resetRequestMsg');
+      const resetConfirmMsg = document.getElementById('resetConfirmMsg');
+      const resetNationIdInput = document.getElementById('resetNationId');
 
       function setMsg(el, text, ok) {
         el.textContent = text || '';
@@ -291,6 +322,37 @@ function buildDiscordLoginHtml(errorText: string, returnTo: string): string {
           window.location.assign(returnTo || '/');
         } catch (error) {
           setMsg(loginMsg, error.message || 'Login failed.', false);
+        }
+      });
+
+      resetRequestForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        setMsg(resetRequestMsg, '', true);
+        setMsg(resetConfirmMsg, '', true);
+        const nationId = Number(resetNationIdInput.value);
+        const username = document.getElementById('resetUsername').value;
+        const password = document.getElementById('resetPassword').value;
+        try {
+          const data = await postJson('/auth/pnw/reset/request', { nationId, username, password });
+          setMsg(resetRequestMsg, data.message || 'Reset verification code sent.', true);
+          resetConfirmForm.style.display = 'block';
+          document.getElementById('resetCode').focus();
+        } catch (error) {
+          setMsg(resetRequestMsg, error.message || 'Reset request failed.', false);
+        }
+      });
+
+      resetConfirmForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        setMsg(resetConfirmMsg, '', true);
+        const nationId = Number(resetNationIdInput.value);
+        const code = document.getElementById('resetCode').value;
+        try {
+          await postJson('/auth/pnw/reset/confirm', { nationId, code });
+          setMsg(resetConfirmMsg, 'Credentials updated. Redirecting...', true);
+          window.location.assign(returnTo || '/');
+        } catch (error) {
+          setMsg(resetConfirmMsg, error.message || 'Reset verification failed.', false);
         }
       });
     })();

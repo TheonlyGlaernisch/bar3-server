@@ -34,6 +34,7 @@ const CLEANUP_INTERVAL_MS = 60 * 1000;
 const DUMMY_PASSWORD_HASH = '$2b$12$KIX1B5Q7E09gM08fN6hKjem9eQxQxB8N6H9Q2fYMSQ3fWXwoQ9C8W';
 
 const pendingVerifications = new Map<number, PendingVerification>();
+const pendingCredentialResets = new Map<number, PendingVerification>();
 const PNW_SUCCESS_STRING_VALUES = new Set(['true', '1', 'yes', 'ok', 'success']);
 const PNW_ERROR_FIELDS = ['general_message', 'error_msg', 'message', 'error'] as const;
 
@@ -62,6 +63,11 @@ function cleanupExpiredPending(now = nowMs()): void {
   for (const [nationId, pending] of pendingVerifications) {
     if (pending.expiresAt <= now) {
       pendingVerifications.delete(nationId);
+    }
+  }
+  for (const [nationId, pending] of pendingCredentialResets) {
+    if (pending.expiresAt <= now) {
+      pendingCredentialResets.delete(nationId);
     }
   }
 }
@@ -339,5 +345,114 @@ export async function login(
 
   account.lastLoginAt = new Date();
   await account.save();
+  return { ok: true, account };
+}
+
+export async function startCredentialResetVerification(
+  nationIdInput: number,
+  usernameInput: string,
+  passwordInput: string
+): Promise<ServiceOk | ServiceError> {
+  cleanupExpiredPending();
+
+  const nationId = parseNationId(nationIdInput);
+  const username = normalizeUsername(usernameInput || '');
+  const password = passwordInput || '';
+
+  if (nationId <= 0) {
+    return { ok: false, status: 400, error: 'Nation ID must be a positive integer.' };
+  }
+
+  const usernameError = validateUsername(username);
+  if (usernameError) {
+    return { ok: false, status: 400, error: usernameError };
+  }
+
+  const passwordError = validatePassword(password);
+  if (passwordError) {
+    return { ok: false, status: 400, error: passwordError };
+  }
+
+  const account = await PnwNativeAccount.findOne({ nationId }).exec();
+  if (!account) {
+    return { ok: false, status: 404, error: 'Nation ID is not registered.' };
+  }
+
+  const existingByUsername = await PnwNativeAccount.findOne({ username }).exec();
+  if (existingByUsername && existingByUsername.nationId !== nationId) {
+    return { ok: false, status: 409, error: 'Username is already registered.' };
+  }
+
+  const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+  const code = String(crypto.randomInt(VERIFICATION_CODE_MIN, VERIFICATION_CODE_MAX));
+
+  const sent = await sendVerificationCode(nationId, code);
+  if (!sent.ok) {
+    const suffix = sent.error ? ` ${sent.error}` : '';
+    return { ok: false, status: 502, error: `Failed to send verification code.${suffix}` };
+  }
+
+  pendingCredentialResets.set(nationId, {
+    nationId,
+    username,
+    passwordHash,
+    code,
+    expiresAt: nowMs() + CODE_TTL_MS,
+  });
+
+  return { ok: true };
+}
+
+export async function confirmCredentialResetVerification(
+  nationIdInput: number,
+  codeInput: string
+): Promise<ServiceAccountOk | ServiceError> {
+  cleanupExpiredPending();
+
+  const nationId = parseNationId(nationIdInput);
+  const code = String(codeInput || '').trim();
+
+  if (nationId <= 0) {
+    return { ok: false, status: 400, error: 'Nation ID must be a positive integer.' };
+  }
+
+  if (!new RegExp(`^\\d{${VERIFICATION_CODE_DIGITS}}$`).test(code)) {
+    return { ok: false, status: 400, error: `Verification code must be ${VERIFICATION_CODE_DIGITS} digits.` };
+  }
+
+  const pending = pendingCredentialResets.get(nationId);
+  if (!pending || pending.expiresAt <= nowMs()) {
+    pendingCredentialResets.delete(nationId);
+    return { ok: false, status: 400, error: 'Verification code expired or missing. Please request reset again.' };
+  }
+
+  const expected = Buffer.from(pending.code, 'utf8');
+  const received = Buffer.from(code, 'utf8');
+  const safeReceived = received.length === expected.length
+    ? received
+    : Buffer.alloc(expected.length, 0);
+  const isMatch = received.length === expected.length && crypto.timingSafeEqual(expected, safeReceived);
+  if (!isMatch) {
+    return { ok: false, status: 401, error: 'Invalid verification code.' };
+  }
+
+  const account = await PnwNativeAccount.findOne({ nationId }).exec();
+  if (!account) {
+    pendingCredentialResets.delete(nationId);
+    return { ok: false, status: 404, error: 'Nation ID is not registered.' };
+  }
+
+  const existingByUsername = await PnwNativeAccount.findOne({ username: pending.username }).exec();
+  if (existingByUsername && existingByUsername.nationId !== nationId) {
+    pendingCredentialResets.delete(nationId);
+    return { ok: false, status: 409, error: 'Username is already registered.' };
+  }
+
+  account.username = pending.username;
+  account.passwordHash = pending.passwordHash;
+  account.lastLoginAt = new Date();
+  await account.save();
+
+  pendingCredentialResets.delete(nationId);
   return { ok: true, account };
 }
