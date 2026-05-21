@@ -1627,6 +1627,7 @@ async function main(): Promise<void> {
   type SyncSummary = {
     count: number;
     hasGov: boolean;
+    hasVerify: boolean;
     hasVerifyAllianceServer: boolean;
   };
   const summarizeSyncedCommands = (rows: unknown): SyncSummary => {
@@ -1635,6 +1636,7 @@ async function main(): Promise<void> {
     return {
       count: list.length,
       hasGov: names.has('gov'),
+      hasVerify: names.has('verify'),
       hasVerifyAllianceServer: names.has('verify_alliance_server'),
     };
   };
@@ -3021,18 +3023,17 @@ Message: ${cfg.message}`)],
         const appId = client.application?.id;
         if (!appId) return void interaction.reply({ content: 'Application not ready.', flags: MessageFlags.Ephemeral });
         const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         if (interaction.guildId) {
           const summary = await syncSlashCommands(rest, appId, interaction.guildId);
-          return void interaction.reply({
-            content: `Guild commands synced (${summary.count}). verify=${summary.hasVerify ? 'present' : 'missing'}, verify_alliance_server=${summary.hasVerifyAllianceServer ? 'present' : 'missing'}.`,
-            flags: MessageFlags.Ephemeral,
-          });
+          return void interaction.editReply(
+            `Guild commands synced (${summary.count}). verify=${summary.hasVerify ? 'present' : 'missing'}, verify_alliance_server=${summary.hasVerifyAllianceServer ? 'present' : 'missing'}.`
+          );
         }
         const summary = await syncSlashCommands(rest, appId);
-        return void interaction.reply({
-          content: `Global commands synced (${summary.count}). verify=${summary.hasVerify ? 'present' : 'missing'}, verify_alliance_server=${summary.hasVerifyAllianceServer ? 'present' : 'missing'}.`,
-          flags: MessageFlags.Ephemeral,
-        });
+        return void interaction.editReply(
+          `Global commands synced (${summary.count}). verify=${summary.hasVerify ? 'present' : 'missing'}, verify_alliance_server=${summary.hasVerifyAllianceServer ? 'present' : 'missing'}.`
+        );
       }
       if (commandName === 'admin_clear_guild_commands') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
