@@ -141,10 +141,6 @@ function resolveCanonicalCommandNameFromInteraction(i: ChatInputCommandInteracti
     if (sub === 'setup') return 'roles_setup';
     if (sub === 'show') return 'roles_show';
   }
-  if (i.commandName === 'verify') {
-    if (sub === 'guild') return 'verify_alliance_server';
-    if (sub === 'confirm') return 'verify_alliance_server_confirm';
-  }
   if (i.commandName === 'fun' && sub === 'quote') return 'fun_quote';
   if (i.commandName === 'damage' && sub === 'leaderboard') return 'damage_leaderboard';
   if (i.commandName === 'spy' && group === 'target' && sub === 'find') return 'spy_target_find';
@@ -1583,9 +1579,6 @@ async function main(): Promise<void> {
         .addRoleOption(o => o.setName('gov').setDescription('Basic gov role'))
         .addRoleOption(o => o.setName('member').setDescription('Member role (required to use most commands)')))
       .addSubcommand(sc => sc.setName('show').setDescription('Show configured gov role mappings')),
-    new SlashCommandBuilder().setName('verify').setDescription('Alliance verification commands')
-      .addSubcommand(sc => sc.setName('guild').setDescription('Create an in-game verification message for this guild'))
-      .addSubcommand(sc => sc.setName('confirm').setDescription('Open guidance to confirm guild verification code')),
     new SlashCommandBuilder().setName('admin').setDescription('Bot administration commands')
       .addSubcommandGroup(g => g.setName('alliance').setDescription('Alliance administration')
         .addSubcommand(sc => sc.setName('set').setDescription('Set guild primary alliance ID')
@@ -1634,7 +1627,6 @@ async function main(): Promise<void> {
   type SyncSummary = {
     count: number;
     hasGov: boolean;
-    hasVerify: boolean;
     hasVerifyAllianceServer: boolean;
   };
   const summarizeSyncedCommands = (rows: unknown): SyncSummary => {
@@ -1643,7 +1635,6 @@ async function main(): Promise<void> {
     return {
       count: list.length,
       hasGov: names.has('gov'),
-      hasVerify: names.has('verify'),
       hasVerifyAllianceServer: names.has('verify_alliance_server'),
     };
   };
@@ -1653,7 +1644,7 @@ async function main(): Promise<void> {
       : Routes.applicationCommands(appId);
     const synced = await rest.put(route, { body: commands });
     let summary = summarizeSyncedCommands(synced);
-    if (guildId && (!summary.hasGov || !summary.hasVerify || !summary.hasVerifyAllianceServer)) {
+    if (guildId && (!summary.hasGov || !summary.hasVerifyAllianceServer)) {
       await rest.put(route, { body: [] });
       const resynced = await rest.put(route, { body: commands });
       summary = summarizeSyncedCommands(resynced);
