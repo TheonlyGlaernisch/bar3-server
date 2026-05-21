@@ -3070,6 +3070,12 @@ Message: ${cfg.message}`)],
     defenderNationId: number;
     defenderDiscordId: string;
   }>>();
+  const resolveRegistrationByMemberSelector = async (memberSelector: string) => {
+    const nativeMatch = /^pnw:(\d+)$/.exec(memberSelector);
+    if (nativeMatch) return db.getByNationId(Number(nativeMatch[1]));
+    if (!/^\d+$/.test(memberSelector)) return null;
+    return db.getByDiscordId(BigInt(memberSelector));
+  };
   if (API_KEY) {
     const app = createApp({
       guildGetter: () => getPrimaryGuild(client),
@@ -3095,7 +3101,7 @@ Message: ${cfg.message}`)],
           nationDefensiveWars: [],
           counterRequests: [],
         };
-        const registration = await db.getByDiscordId(BigInt(discordIdStr));
+        const registration = await resolveRegistrationByMemberSelector(discordIdStr);
         if (!registration) return emptyContext;
 
         let nation: Nation | null = null;
@@ -3196,8 +3202,8 @@ Message: ${cfg.message}`)],
         };
       },
       memberNationCounterRequestHandler: async (discordIdStr: string, warId: number) => {
-        const registration = await db.getByDiscordId(BigInt(discordIdStr));
-        if (!registration) return { ok: false as const, status: 404, error: 'Discord user not registered to a nation.' };
+        const registration = await resolveRegistrationByMemberSelector(discordIdStr);
+        if (!registration) return { ok: false as const, status: 404, error: 'Member is not registered to a nation.' };
         const nation = await pnw.getNation(registration.nation_id);
         if (!nation || !nation.allianceId) return { ok: false as const, status: 404, error: 'Nation or alliance not found.' };
         const targets = await db.getVerifiedGuildCounterChannelsByAlliance(nation.allianceId);
