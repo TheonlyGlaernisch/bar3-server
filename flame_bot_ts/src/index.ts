@@ -1508,7 +1508,7 @@ async function main(): Promise<void> {
       .addRoleOption(o => o.setName('ia_asst').setDescription('Internal affairs assistant role'))
       .addRoleOption(o => o.setName('gov').setDescription('Basic gov role'))
       .addRoleOption(o => o.setName('member').setDescription('Member role (required to use most commands)')),
-    new SlashCommandBuilder().setName('gov').setDescription('List members in configured gov departments'),
+    new SlashCommandBuilder().setName('gov').setDescription('Show server members who hold a configured government role.'),
     new SlashCommandBuilder().setName('verify_alliance_server').setDescription('Create an in-game verification message for the configured alliance leader'),
     new SlashCommandBuilder().setName('verify_alliance_server_confirm').setDescription('Open a popup to confirm alliance verification code'),
     new SlashCommandBuilder().setName('counter_request_channel_set').setDescription('Set channel for incoming Bar3 counter requests').addChannelOption(o => o.setName('channel').setDescription('Target channel').setRequired(true)),
@@ -2096,11 +2096,10 @@ async function main(): Promise<void> {
           const membersWithRole = role.members.filter((m) => !m.user.bot);
           total += membersWithRole.size;
           const value = membersWithRole.size
-            ? formatMentionsForEmbed(
-              [...membersWithRole.values()]
-                .sort((a, b) => a.displayName.localeCompare(b.displayName))
-                .map((m) => m.id)
-            )
+            ? [...membersWithRole.values()]
+              .sort((a, b) => a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase()))
+              .map((m) => `<@${m.id}>`)
+              .join(' ')
             : '*(no members)*';
           embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label} (${membersWithRole.size})`, value, inline: false });
         }

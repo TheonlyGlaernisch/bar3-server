@@ -42,7 +42,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
   { name: '/setup_war_alerts_list', summary: 'List current war alert subscriptions.', category: 'setup' },
   { name: '/roles_setup ...', summary: 'Configure gov role mappings.', category: 'setup' },
   { name: '/roles_show', summary: 'Show current gov role mappings.', category: 'setup' },
-  { name: '/gov', summary: 'Show members currently mapped to gov departments.', category: 'gov' },
+  { name: '/gov', summary: 'Show server members who hold a configured government role.', category: 'gov' },
   { name: '/verify guild', summary: 'Alias for /verify_alliance_server; starts guild verification flow.', category: 'gov' },
   { name: '/verify confirm', summary: 'Alias for /verify_alliance_server_confirm; shows confirm guidance.', category: 'gov' },
   { name: '/verify_alliance_server', summary: 'Generate in-game verification message(s) and a one-time code for alliance ownership check.', category: 'gov' },
