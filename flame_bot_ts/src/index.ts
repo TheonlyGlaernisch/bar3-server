@@ -3080,6 +3080,108 @@ Message: ${cfg.message}`)],
       sendToWelcomeFn: sendToAllWelcomeChannels,
       commandUsageGetter: () => Object.fromEntries(commandUsage.entries()),
       adminIds: ADMIN_DISCORD_IDS,
+      memberNationContextGetter: async (discordIdStr: string) => {
+        const emptyContext = {
+          registered: false,
+          nation: null,
+          alliance: null,
+          activeDefensiveWars: [],
+          nationDefensiveWars: [],
+          counterRequests: [],
+        };
+        const registration = await db.getByDiscordId(BigInt(discordIdStr));
+        if (!registration) return emptyContext;
+
+        let nation: Nation | null = null;
+        try {
+          nation = await pnw.getNation(registration.nation_id);
+        } catch {
+          nation = null;
+        }
+        if (!nation) {
+          return { ...emptyContext, registered: true };
+        }
+
+        let alliance: AllianceInfo | null = null;
+        if (nation.allianceId > 0) {
+          try {
+            alliance = await pnw.getAllianceById(nation.allianceId);
+          } catch {
+            alliance = null;
+          }
+        }
+
+        let activeDefensiveWars: WarDetail[] = [];
+        if (nation.allianceId > 0) {
+          try {
+            activeDefensiveWars = await pnw.getActiveDefensiveWarsForAlliance(nation.allianceId);
+          } catch {
+            activeDefensiveWars = [];
+          }
+        }
+
+        const nationDefensiveWars = activeDefensiveWars
+          .filter((war) => war.defenderId === nation!.nationId)
+          .map((war) => ({
+            warId: war.warId,
+            date: war.date.toISOString(),
+            reason: war.warType,
+            attackerId: war.attackerId,
+            attackerName: war.attackerName,
+            attackerCities: war.attackerCities,
+            attackerUnits: {
+              soldiers: war.attackerSoldiers,
+              tanks: war.attackerTanks,
+              aircraft: war.attackerAircraft,
+              ships: war.attackerShips,
+              missiles: war.attackerMissiles,
+              nukes: war.attackerNukes,
+            },
+            url: warUrl(war.warId),
+          }));
+
+        return {
+          registered: true,
+          nation: {
+            nationId: nation.nationId,
+            nationName: nation.nationName,
+            leaderName: nation.leaderName,
+            numCities: nation.numCities,
+            score: nation.score,
+            allianceId: nation.allianceId,
+            allianceName: nation.allianceName,
+            alliancePosition: nation.alliancePosition,
+            url: nationUrl(nation.nationId),
+          },
+          alliance: alliance ? {
+            allianceId: alliance.allianceId,
+            name: alliance.name,
+            acronym: alliance.acronym,
+            rank: alliance.rank,
+            score: alliance.score,
+            averageScore: alliance.averageScore,
+            numMembers: alliance.numMembers,
+            totalCities: alliance.totalCities,
+            url: allianceUrl(alliance.allianceId),
+          } : null,
+          activeDefensiveWars: activeDefensiveWars.map((war) => ({
+            warId: war.warId,
+            date: war.date.toISOString(),
+            warType: war.warType,
+            attackerId: war.attackerId,
+            attackerName: war.attackerName,
+            attackerAllianceId: war.attackerAllianceId,
+            attackerAllianceName: war.attackerAllianceName,
+            defenderId: war.defenderId,
+            defenderName: war.defenderName,
+            defenderAllianceId: war.defenderAllianceId,
+            defenderAllianceName: war.defenderAllianceName,
+            url: warUrl(war.warId),
+          })),
+          nationDefensiveWars,
+          counterRequests: [],
+        };
+      },
       memberNationCounterRequestHandler: async (discordIdStr: string, warId: number) => {
         const registration = await db.getByDiscordId(BigInt(discordIdStr));
         if (!registration) return { ok: false as const, status: 404, error: 'Discord user not registered to a nation.' };
