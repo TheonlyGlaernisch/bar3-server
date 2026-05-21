@@ -1469,7 +1469,9 @@ async function main(): Promise<void> {
       );
     }
   });
-  const commandUsage = new Map<string, number>();
+  const commandUsage = new Map<string, number>([
+    ['verify_alliance_server', 0],
+  ]);
   const commandCooldowns = new Map<string, number>();
   // Python grouped command parity matrix (legacy path -> canonical TS command).
   // /admin welcome set_message -> /welcome_set (alias: /admin_welcome_set_message)
@@ -2096,10 +2098,11 @@ async function main(): Promise<void> {
           const membersWithRole = role.members.filter((m) => !m.user.bot);
           total += membersWithRole.size;
           const value = membersWithRole.size
-            ? [...membersWithRole.values()]
-              .sort((a, b) => a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase()))
-              .map((m) => `<@${m.id}>`)
-              .join(' ')
+            ? formatMentionsForEmbed(
+              [...membersWithRole.values()]
+                .sort((a, b) => a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase()))
+                .map((m) => m.id)
+            )
             : '*(no members)*';
           embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label} (${membersWithRole.size})`, value, inline: false });
         }
