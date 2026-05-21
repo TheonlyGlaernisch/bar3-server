@@ -1627,6 +1627,7 @@ async function main(): Promise<void> {
   type SyncSummary = {
     count: number;
     hasGov: boolean;
+    hasVerify: boolean;
     hasVerifyAllianceServer: boolean;
   };
   const summarizeSyncedCommands = (rows: unknown): SyncSummary => {
@@ -1635,6 +1636,7 @@ async function main(): Promise<void> {
     return {
       count: list.length,
       hasGov: names.has('gov'),
+      hasVerify: names.has('verify'),
       hasVerifyAllianceServer: names.has('verify_alliance_server'),
     };
   };
