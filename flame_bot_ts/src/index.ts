@@ -1673,6 +1673,7 @@ async function main(): Promise<void> {
   type SyncSummary = {
     count: number;
     hasGov: boolean;
+    hasVerify: boolean;
     hasVerifyAllianceServer: boolean;
   };
   const summarizeSyncedCommands = (rows: unknown): SyncSummary => {
@@ -1681,6 +1682,7 @@ async function main(): Promise<void> {
     return {
       count: list.length,
       hasGov: names.has('gov'),
+      hasVerify: names.has('verify'),
       hasVerifyAllianceServer: names.has('verify_alliance_server'),
     };
   };
@@ -1690,7 +1692,7 @@ async function main(): Promise<void> {
       : Routes.applicationCommands(appId);
     const synced = await rest.put(route, { body: commands });
     let summary = summarizeSyncedCommands(synced);
-    if (guildId && (!summary.hasGov || !summary.hasVerifyAllianceServer)) {
+    if (guildId && (!summary.hasGov || !summary.hasVerify || !summary.hasVerifyAllianceServer)) {
       await rest.put(route, { body: [] });
       const resynced = await rest.put(route, { body: commands });
       summary = summarizeSyncedCommands(resynced);
@@ -1807,7 +1809,7 @@ async function main(): Promise<void> {
       }, INVITE_REFRESH_INTERVAL_MS);
     }
     logInfo(
-      `Slash commands synced. count=${syncSummary.count}, gov=${syncSummary.hasGov}, verify_alliance_server=${syncSummary.hasVerifyAllianceServer}`
+      `Slash commands synced. count=${syncSummary.count}, gov=${syncSummary.hasGov}, verify=${syncSummary.hasVerify}, verify_alliance_server=${syncSummary.hasVerifyAllianceServer}`
     );
   });
 
@@ -3070,13 +3072,13 @@ Message: ${cfg.message}`)],
         if (interaction.guildId) {
           const summary = await syncSlashCommands(rest, appId, interaction.guildId);
           return void interaction.reply({
-            content: `Guild commands synced (${summary.count}). verify_alliance_server=${summary.hasVerifyAllianceServer ? 'present' : 'missing'}.`,
+            content: `Guild commands synced (${summary.count}). verify=${summary.hasVerify ? 'present' : 'missing'}, verify_alliance_server=${summary.hasVerifyAllianceServer ? 'present' : 'missing'}.`,
             flags: MessageFlags.Ephemeral,
           });
         }
         const summary = await syncSlashCommands(rest, appId);
         return void interaction.reply({
-          content: `Global commands synced (${summary.count}). verify_alliance_server=${summary.hasVerifyAllianceServer ? 'present' : 'missing'}.`,
+          content: `Global commands synced (${summary.count}). verify=${summary.hasVerify ? 'present' : 'missing'}, verify_alliance_server=${summary.hasVerifyAllianceServer ? 'present' : 'missing'}.`,
           flags: MessageFlags.Ephemeral,
         });
       }
