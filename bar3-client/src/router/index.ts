@@ -53,8 +53,7 @@ router.beforeEach(async (to, _from, next) => {
     if (returnTo) {
       loginParams.set('returnTo', returnTo);
     }
-    const query = loginParams.toString();
-    window.location.assign(query ? `/auth/login?${query}` : '/auth/login');
+    window.location.assign(`/auth/login?${loginParams.toString()}`);
     next(false);
     return;
   }

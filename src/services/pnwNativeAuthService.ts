@@ -21,13 +21,6 @@ type PendingVerification = {
   code: string;
   expiresAt: number;
 };
-type PendingCredentialReset = {
-  nationId: number;
-  username: string;
-  passwordHash: string;
-  code: string;
-  expiresAt: number;
-};
 
 const USERNAME_REGEX = /^[A-Za-z0-9_-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 8;
@@ -41,7 +34,7 @@ const CLEANUP_INTERVAL_MS = 60 * 1000;
 const DUMMY_PASSWORD_HASH = '$2b$12$KIX1B5Q7E09gM08fN6hKjem9eQxQxB8N6H9Q2fYMSQ3fWXwoQ9C8W';
 
 const pendingVerifications = new Map<number, PendingVerification>();
-const pendingCredentialResets = new Map<number, PendingCredentialReset>();
+const pendingCredentialResets = new Map<number, PendingVerification>();
 const PNW_SUCCESS_STRING_VALUES = new Set(['true', '1', 'yes', 'ok', 'success']);
 const PNW_ERROR_FIELDS = ['general_message', 'error_msg', 'message', 'error'] as const;
 
