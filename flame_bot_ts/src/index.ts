@@ -3064,6 +3064,12 @@ Message: ${cfg.message}`)],
   });
 
   let httpServer: Server | null = null;
+  const memberCounterRequestsByDiscordId = new Map<string, Array<{
+    warId: number;
+    requestedAt: string;
+    defenderNationId: number;
+    defenderDiscordId: string;
+  }>>();
   if (API_KEY) {
     const app = createApp({
       guildGetter: () => getPrimaryGuild(client),
@@ -3119,6 +3125,11 @@ Message: ${cfg.message}`)],
             activeDefensiveWars = [];
           }
         }
+        const activeWarIds = new Set(activeDefensiveWars.map((war) => war.warId));
+        const counterRequests = (memberCounterRequestsByDiscordId.get(discordIdStr) ?? [])
+          .filter((request) => activeWarIds.has(request.warId))
+          .sort((a, b) => Date.parse(b.requestedAt) - Date.parse(a.requestedAt));
+        const counterRequestedAtByWarId = new Map(counterRequests.map((request) => [request.warId, request.requestedAt]));
 
         const nationDefensiveWars = activeDefensiveWars
           .filter((war) => war.defenderId === nation!.nationId)
@@ -3177,9 +3188,11 @@ Message: ${cfg.message}`)],
             defenderAllianceId: war.defenderAllianceId,
             defenderAllianceName: war.defenderAllianceName,
             url: warUrl(war.warId),
+            counterRequested: counterRequestedAtByWarId.has(war.warId),
+            counterRequestedAt: counterRequestedAtByWarId.get(war.warId) ?? null,
           })),
           nationDefensiveWars,
-          counterRequests: [],
+          counterRequests,
         };
       },
       memberNationCounterRequestHandler: async (discordIdStr: string, warId: number) => {
@@ -3203,6 +3216,14 @@ Message: ${cfg.message}`)],
           if (!channel || !('send' in channel)) continue;
           try { await (channel as TextChannel).send(content); } catch { /**/ }
         }
+        const existing = memberCounterRequestsByDiscordId.get(discordIdStr) ?? [];
+        const withoutWar = existing.filter((request) => request.warId !== warId);
+        memberCounterRequestsByDiscordId.set(discordIdStr, [{
+          warId,
+          requestedAt,
+          defenderNationId: nation.nationId,
+          defenderDiscordId: discordIdStr,
+        }, ...withoutWar]);
         return { ok: true as const, warId, requestedAt };
       },
     });
