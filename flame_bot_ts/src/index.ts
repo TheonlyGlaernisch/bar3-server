@@ -1508,7 +1508,7 @@ async function main(): Promise<void> {
       .addRoleOption(o => o.setName('ia_asst').setDescription('Internal affairs assistant role'))
       .addRoleOption(o => o.setName('gov').setDescription('Basic gov role'))
       .addRoleOption(o => o.setName('member').setDescription('Member role (required to use most commands)')),
-    new SlashCommandBuilder().setName('gov').setDescription('List members in configured gov departments'),
+    new SlashCommandBuilder().setName('gov').setDescription('Show server members who hold a configured government role.'),
     new SlashCommandBuilder().setName('verify_alliance_server').setDescription('Create an in-game verification message for the configured alliance leader'),
     new SlashCommandBuilder().setName('verify_alliance_server_confirm').setDescription('Open a popup to confirm alliance verification code'),
     new SlashCommandBuilder().setName('counter_request_channel_set').setDescription('Set channel for incoming Bar3 counter requests').addChannelOption(o => o.setName('channel').setDescription('Target channel').setRequired(true)),
@@ -2049,6 +2049,9 @@ async function main(): Promise<void> {
       }
       if (commandName === 'gov') {
         if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) {
+          return void interaction.reply({ embeds: [new EmbedBuilder().setDescription('❌ You need the **Member** role to use this command.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
+        }
         await interaction.deferReply();
 
         // Fetch both roles and members so the cache is warm.
@@ -2063,6 +2066,11 @@ async function main(): Promise<void> {
           logWarn(`[gov] Failed to fetch full guild member list for ${interaction.guildId}: ${String((err as Error)?.message ?? err)}`);
         }
         const cfg = await db.getGovRoles(BigInt(interaction.guildId));
+        if (!Object.values(cfg).some((roleId) => roleId)) {
+          return void interaction.editReply({
+            embeds: [new EmbedBuilder().setDescription('ℹ️ No government roles configured yet. An admin can use `/roles setup` to set them up.').setColor(0x3498DB)],
+          });
+        }
         const GOV_DEPT_LABELS: Record<string, string> = {
           leader: 'Leader', '2ic': 'Second in Command', econ: 'Economics', econ_gov: 'Economics Gov',
           milcom: 'Military Command', milcom_gov: 'Military Command Gov', ia: 'Internal Affairs',
@@ -2072,10 +2080,12 @@ async function main(): Promise<void> {
           leader: '👑', '2ic': '🥈', econ: '💰', econ_gov: '📊',
           milcom: '⚔️', milcom_gov: '🛡️', ia: '🤝', ia_asst: '📋', gov: '🏛️', member: '🧑‍🤝‍🧑',
         };
+        const GOV_HIDDEN_FROM_EMBED = new Set(['gov', 'member']);
         const embed = new EmbedBuilder().setTitle('Government').setColor(0x5865F2);
         const guildRoles = new Map(interaction.guild.roles.cache.map((r) => [r.id, r]));
         let total = 0;
         for (const [key, label] of Object.entries(GOV_DEPT_LABELS)) {
+          if (GOV_HIDDEN_FROM_EMBED.has(key)) continue;
           const rid = (cfg as Record<string, string | null>)[key];
           if (!rid) continue;
           const role = guildRoles.get(rid);
@@ -2086,12 +2096,11 @@ async function main(): Promise<void> {
           const membersWithRole = role.members.filter((m) => !m.user.bot);
           total += membersWithRole.size;
           const value = membersWithRole.size
-            ? formatMentionsForEmbed(
-              [...membersWithRole.values()]
-                .sort((a, b) => a.displayName.localeCompare(b.displayName))
-                .map((m) => m.id)
-            )
-            : '\u200B';
+            ? [...membersWithRole.values()]
+              .sort((a, b) => a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase()))
+              .map((m) => `<@${m.id}>`)
+              .join(' ')
+            : '*(no members)*';
           embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label} (${membersWithRole.size})`, value, inline: false });
         }
         embed.setFooter({ text: `${total} government member(s) total` });
