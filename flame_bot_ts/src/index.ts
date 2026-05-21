@@ -3070,10 +3070,12 @@ Message: ${cfg.message}`)],
     defenderNationId: number;
     defenderDiscordId: string;
   }>>();
+  const DISCORD_ID_PATTERN = /^\d+$/;
+  const NATIVE_MEMBER_SELECTOR_PATTERN = /^pnw:(\d+)$/;
   const resolveRegistrationByMemberSelector = async (memberSelector: string) => {
-    const nativeMatch = /^pnw:(\d+)$/.exec(memberSelector);
+    const nativeMatch = NATIVE_MEMBER_SELECTOR_PATTERN.exec(memberSelector);
     if (nativeMatch) return db.getByNationId(Number(nativeMatch[1]));
-    if (!/^\d+$/.test(memberSelector)) return null;
+    if (!DISCORD_ID_PATTERN.test(memberSelector)) return null;
     return db.getByDiscordId(BigInt(memberSelector));
   };
   if (API_KEY) {

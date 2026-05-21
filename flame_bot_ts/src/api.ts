@@ -186,9 +186,12 @@ function checkApiKey(req: Request, apiKey: string): boolean {
   return req.headers['x-api-key'] === apiKey;
 }
 
+const DISCORD_ID_PATTERN = /^\d+$/;
+const NATIVE_MEMBER_SELECTOR_PATTERN = /^pnw:\d+$/;
+
 function isMemberSelector(value: string): boolean {
-  if (/^\d+$/.test(value)) return true;
-  return /^pnw:\d+$/.test(value);
+  if (DISCORD_ID_PATTERN.test(value)) return true;
+  return NATIVE_MEMBER_SELECTOR_PATTERN.test(value);
 }
 
 // ---------------------------------------------------------------------------

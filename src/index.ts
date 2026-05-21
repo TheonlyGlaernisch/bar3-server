@@ -257,12 +257,14 @@ const requireDiscordMember = (req: Request, res: Response, next: NextFunction) =
   }
   next();
 };
+const DISCORD_ID_PATTERN = /^\d+$/;
+const NATIVE_MEMBER_SELECTOR_PATTERN = /^pnw:(\d+)$/;
 const resolveMemberNationSelector = (req: Request, res: Response): string | null => {
   const authDiscordId = (res.locals.discordAuth as { discordUserId?: string } | undefined)?.discordUserId;
   const sessionDiscordId = req.session?.discordUserId || authDiscordId;
   if (!sessionDiscordId) return null;
-  if (/^\d+$/.test(sessionDiscordId)) return sessionDiscordId;
-  const nativeMatch = /^pnw:(\d+)$/.exec(sessionDiscordId);
+  if (DISCORD_ID_PATTERN.test(sessionDiscordId)) return sessionDiscordId;
+  const nativeMatch = NATIVE_MEMBER_SELECTOR_PATTERN.exec(sessionDiscordId);
   if (nativeMatch) return `pnw:${nativeMatch[1]}`;
   return null;
 };
