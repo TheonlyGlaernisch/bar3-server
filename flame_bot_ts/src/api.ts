@@ -186,6 +186,14 @@ function checkApiKey(req: Request, apiKey: string): boolean {
   return req.headers['x-api-key'] === apiKey;
 }
 
+const DISCORD_ID_PATTERN = /^\d+$/;
+const NATIVE_MEMBER_SELECTOR_PATTERN = /^pnw:\d+$/;
+
+function isMemberSelector(value: string): boolean {
+  if (DISCORD_ID_PATTERN.test(value)) return true;
+  return NATIVE_MEMBER_SELECTOR_PATTERN.test(value);
+}
+
 // ---------------------------------------------------------------------------
 // Auth session store — lightweight in-memory token map (no external deps)
 // ---------------------------------------------------------------------------
@@ -550,14 +558,14 @@ export function createApp(options: CreateAppOptions): Application {
       res.status(503).json({ error: 'Bot not ready' });
       return;
     }
-    const discordIdStr = req.params['discord_id'] ?? '';
-    if (!/^\d+$/.test(discordIdStr)) {
-      res.status(400).json({ error: 'Invalid discord_id' });
+    const memberSelector = req.params['discord_id'] ?? '';
+    if (!isMemberSelector(memberSelector)) {
+      res.status(400).json({ error: 'Invalid member selector' });
       return;
     }
     const refreshRequested = req.query['refresh'] === '1' || req.query['refresh'] === 'true';
     const now = Date.now();
-    const cached = memberNationContextCache.get(discordIdStr);
+    const cached = memberNationContextCache.get(memberSelector);
     const minRefreshAtMs = cached ? cached.cachedAt + MEMBER_CONTEXT_CACHE_TTL_MS : 0;
     const canRefreshNow = !cached || now >= minRefreshAtMs;
     if (!refreshRequested && cached) {
@@ -586,8 +594,8 @@ export function createApp(options: CreateAppOptions): Application {
       });
       return;
     }
-    const data = await memberNationContextGetter(discordIdStr);
-    memberNationContextCache.set(discordIdStr, { cachedAt: now, data });
+    const data = await memberNationContextGetter(memberSelector);
+    memberNationContextCache.set(memberSelector, { cachedAt: now, data });
     res.status(200).json({
       ...data,
       cache: {
@@ -608,9 +616,9 @@ export function createApp(options: CreateAppOptions): Application {
       res.status(503).json({ error: 'Bot not ready' });
       return;
     }
-    const discordIdStr = req.params['discord_id'] ?? '';
-    if (!/^\d+$/.test(discordIdStr)) {
-      res.status(400).json({ error: 'Invalid discord_id' });
+    const memberSelector = req.params['discord_id'] ?? '';
+    if (!isMemberSelector(memberSelector)) {
+      res.status(400).json({ error: 'Invalid member selector' });
       return;
     }
     const warIdRaw = (req.body as Record<string, unknown> | undefined)?.['warId'];
@@ -619,12 +627,12 @@ export function createApp(options: CreateAppOptions): Application {
       res.status(400).json({ error: 'Invalid warId' });
       return;
     }
-    const result = await memberNationCounterRequestHandler(discordIdStr, warId);
+    const result = await memberNationCounterRequestHandler(memberSelector, warId);
     if (!result.ok) {
       res.status(result.status).json({ error: result.error });
       return;
     }
-    memberNationContextCache.delete(discordIdStr);
+    memberNationContextCache.delete(memberSelector);
     res.status(200).json(result);
   });
 

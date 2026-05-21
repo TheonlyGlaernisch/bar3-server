@@ -257,6 +257,17 @@ const requireDiscordMember = (req: Request, res: Response, next: NextFunction) =
   }
   next();
 };
+const DISCORD_ID_PATTERN = /^\d+$/;
+const NATIVE_MEMBER_SELECTOR_PATTERN = /^pnw:(\d+)$/;
+const resolveMemberNationSelector = (req: Request, res: Response): string | null => {
+  const authDiscordId = (res.locals.discordAuth as { discordUserId?: string } | undefined)?.discordUserId;
+  const sessionDiscordId = req.session?.discordUserId || authDiscordId;
+  if (!sessionDiscordId) return null;
+  if (DISCORD_ID_PATTERN.test(sessionDiscordId)) return sessionDiscordId;
+  const nativeMatch = NATIVE_MEMBER_SELECTOR_PATTERN.exec(sessionDiscordId);
+  if (nativeMatch) return `pnw:${nativeMatch[1]}`;
+  return null;
+};
 const requireTrustedOriginForUnsafeMethod = (req: Request, res: Response, next: NextFunction) => {
   const method = req.method.toUpperCase();
   const unsafe = method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
@@ -333,15 +344,14 @@ app.get('/api/member/nation', rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 }), requireDiscordAuth, requireTrustedOriginForUnsafeMethod, requireDiscordMember, async (req: Request, res: Response) => {
-  const authDiscordId = (res.locals.discordAuth as { discordUserId?: string } | undefined)?.discordUserId;
-  const sessionDiscordId = req.session?.discordUserId || authDiscordId;
-  if (!sessionDiscordId || !/^\d+$/.test(sessionDiscordId)) {
-    res.status(400).json({ error: 'Missing or invalid discord_id' });
+  const memberSelector = resolveMemberNationSelector(req, res);
+  if (!memberSelector) {
+    res.status(400).json({ error: 'Missing or invalid member identity' });
     return;
   }
   const refreshRequested = req.query['refresh'] === '1' || req.query['refresh'] === 'true';
   const query = refreshRequested ? '?refresh=1' : '';
-  await proxyBotApi(req, res, 'get', `/api/member/nation/${encodeURIComponent(sessionDiscordId)}${query}`);
+  await proxyBotApi(req, res, 'get', `/api/member/nation/${encodeURIComponent(memberSelector)}${query}`);
 });
 app.post('/api/member/nation/counter-request', rateLimit({
   windowMs: BOT_ROUTE_WINDOW_MS,
@@ -349,17 +359,16 @@ app.post('/api/member/nation/counter-request', rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 }), requireDiscordAuth, requireDiscordMember, async (req: Request, res: Response) => {
-  const authDiscordId = (res.locals.discordAuth as { discordUserId?: string } | undefined)?.discordUserId;
-  const sessionDiscordId = req.session?.discordUserId || authDiscordId;
-  if (!sessionDiscordId || !/^\d+$/.test(sessionDiscordId)) {
-    res.status(400).json({ error: 'Missing or invalid discord_id' });
+  const memberSelector = resolveMemberNationSelector(req, res);
+  if (!memberSelector) {
+    res.status(400).json({ error: 'Missing or invalid member identity' });
     return;
   }
   await proxyBotApi(
     req,
     res,
     'post',
-    `/api/member/nation/${encodeURIComponent(sessionDiscordId)}/counter-request`
+    `/api/member/nation/${encodeURIComponent(memberSelector)}/counter-request`
   );
 });
 
