@@ -3205,7 +3205,7 @@ Message: ${cfg.message}`)],
       },
       memberNationCounterRequestHandler: async (discordIdStr: string, warId: number) => {
         const registration = await resolveRegistrationByMemberSelector(discordIdStr);
-        if (!registration) return { ok: false as const, status: 404, error: 'Member is not registered to a nation.' };
+        if (!registration) return { ok: false as const, status: 404, error: 'No nation registration found for the provided member identifier.' };
         const nation = await pnw.getNation(registration.nation_id);
         if (!nation || !nation.allianceId) return { ok: false as const, status: 404, error: 'Nation or alliance not found.' };
         const targets = await db.getVerifiedGuildCounterChannelsByAlliance(nation.allianceId);
