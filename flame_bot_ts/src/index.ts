@@ -2050,6 +2050,13 @@ async function main(): Promise<void> {
       if (commandName === 'gov') {
         if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         await interaction.deferReply();
+
+        // Fetch both roles and members so the cache is warm.
+        try {
+          await interaction.guild.roles.fetch();
+        } catch (err) {
+          logWarn(`[gov] Failed to fetch roles for ${interaction.guildId}: ${String((err as Error)?.message ?? err)}`);
+        }
         try {
           await interaction.guild.members.fetch();
         } catch (err) {
