@@ -1644,7 +1644,9 @@ async function main(): Promise<void> {
     const route = guildId
       ? Routes.applicationGuildCommands(appId, guildId)
       : Routes.applicationCommands(appId);
-    const synced = await rest.put(route, { body: commands });
+    const synced = await rest.put(route, { body: commands }) as any[];
+    console.log('Synced commands:', synced.map((c: any) => c.name).sort().join(', '));
+    console.log('Total:', synced.length);
     let summary = summarizeSyncedCommands(synced);
     if (guildId && (!summary.hasGov || !summary.hasVerifyAllianceServer)) {
       await rest.put(route, { body: [] });
@@ -1747,12 +1749,7 @@ async function main(): Promise<void> {
     const appId = client.application?.id;
     if (!appId) return;
     const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
-    let syncSummary: SyncSummary;
-    if (GUILD_ID !== null) {
-      syncSummary = await syncSlashCommands(rest, appId, String(GUILD_ID));
-    } else {
-      syncSummary = await syncSlashCommands(rest, appId);
-    }
+    const syncSummary = await syncSlashCommands(rest, appId);
     for (const guild of client.guilds.cache.values()) {
       await persistGuildMetadata(guild);
     }
@@ -1769,6 +1766,10 @@ async function main(): Promise<void> {
 
   client.on('guildCreate', async (guild) => {
     await persistGuildMetadata(guild);
+    const appId = client.application?.id;
+    if (!appId) return;
+    const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
+    await syncSlashCommands(rest, appId, guild.id);
   });
 
   client.on('guildUpdate', async (before, after) => {
