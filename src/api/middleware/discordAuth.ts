@@ -20,6 +20,8 @@ const PUBLIC_PREFIXES = [
   '/api/v2/auth/logout',
   '/api/v2/analytics/l',
   '/api/v2/analytics/p',
+  '/analytics/v2/l',
+  '/analytics/v2/p',
   '/health',
   '/favicon.ico',
 ];
