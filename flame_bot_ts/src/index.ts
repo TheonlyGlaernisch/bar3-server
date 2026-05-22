@@ -1644,7 +1644,9 @@ async function main(): Promise<void> {
     const route = guildId
       ? Routes.applicationGuildCommands(appId, guildId)
       : Routes.applicationCommands(appId);
-    const synced = await rest.put(route, { body: commands });
+    const synced = await rest.put(route, { body: commands }) as any[];
+    console.log('Synced commands:', synced.map((c: any) => c.name).sort().join(', '));
+    console.log('Total:', synced.length);
     let summary = summarizeSyncedCommands(synced);
     if (guildId && (!summary.hasGov || !summary.hasVerifyAllianceServer)) {
       await rest.put(route, { body: [] });
