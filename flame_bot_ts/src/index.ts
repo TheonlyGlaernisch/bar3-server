@@ -561,6 +561,47 @@ const PNW_BASE_URL = 'https://politicsandwar.com';
 const PNW_TEST_BASE_URL = 'https://test.politicsandwar.com';
 const ALLIANCE_VERIFY_TTL_MS = 30 * 60 * 1000;
 const pendingAllianceVerifications = new Map<string, { code: string; createdAt: number; createdBy: string }>();
+const pendingAllianceVerificationDispatch = new Map<string, { code: string; createdAt: number; createdBy: string; allianceId: number; allianceName: string; guildName: string; leaders: Array<{ nationId: number; leaderName: string }> }>();
+
+
+type PnwMessageSendResult = { ok: true } | { ok: false; error: string };
+
+function getPnwMessageSendApiKey(): string {
+  return (PW_SCAN_API_KEY || PNW_API_KEY || '').trim();
+}
+
+async function sendPnwMessageToNation(nationId: number, subject: string, message: string): Promise<PnwMessageSendResult> {
+  const apiKey = getPnwMessageSendApiKey();
+  if (!apiKey) return { ok: false, error: 'PnW message-send API key is not configured.' };
+
+  const body = new URLSearchParams({
+    key: apiKey,
+    to: String(nationId),
+    subject,
+    message,
+  });
+
+  const response = await fetch('https://politicsandwar.com/api/send-message', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  }).catch(() => null);
+
+  if (!response) return { ok: false, error: 'No response from PnW message endpoint.' };
+
+  const raw = (await response.text().catch(() => '')).trim();
+  const lowered = raw.toLowerCase();
+  if (lowered === '1' || lowered === 'true') return { ok: true };
+  try {
+    const parsed = JSON.parse(raw) as { success?: unknown; error?: unknown };
+    const success = parsed?.success;
+    if (success === true || success === 1 || success === '1' || String(success || '').toLowerCase() === 'true') return { ok: true };
+    const error = typeof parsed?.error === 'string' ? parsed.error : 'Unknown PnW API error.';
+    return { ok: false, error };
+  } catch {
+    return { ok: false, error: raw || `PnW API returned status ${response.status}.` };
+  }
+}
 
 function nationUrl(nationId: number, baseUrl = PNW_BASE_URL): string {
   return `${baseUrl}/nation/id=${nationId}/`;
@@ -1742,9 +1783,13 @@ async function main(): Promise<void> {
     }
   };
 
-  const sendToAllWelcomeChannels = async (message: string): Promise<{ sent: number; skipped: number }> => {
+  const sendToAllWelcomeChannels = async (message: string, customMessage?: string): Promise<{ sent: number; skipped: number }> => {
     let sent = 0;
     let skipped = 0;
+    const outboundEmbed = new EmbedBuilder()
+      .setTitle('📢 Bot Update')
+      .setColor(0x5865F2)
+      .setDescription(customMessage?.trim() || message);
     for (const guild of client.guilds.cache.values()) {
       const cfg = await db.getWelcomeConfig(BigInt(guild.id));
       const channelId = cfg.channel_id;
@@ -1762,7 +1807,7 @@ async function main(): Promise<void> {
         continue;
       }
       try {
-        await channel.send(message);
+        await channel.send({ embeds: [outboundEmbed] });
         sent += 1;
       } catch {
         skipped += 1;
@@ -1830,6 +1875,62 @@ async function main(): Promise<void> {
   });
 
   client.on('interactionCreate', async (interaction: Interaction) => {
+
+    if (interaction.isButton() && interaction.customId === 'verify_alliance_send_open_modal') {
+      if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only interaction.', flags: MessageFlags.Ephemeral });
+      if (!await hasGovAccess(interaction as unknown as ChatInputCommandInteraction, db, ['leader', '2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+      const pendingDispatch = pendingAllianceVerificationDispatch.get(interaction.guildId);
+      if (!pendingDispatch) return void interaction.reply({ content: 'No pending verification send request. Run `/verify_alliance_server` first.', flags: MessageFlags.Ephemeral });
+      const modal = new ModalBuilder().setCustomId('verify_alliance_send_modal').setTitle('Confirm alliance code send');
+      const confirmInput = new TextInputBuilder()
+        .setCustomId('verify_alliance_send_confirm')
+        .setLabel('Type SEND to confirm')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setPlaceholder('SEND');
+      modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(confirmInput));
+      return void interaction.showModal(modal);
+    }
+    if (interaction.isModalSubmit() && interaction.customId === 'verify_alliance_send_modal') {
+      if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only interaction.', flags: MessageFlags.Ephemeral });
+      if (!await hasGovAccess(interaction as unknown as ChatInputCommandInteraction, db, ['leader', '2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+      const pendingDispatch = pendingAllianceVerificationDispatch.get(interaction.guildId);
+      if (!pendingDispatch) return void interaction.reply({ content: 'No pending verification send request. Run `/verify_alliance_server` first.', flags: MessageFlags.Ephemeral });
+      if ((Date.now() - pendingDispatch.createdAt) > ALLIANCE_VERIFY_TTL_MS) {
+        pendingAllianceVerificationDispatch.delete(interaction.guildId);
+        pendingAllianceVerifications.delete(interaction.guildId);
+        return void interaction.reply({ content: 'The pending verification request expired (30 minutes). Run `/verify_alliance_server` again.', flags: MessageFlags.Ephemeral });
+      }
+      const confirmed = (interaction.fields.getTextInputValue('verify_alliance_send_confirm') || '').trim().toUpperCase();
+      if (confirmed !== 'SEND') return void interaction.reply({ content: 'Confirmation failed. Type exactly `SEND` to dispatch alliance verification mail.', flags: MessageFlags.Ephemeral });
+
+      const subject = `BAR3 alliance verification (${pendingDispatch.guildName})`;
+      const messageResults = await Promise.all(pendingDispatch.leaders.map(async (leader) => {
+        const verificationMessage = [
+          `Hello ${leader.leaderName},`,
+          `Please verify that this Discord server belongs to ${pendingDispatch.allianceName} (${pendingDispatch.allianceId}).`,
+          `Verification code: ${pendingDispatch.code}`,
+          `Discord server: ${pendingDispatch.guildName}`,
+          `Requested by: ${interaction.user.tag} (${interaction.user.id})`,
+        ].join('\n');
+        const sent = await sendPnwMessageToNation(leader.nationId, subject, verificationMessage);
+        return { leader, sent };
+      }));
+      const sentCount = messageResults.filter((m) => m.sent.ok).length;
+      const failed = messageResults.filter((m) => !m.sent.ok);
+      const failureLines = failed.length
+        ? '\n\nFailed targets:\n' + failed.map((m) => `• **${m.leader.leaderName}** (${nationUrl(m.leader.nationId)}): ${(m.sent as { ok: false; error: string }).error}`).join('\n')
+        : '';
+      pendingAllianceVerificationDispatch.delete(interaction.guildId);
+      return void interaction.reply({
+        content:
+          `Attempted to send the verification code in-game to ${pendingDispatch.leaders.length} alliance leader target(s).\n` +
+          `Delivered: ${sentCount}/${pendingDispatch.leaders.length}.\n` +
+          `Ask a leader to send you the exact code they received, then click **Verify code** and paste it into the popup.` +
+          `${failureLines}`,
+        flags: MessageFlags.Ephemeral,
+      });
+    }
     if (interaction.isButton() && interaction.customId === 'verify_alliance_open_modal') {
       const modal = new ModalBuilder().setCustomId('verify_alliance_modal').setTitle('Verify Alliance Server');
       const codeInput = new TextInputBuilder()
@@ -2009,7 +2110,14 @@ async function main(): Promise<void> {
         if (!content) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Suggestion content cannot be empty.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
         if (content.length > 1800) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Suggestion is too long. Please keep it under 1800 characters.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
         const SUGGESTION_DM_USERNAMES = ['glaernisch', 'glaernischtheonly'];
-        const dmMessage = `📬 **New /suggestion submission**\nFrom: ${interaction.user} (ID: ${interaction.user.id})\nGuild: ${interaction.guild?.name ?? 'DM/Unknown'}\nContent:\n${content}`;
+        const dmEmbed = new EmbedBuilder()
+          .setTitle('📬 New /suggestion submission')
+          .setColor(0x5865F2)
+          .addFields(
+            { name: 'From', value: `${interaction.user} (ID: ${interaction.user.id})`, inline: false },
+            { name: 'Guild', value: interaction.guild?.name ?? 'DM/Unknown', inline: false },
+            { name: 'Content', value: content, inline: false },
+          );
         const sentTo: string[] = [];
         const missing: string[] = [];
         const wanted = new Set(SUGGESTION_DM_USERNAMES.map((u) => u.toLowerCase()));
@@ -2024,7 +2132,7 @@ async function main(): Promise<void> {
         for (const username of SUGGESTION_DM_USERNAMES) {
           const userObj = found.get(username.toLowerCase());
           if (!userObj) { missing.push(username); continue; }
-          try { await userObj.send(dmMessage); sentTo.push(username); } catch { missing.push(username); }
+          try { await userObj.send({ embeds: [dmEmbed] }); sentTo.push(username); } catch { missing.push(username); }
         }
         const statusLines: string[] = [];
         statusLines.push(sentTo.length
@@ -2080,10 +2188,12 @@ async function main(): Promise<void> {
         } catch (err) {
           logWarn(`[gov] Failed to fetch roles for ${interaction.guildId}: ${String((err as Error)?.message ?? err)}`);
         }
+        let allGuildMembers: Map<string, GuildMember>;
         try {
-          await interaction.guild.members.fetch();
+          allGuildMembers = await interaction.guild.members.fetch();
         } catch (err) {
           logWarn(`[gov] Failed to fetch full guild member list for ${interaction.guildId}: ${String((err as Error)?.message ?? err)}`);
+          allGuildMembers = interaction.guild.members.cache;
         }
         const cfg = await db.getGovRoles(BigInt(interaction.guildId));
         if (!Object.values(cfg).some((roleId) => roleId)) {
@@ -2113,16 +2223,18 @@ async function main(): Promise<void> {
             embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label}`, value: '*(role not found)*', inline: false });
             continue;
           }
-          const membersWithRole = role.members.filter((m) => !m.user.bot);
-          total += membersWithRole.size;
-          const value = membersWithRole.size
+          const membersWithRole = [...allGuildMembers.values()].filter(
+            (m) => !m.user.bot && m.roles.cache.has(rid),
+          );
+          total += membersWithRole.length;
+          const value = membersWithRole.length
             ? formatMentionsForEmbed(
-              [...membersWithRole.values()]
+              membersWithRole
                 .sort((a, b) => a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase()))
                 .map((m) => m.id)
             )
             : '*(no members)*';
-          embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label} (${membersWithRole.size})`, value, inline: false });
+          embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label} (${membersWithRole.length})`, value, inline: false });
         }
         embed.setFooter({ text: `${total} government member(s) total` });
         return void interaction.editReply({ embeds: [embed] });
@@ -2148,26 +2260,23 @@ async function main(): Promise<void> {
           createdAt: Date.now(),
           createdBy: interaction.user.id,
         });
-        const blocks = leaderCandidates.map((leader) => {
-          const verificationMessage = [
-            `Hello ${leader.leaderName},`,
-            `Please verify that this Discord server belongs to ${info.name} (${info.allianceId}).`,
-            `Verification code: ${verificationCode}`,
-            `Discord server: ${guildName}`,
-            `Requested by: ${interaction.user.tag} (${interaction.user.id})`,
-          ].join('\n');
-          return (
-            `Send this in-game message to **${leader.leaderName}** (${nationUrl(leader.nationId)}):\n` +
-            '```text\n' + verificationMessage + '\n```'
-          );
+        pendingAllianceVerificationDispatch.set(interaction.guildId, {
+          code: verificationCode,
+          createdAt: Date.now(),
+          createdBy: interaction.user.id,
+          allianceId: info.allianceId,
+          allianceName: info.name,
+          guildName,
+          leaders: leaderCandidates.map((leader) => ({ nationId: leader.nationId, leaderName: leader.leaderName })),
         });
         return void interaction.editReply({
           content:
-            `Found ${leaderCandidates.length} alliance leader target(s).\n` +
-            `After you send one of the messages below in-game, have the leader copy the verification code and give it to your gov. Then click **Verify code** below and paste it into the popup.\n\n` +
-            `${blocks.join('\n\n')}`,
+            `Prepared alliance verification for ${leaderCandidates.length} leader target(s).\n` +
+            'Click **Send verification code** to confirm and dispatch in-game messages to leaders.\n' +
+            `After a leader sends you the code, click **Verify code** and paste it into the popup.`,
           components: [
             new ActionRowBuilder<ButtonBuilder>().addComponents(
+              new ButtonBuilder().setCustomId('verify_alliance_send_open_modal').setLabel('Send verification code').setStyle(ButtonStyle.Primary),
               new ButtonBuilder().setCustomId('verify_alliance_open_modal').setLabel('Verify code').setStyle(ButtonStyle.Success),
             ),
           ],
@@ -3297,18 +3406,20 @@ Message: ${cfg.message}`)],
         const targets = await db.getVerifiedGuildCounterChannelsByAlliance(nation.allianceId);
         if (!targets.length) return { ok: false as const, status: 404, error: 'No verified guild counter channel configured for this alliance.' };
         const requestedAt = new Date().toISOString();
-        const content = [
-          '🚨 **Counter request received from Bar3**',
-          `Alliance: **${nation.allianceName || nation.allianceId}** (\`${nation.allianceId}\`)`,
-          `Defender: **${nation.nationName}** (${nationUrl(nation.nationId)})`,
-          `War: [#${warId}](${warUrl(warId)})`,
-          `Requested at: ${requestedAt}`,
-        ].join('\n');
+        const counterRequestEmbed = new EmbedBuilder()
+          .setTitle('🚨 Counter request received from Bar3')
+          .setColor(0xE74C3C)
+          .addFields(
+            { name: 'Alliance', value: `**${nation.allianceName || nation.allianceId}** (\`${nation.allianceId}\`)`, inline: false },
+            { name: 'Defender', value: `**${nation.nationName}** (${nationUrl(nation.nationId)})`, inline: false },
+            { name: 'War', value: `[#${warId}](${warUrl(warId)})`, inline: false },
+            { name: 'Requested at', value: requestedAt, inline: false },
+          );
         for (const target of targets) {
           const guild = client.guilds.cache.get(target.guildId);
           const channel = guild?.channels?.cache?.get(target.channelId);
           if (!channel || !('send' in channel)) continue;
-          try { await (channel as TextChannel).send(content); } catch { /**/ }
+          try { await (channel as TextChannel).send({ embeds: [counterRequestEmbed] }); } catch { /**/ }
         }
         const existing = memberCounterRequestsByDiscordId.get(discordIdStr) ?? [];
         const withoutWar = existing.filter((request) => request.warId !== warId);
