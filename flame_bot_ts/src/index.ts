@@ -127,14 +127,39 @@ function resolveCanonicalCommandNameFromInteraction(i: ChatInputCommandInteracti
     if (sub === 'show') return 'config_slots_show';
     if (sub === 'clear') return 'config_slots_clear';
   }
+  if (i.commandName === 'chanel_set') {
+    {
+      const channelType = i.options.getString('type');
+      const action = i.options.getString('action');
+      if (channelType === 'counter') {
+        if (action === 'set') return 'counter_request_channel_set';
+        if (action === 'show') return 'counter_request_channel_show';
+        if (action === 'clear') return 'counter_request_channel_clear';
+      }
+      if (channelType === 'grant') {
+        if (action === 'set') return 'setup_grant_channel';
+        if (action === 'show') return 'setup_grant_channel_show';
+        if (action === 'clear') return 'setup_grant_channel_clear';
+      }
+      if (channelType === 'welcome') {
+        if (action === 'set') return 'welcome_channel_set';
+        if (action === 'show') return 'welcome_show';
+        if (action === 'clear') return 'setup_welcome_channel_clear';
+      }
+    }
+  }
   if (i.commandName === 'setup') {
-    if (sub === 'grant_channel') return 'setup_grant_channel';
     if (group === 'war_alerts' && sub === 'add') return 'setup_war_alerts_add';
     if (group === 'war_alerts' && sub === 'remove') return 'setup_war_alerts_remove';
     if (group === 'war_alerts' && sub === 'list') return 'setup_war_alerts_list';
     if (group === 'recruiter' && sub === 'add') return 'setup_recruiter_add';
     if (group === 'recruiter' && sub === 'remove') return 'setup_recruiter_remove';
     if (group === 'recruiter' && sub === 'list') return 'setup_recruiter_list';
+  }
+  if (i.commandName === 'set') {
+    const field = i.options.getString('field');
+    if (field === 'alliance_id') return 'admin_alliance_set';
+    if (field === 'api_key') return 'admin_api_key_set';
   }
   if (i.commandName === 'request' && sub === 'grant') return 'request_grant';
   if (i.commandName === 'roles') {
@@ -1477,10 +1502,6 @@ async function main(): Promise<void> {
     new SlashCommandBuilder().setName('gov').setDescription('Show server members who hold a configured government role.'),
     new SlashCommandBuilder().setName('verify_alliance_server').setDescription('Create an in-game verification message for the configured alliance leader'),
     new SlashCommandBuilder().setName('verify_alliance_server_confirm').setDescription('Open a popup to confirm alliance verification code'),
-    new SlashCommandBuilder().setName('counter_request_channel_set').setDescription('Set channel for incoming Bar3 counter requests').addChannelOption(o => o.setName('channel').setDescription('Target channel').setRequired(true)),
-    new SlashCommandBuilder().setName('counter_request_channel_show').setDescription('Show configured counter request channel'),
-    new SlashCommandBuilder().setName('counter_request_channel_clear').setDescription('Clear configured counter request channel'),
-    new SlashCommandBuilder().setName('setup_grant_channel').setDescription('Set grant request channel').addChannelOption(o => o.setName('channel').setDescription('Target channel').setRequired(true)),
     new SlashCommandBuilder().setName('request_grant').setDescription('Request a grant').addStringOption(o => o.setName('note').setDescription('Grant reason').setRequired(true)).addNumberOption(o => o.setName('money').setDescription('Requested money')).addNumberOption(o => o.setName('food').setDescription('Food amount')).addNumberOption(o => o.setName('coal').setDescription('Coal amount')).addNumberOption(o => o.setName('oil').setDescription('Oil amount')).addNumberOption(o => o.setName('uranium').setDescription('Uranium amount')).addNumberOption(o => o.setName('iron').setDescription('Iron amount')).addNumberOption(o => o.setName('bauxite').setDescription('Bauxite amount')).addNumberOption(o => o.setName('lead').setDescription('Lead amount')).addNumberOption(o => o.setName('gasoline').setDescription('Gasoline amount')).addNumberOption(o => o.setName('munitions').setDescription('Munitions amount')).addNumberOption(o => o.setName('steel').setDescription('Steel amount')).addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount')),
     new SlashCommandBuilder().setName('admin_alliance_set').setDescription('Set guild primary alliance ID').addIntegerOption(o => o.setName('alliance_id').setDescription('Alliance ID').setRequired(true)),
     new SlashCommandBuilder().setName('admin_alliance_show').setDescription('Show guild primary alliance ID'),
@@ -1491,10 +1512,8 @@ async function main(): Promise<void> {
     new SlashCommandBuilder().setName('fun_quote').setDescription('Get a random quote'),
 
     new SlashCommandBuilder().setName('welcome_set').setDescription('Set welcome message text').addStringOption(o => o.setName('message').setDescription('Welcome template').setRequired(true)),
-    new SlashCommandBuilder().setName('welcome_channel_set').setDescription('Set welcome channel').addChannelOption(o => o.setName('channel').setDescription('Welcome channel').setRequired(true)),
     new SlashCommandBuilder().setName('welcome_enable').setDescription('Enable welcome messages'),
     new SlashCommandBuilder().setName('welcome_disable').setDescription('Disable welcome messages'),
-    new SlashCommandBuilder().setName('welcome_show').setDescription('Show welcome config'),
     new SlashCommandBuilder().setName('setup_recruiter_add').setDescription('Add recruiter subscription channel').addChannelOption(o => o.setName('channel').setDescription('Text channel').setRequired(true)),
     new SlashCommandBuilder().setName('setup_recruiter_remove').setDescription('Remove recruiter subscription channel').addChannelOption(o => o.setName('channel').setDescription('Text channel').setRequired(true)),
     new SlashCommandBuilder().setName('setup_recruiter_list').setDescription('List recruiter subscription channels'),
@@ -1536,7 +1555,6 @@ async function main(): Promise<void> {
         .addSubcommand(sc => sc.setName('show').setDescription('Show slot alliance IDs'))
         .addSubcommand(sc => sc.setName('clear').setDescription('Clear slot alliance IDs'))),
     new SlashCommandBuilder().setName('setup').setDescription('Setup commands')
-      .addSubcommand(sc => sc.setName('grant_channel').setDescription('Set grant request channel').addChannelOption(o => o.setName('channel').setDescription('Target channel').setRequired(true)))
       .addSubcommandGroup(g => g.setName('war_alerts').setDescription('Configure war alerts')
         .addSubcommand(sc => sc.setName('add').setDescription('Add war alerts subscription')
           .addChannelOption(o => o.setName('channel').setDescription('Target text channel').setRequired(true))
@@ -1551,6 +1569,17 @@ async function main(): Promise<void> {
         .addSubcommand(sc => sc.setName('remove').setDescription('Remove recruiter subscription channel')
           .addChannelOption(o => o.setName('channel').setDescription('Text channel').setRequired(true)))
         .addSubcommand(sc => sc.setName('list').setDescription('List recruiter subscription channels'))),
+    new SlashCommandBuilder().setName('chanel_set').setDescription('Set, clear, or show configured channels')
+      .addStringOption(o => o.setName('type').setDescription('Which channel config to manage').setRequired(true)
+        .addChoices({ name: 'counter', value: 'counter' }, { name: 'grant', value: 'grant' }, { name: 'welcome', value: 'welcome' }))
+      .addStringOption(o => o.setName('action').setDescription('Action to perform').setRequired(true)
+        .addChoices({ name: 'set', value: 'set' }, { name: 'clear', value: 'clear' }, { name: 'show', value: 'show' }))
+      .addChannelOption(o => o.setName('channel').setDescription('Required when action is set')),
+    new SlashCommandBuilder().setName('set').setDescription('Set alliance id or api key')
+      .addStringOption(o => o.setName('field').setDescription('Field to set').setRequired(true)
+        .addChoices({ name: 'alliance_id', value: 'alliance_id' }, { name: 'api_key', value: 'api_key' }))
+      .addStringOption(o => o.setName('value').setDescription('Value for the selected field').setRequired(true))
+      .addBooleanOption(o => o.setName('show').setDescription('Show the resulting value in the response (default false)')),
     new SlashCommandBuilder().setName('request').setDescription('Request commands')
       .addSubcommand(sc => sc.setName('grant').setDescription('Request a grant')
         .addStringOption(o => o.setName('note').setDescription('Grant reason').setRequired(true))
@@ -2149,21 +2178,27 @@ async function main(): Promise<void> {
       }
       if (commandName === 'counter_request_channel_set') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['leader', '2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (interaction.commandName === 'chanel_set') {
+          if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        } else if (!await hasGovAccess(interaction, db, ['leader', '2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const verified = await db.isAllianceVerified(BigInt(interaction.guildId));
         if (!verified) return void interaction.reply({ content: 'This guild is not alliance-verified yet. Complete `/verify_alliance_server` first.', flags: MessageFlags.Ephemeral });
-        const ch = interaction.options.getChannel('channel', true);
+        const ch = interaction.options.getChannel('channel');
+        if (!ch) return void interaction.reply({ content: 'Please provide a channel when using action `set`.', flags: MessageFlags.Ephemeral });
         await db.setCounterRequestChannel(BigInt(interaction.guildId), ch.id);
         return void interaction.reply({ content: `Counter request channel set to <#${ch.id}>.`, flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'counter_request_channel_show') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (interaction.commandName === 'chanel_set' && !hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const ch = await db.getCounterRequestChannel(BigInt(interaction.guildId));
         return void interaction.reply({ content: ch ? `Counter request channel: <#${ch}>` : 'No counter request channel configured.', flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'counter_request_channel_clear') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['leader', '2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (interaction.commandName === 'chanel_set') {
+          if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        } else if (!await hasGovAccess(interaction, db, ['leader', '2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         await db.setCounterRequestChannel(BigInt(interaction.guildId), null);
         return void interaction.reply({ content: 'Counter request channel cleared.', flags: MessageFlags.Ephemeral });
       }
@@ -2176,11 +2211,38 @@ async function main(): Promise<void> {
       }
       if (commandName === 'setup_grant_channel') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['econ','econ_gov','ia','ia_asst'])) return void interaction.reply({ content: 'You need Economics or Internal Affairs gov access to use this command.', flags: MessageFlags.Ephemeral });
-        const ch = interaction.options.getChannel('channel', true);
+        if (interaction.commandName === 'chanel_set') {
+          if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        } else {
+          if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+          if (!await hasGovAccess(interaction, db, ['econ','econ_gov','ia','ia_asst'])) return void interaction.reply({ content: 'You need Economics or Internal Affairs gov access to use this command.', flags: MessageFlags.Ephemeral });
+        }
+        const ch = interaction.options.getChannel('channel');
+        if (!ch) return void interaction.reply({ content: 'Please provide a channel when using action `set`.', flags: MessageFlags.Ephemeral });
         await db.setGrantChannel(BigInt(interaction.guildId), ch.id);
         return void interaction.reply({ content: `Grant channel set to <#${ch.id}>.` });
+      }
+      if (commandName === 'setup_grant_channel_show') {
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (interaction.commandName === 'chanel_set') {
+          if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        } else {
+          if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+          if (!await hasGovAccess(interaction, db, ['econ','econ_gov','ia','ia_asst'])) return void interaction.reply({ content: 'You need Economics or Internal Affairs gov access to use this command.', flags: MessageFlags.Ephemeral });
+        }
+        const channelId = await db.getGrantChannel(BigInt(interaction.guildId));
+        return void interaction.reply({ content: channelId ? `Grant channel is <#${channelId}>.` : 'Grant channel is not configured.', flags: MessageFlags.Ephemeral });
+      }
+      if (commandName === 'setup_grant_channel_clear') {
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (interaction.commandName === 'chanel_set') {
+          if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        } else {
+          if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+          if (!await hasGovAccess(interaction, db, ['econ','econ_gov','ia','ia_asst'])) return void interaction.reply({ content: 'You need Economics or Internal Affairs gov access to use this command.', flags: MessageFlags.Ephemeral });
+        }
+        await db.setGrantChannel(BigInt(interaction.guildId), null);
+        return void interaction.reply({ content: 'Grant channel cleared.', flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'request_grant') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
@@ -2231,14 +2293,19 @@ ${resourceLines}
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const guildId = BigInt(interaction.guildId);
-        const allianceId = interaction.options.getInteger('alliance_id', true);
+        const show = interaction.options.getBoolean('show') ?? false;
+        const allianceId = interaction.options.getInteger('alliance_id')
+          ?? Number.parseInt((interaction.options.getString('value') ?? '').trim(), 10);
+        if (!Number.isInteger(allianceId) || allianceId <= 0) {
+          return void interaction.reply({ content: 'Alliance ID must be a positive integer.', flags: MessageFlags.Ephemeral });
+        }
         const previousAllianceId = await db.getAllianceId(guildId);
         await db.setAllianceId(guildId, allianceId);
         if (previousAllianceId !== allianceId) {
           await db.markAllianceVerified(guildId, null);
-          return void interaction.reply({ content: `Primary alliance set to ${allianceId}. Alliance verification has been reset; run \`/verify_alliance_server\` again.` });
+          return void interaction.reply({ content: `Primary alliance set.${show ? ` Value: ${allianceId}.` : ''} Alliance verification has been reset; run \`/verify_alliance_server\` again.` });
         }
-        return void interaction.reply({ content: `Primary alliance set to ${allianceId}.` });
+        return void interaction.reply({ content: `Primary alliance set.${show ? ` Value: ${allianceId}.` : ''}` });
       }
       if (commandName === 'admin_alliance_show') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
@@ -2247,11 +2314,12 @@ ${resourceLines}
       }
       if (commandName === 'admin_api_key_set') {
         if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
-        const apiKey = interaction.options.getString('api_key', true).trim();
+        const show = interaction.options.getBoolean('show') ?? false;
+        const apiKey = (interaction.options.getString('api_key') ?? interaction.options.getString('value') ?? '').trim();
         if (apiKey.length === 0) return void interaction.reply({ content: 'API key cannot be empty.', flags: MessageFlags.Ephemeral });
         await db.setPnwApiKey(apiKey);
         pnw.apiKey = apiKey;
-        return void interaction.reply({ content: 'PnW API key updated successfully.', flags: MessageFlags.Ephemeral });
+        return void interaction.reply({ content: `PnW API key updated successfully.${show ? ` Value: \`${apiKey}\`.` : ''}`, flags: MessageFlags.Ephemeral });
       }
 
 
@@ -2569,8 +2637,11 @@ ${resourceLines}
       }
       if (commandName === 'welcome_channel_set') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
-        const ch = interaction.options.getChannel('channel', true);
+        if (interaction.commandName === 'chanel_set') {
+          if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        } else if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        const ch = interaction.options.getChannel('channel');
+        if (!ch) return void interaction.reply({ content: 'Please provide a channel when using action `set`.', flags: MessageFlags.Ephemeral });
         await db.setWelcomeConfig(BigInt(interaction.guildId), { channelId: ch.id });
         return void interaction.reply({ content: `Welcome channel set to <#${ch.id}>.` });
       }
@@ -2588,6 +2659,7 @@ ${resourceLines}
       }
       if (commandName === 'welcome_show') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (interaction.commandName === 'chanel_set' && !hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const cfg = await db.getWelcomeConfig(BigInt(interaction.guildId));
         return void interaction.reply({
           embeds: [new EmbedBuilder().setTitle('Welcome config').setDescription(`Enabled: **${cfg.enabled ? 'yes' : 'no'}**
@@ -2595,6 +2667,14 @@ Channel: ${cfg.channel_id ? `<#${cfg.channel_id}>` : 'not set'}
 Message: ${cfg.message}`)],
           flags: MessageFlags.Ephemeral,
         });
+      }
+      if (commandName === 'setup_welcome_channel_clear') {
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (interaction.commandName === 'chanel_set') {
+          if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        } else if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        await db.setWelcomeConfig(BigInt(interaction.guildId), { channelId: null });
+        return void interaction.reply({ content: 'Welcome channel cleared.', flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'setup_recruiter_add') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
