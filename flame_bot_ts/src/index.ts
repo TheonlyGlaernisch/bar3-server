@@ -1596,7 +1596,6 @@ async function main(): Promise<void> {
         .addSubcommand(sc => sc.setName('show').setDescription('Show slot alliance IDs'))
         .addSubcommand(sc => sc.setName('clear').setDescription('Clear slot alliance IDs'))),
     new SlashCommandBuilder().setName('setup').setDescription('Setup commands')
-      .addSubcommand(sc => sc.setName('grant_channel').setDescription('Set grant request channel').addChannelOption(o => o.setName('channel').setDescription('Target channel').setRequired(true)))
       .addSubcommandGroup(g => g.setName('war_alerts').setDescription('Configure war alerts')
         .addSubcommand(sc => sc.setName('add').setDescription('Add war alerts subscription')
           .addChannelOption(o => o.setName('channel').setDescription('Target text channel').setRequired(true))
@@ -1620,7 +1619,8 @@ async function main(): Promise<void> {
     new SlashCommandBuilder().setName('set').setDescription('Set alliance id or api key')
       .addStringOption(o => o.setName('field').setDescription('Field to set').setRequired(true)
         .addChoices({ name: 'alliance_id', value: 'alliance_id' }, { name: 'api_key', value: 'api_key' }))
-      .addStringOption(o => o.setName('value').setDescription('Value for the selected field').setRequired(true)),
+      .addStringOption(o => o.setName('value').setDescription('Value for the selected field').setRequired(true))
+      .addBooleanOption(o => o.setName('show').setDescription('Show the resulting value in the response (default false)')),
     new SlashCommandBuilder().setName('request').setDescription('Request commands')
       .addSubcommand(sc => sc.setName('grant').setDescription('Request a grant')
         .addStringOption(o => o.setName('note').setDescription('Grant reason').setRequired(true))
@@ -2287,7 +2287,9 @@ async function main(): Promise<void> {
       }
       if (commandName === 'counter_request_channel_set') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['leader', '2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (interaction.commandName === 'chanel_set') {
+          if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        } else if (!await hasGovAccess(interaction, db, ['leader', '2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const verified = await db.isAllianceVerified(BigInt(interaction.guildId));
         if (!verified) return void interaction.reply({ content: 'This guild is not alliance-verified yet. Complete `/verify_alliance_server` first.', flags: MessageFlags.Ephemeral });
         const ch = interaction.options.getChannel('channel');
@@ -2297,12 +2299,15 @@ async function main(): Promise<void> {
       }
       if (commandName === 'counter_request_channel_show') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (interaction.commandName === 'chanel_set' && !hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const ch = await db.getCounterRequestChannel(BigInt(interaction.guildId));
         return void interaction.reply({ content: ch ? `Counter request channel: <#${ch}>` : 'No counter request channel configured.', flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'counter_request_channel_clear') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['leader', '2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (interaction.commandName === 'chanel_set') {
+          if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        } else if (!await hasGovAccess(interaction, db, ['leader', '2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         await db.setCounterRequestChannel(BigInt(interaction.guildId), null);
         return void interaction.reply({ content: 'Counter request channel cleared.', flags: MessageFlags.Ephemeral });
       }
@@ -2315,8 +2320,12 @@ async function main(): Promise<void> {
       }
       if (commandName === 'setup_grant_channel') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['econ','econ_gov','ia','ia_asst'])) return void interaction.reply({ content: 'You need Economics or Internal Affairs gov access to use this command.', flags: MessageFlags.Ephemeral });
+        if (interaction.commandName === 'chanel_set') {
+          if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        } else {
+          if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+          if (!await hasGovAccess(interaction, db, ['econ','econ_gov','ia','ia_asst'])) return void interaction.reply({ content: 'You need Economics or Internal Affairs gov access to use this command.', flags: MessageFlags.Ephemeral });
+        }
         const ch = interaction.options.getChannel('channel');
         if (!ch) return void interaction.reply({ content: 'Please provide a channel when using action `set`.', flags: MessageFlags.Ephemeral });
         await db.setGrantChannel(BigInt(interaction.guildId), ch.id);
@@ -2324,15 +2333,23 @@ async function main(): Promise<void> {
       }
       if (commandName === 'setup_grant_channel_show') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['econ','econ_gov','ia','ia_asst'])) return void interaction.reply({ content: 'You need Economics or Internal Affairs gov access to use this command.', flags: MessageFlags.Ephemeral });
+        if (interaction.commandName === 'chanel_set') {
+          if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        } else {
+          if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+          if (!await hasGovAccess(interaction, db, ['econ','econ_gov','ia','ia_asst'])) return void interaction.reply({ content: 'You need Economics or Internal Affairs gov access to use this command.', flags: MessageFlags.Ephemeral });
+        }
         const channelId = await db.getGrantChannel(BigInt(interaction.guildId));
         return void interaction.reply({ content: channelId ? `Grant channel is <#${channelId}>.` : 'Grant channel is not configured.', flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'setup_grant_channel_clear') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['econ','econ_gov','ia','ia_asst'])) return void interaction.reply({ content: 'You need Economics or Internal Affairs gov access to use this command.', flags: MessageFlags.Ephemeral });
+        if (interaction.commandName === 'chanel_set') {
+          if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        } else {
+          if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+          if (!await hasGovAccess(interaction, db, ['econ','econ_gov','ia','ia_asst'])) return void interaction.reply({ content: 'You need Economics or Internal Affairs gov access to use this command.', flags: MessageFlags.Ephemeral });
+        }
         await db.setGrantChannel(BigInt(interaction.guildId), null);
         return void interaction.reply({ content: 'Grant channel cleared.', flags: MessageFlags.Ephemeral });
       }
@@ -2385,6 +2402,7 @@ ${resourceLines}
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const guildId = BigInt(interaction.guildId);
+        const show = interaction.options.getBoolean('show') ?? false;
         const allianceId = interaction.options.getInteger('alliance_id')
           ?? Number.parseInt((interaction.options.getString('value') ?? '').trim(), 10);
         if (!Number.isInteger(allianceId) || allianceId <= 0) {
@@ -2394,9 +2412,9 @@ ${resourceLines}
         await db.setAllianceId(guildId, allianceId);
         if (previousAllianceId !== allianceId) {
           await db.markAllianceVerified(guildId, null);
-          return void interaction.reply({ content: `Primary alliance set to ${allianceId}. Alliance verification has been reset; run \`/verify_alliance_server\` again.` });
+          return void interaction.reply({ content: `Primary alliance set.${show ? ` Value: ${allianceId}.` : ''} Alliance verification has been reset; run \`/verify_alliance_server\` again.` });
         }
-        return void interaction.reply({ content: `Primary alliance set to ${allianceId}.` });
+        return void interaction.reply({ content: `Primary alliance set.${show ? ` Value: ${allianceId}.` : ''}` });
       }
       if (commandName === 'admin_alliance_show') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
@@ -2405,11 +2423,12 @@ ${resourceLines}
       }
       if (commandName === 'admin_api_key_set') {
         if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        const show = interaction.options.getBoolean('show') ?? false;
         const apiKey = (interaction.options.getString('api_key') ?? interaction.options.getString('value') ?? '').trim();
         if (apiKey.length === 0) return void interaction.reply({ content: 'API key cannot be empty.', flags: MessageFlags.Ephemeral });
         await db.setPnwApiKey(apiKey);
         pnw.apiKey = apiKey;
-        return void interaction.reply({ content: 'PnW API key updated successfully.', flags: MessageFlags.Ephemeral });
+        return void interaction.reply({ content: `PnW API key updated successfully.${show ? ` Value: \`${apiKey}\`.` : ''}`, flags: MessageFlags.Ephemeral });
       }
 
 
@@ -2727,7 +2746,9 @@ ${resourceLines}
       }
       if (commandName === 'welcome_channel_set') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (interaction.commandName === 'chanel_set') {
+          if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        } else if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const ch = interaction.options.getChannel('channel');
         if (!ch) return void interaction.reply({ content: 'Please provide a channel when using action `set`.', flags: MessageFlags.Ephemeral });
         await db.setWelcomeConfig(BigInt(interaction.guildId), { channelId: ch.id });
@@ -2747,6 +2768,7 @@ ${resourceLines}
       }
       if (commandName === 'welcome_show') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (interaction.commandName === 'chanel_set' && !hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         const cfg = await db.getWelcomeConfig(BigInt(interaction.guildId));
         return void interaction.reply({
           embeds: [new EmbedBuilder().setTitle('Welcome config').setDescription(`Enabled: **${cfg.enabled ? 'yes' : 'no'}**
@@ -2757,7 +2779,9 @@ Message: ${cfg.message}`)],
       }
       if (commandName === 'setup_welcome_channel_clear') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
-        if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        if (interaction.commandName === 'chanel_set') {
+          if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        } else if (!await hasGovAccess(interaction, db, ['ia','leader','2ic'])) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         await db.setWelcomeConfig(BigInt(interaction.guildId), { channelId: null });
         return void interaction.reply({ content: 'Welcome channel cleared.', flags: MessageFlags.Ephemeral });
       }
