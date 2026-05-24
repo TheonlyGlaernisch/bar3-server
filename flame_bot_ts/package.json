@@ -1,7 +1,7 @@
 {
   "name": "flame_bot_ts",
   "version": "1.0.0",
-  "description": "flame_bot – Discord bot and bar3 HTTP API (TypeScript port)",
+  "description": "flame_bot \u2013 Discord bot and bar3 HTTP API (TypeScript port)",
   "main": "./build/src/index.js",
   "scripts": {
     "build": "tsc",
@@ -25,5 +25,8 @@
     "@types/node": "^20.11.0",
     "@types/ws": "^8.5.10",
     "typescript": "^5.3.3"
+  },
+  "overrides": {
+    "qs": "6.15.2"
   }
 }
