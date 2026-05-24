@@ -2177,10 +2177,12 @@ async function main(): Promise<void> {
         } catch (err) {
           logWarn(`[gov] Failed to fetch roles for ${interaction.guildId}: ${String((err as Error)?.message ?? err)}`);
         }
+        let allGuildMembers: Map<string, GuildMember>;
         try {
-          await interaction.guild.members.fetch();
+          allGuildMembers = await interaction.guild.members.fetch();
         } catch (err) {
           logWarn(`[gov] Failed to fetch full guild member list for ${interaction.guildId}: ${String((err as Error)?.message ?? err)}`);
+          allGuildMembers = interaction.guild.members.cache;
         }
         const cfg = await db.getGovRoles(BigInt(interaction.guildId));
         if (!Object.values(cfg).some((roleId) => roleId)) {
@@ -2210,16 +2212,18 @@ async function main(): Promise<void> {
             embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label}`, value: '*(role not found)*', inline: false });
             continue;
           }
-          const membersWithRole = role.members.filter((m) => !m.user.bot);
-          total += membersWithRole.size;
-          const value = membersWithRole.size
+          const membersWithRole = [...allGuildMembers.values()].filter(
+            (m) => !m.user.bot && m.roles.cache.has(rid),
+          );
+          total += membersWithRole.length;
+          const value = membersWithRole.length
             ? formatMentionsForEmbed(
-              [...membersWithRole.values()]
+              membersWithRole
                 .sort((a, b) => a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase()))
                 .map((m) => m.id)
             )
             : '*(no members)*';
-          embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label} (${membersWithRole.size})`, value, inline: false });
+          embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label} (${membersWithRole.length})`, value, inline: false });
         }
         embed.setFooter({ text: `${total} government member(s) total` });
         return void interaction.editReply({ embeds: [embed] });
