@@ -1783,9 +1783,13 @@ async function main(): Promise<void> {
     }
   };
 
-  const sendToAllWelcomeChannels = async (message: string): Promise<{ sent: number; skipped: number }> => {
+  const sendToAllWelcomeChannels = async (message: string, customMessage?: string): Promise<{ sent: number; skipped: number }> => {
     let sent = 0;
     let skipped = 0;
+    const outboundEmbed = new EmbedBuilder()
+      .setTitle('📢 Bot Update')
+      .setColor(0x5865F2)
+      .setDescription(customMessage?.trim() || message);
     for (const guild of client.guilds.cache.values()) {
       const cfg = await db.getWelcomeConfig(BigInt(guild.id));
       const channelId = cfg.channel_id;
@@ -1803,7 +1807,7 @@ async function main(): Promise<void> {
         continue;
       }
       try {
-        await channel.send(message);
+        await channel.send({ embeds: [outboundEmbed] });
         sent += 1;
       } catch {
         skipped += 1;
@@ -2106,7 +2110,14 @@ async function main(): Promise<void> {
         if (!content) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Suggestion content cannot be empty.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
         if (content.length > 1800) return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription('❌ Suggestion is too long. Please keep it under 1800 characters.').setColor(0xE74C3C)], flags: MessageFlags.Ephemeral });
         const SUGGESTION_DM_USERNAMES = ['glaernisch', 'glaernischtheonly'];
-        const dmMessage = `📬 **New /suggestion submission**\nFrom: ${interaction.user} (ID: ${interaction.user.id})\nGuild: ${interaction.guild?.name ?? 'DM/Unknown'}\nContent:\n${content}`;
+        const dmEmbed = new EmbedBuilder()
+          .setTitle('📬 New /suggestion submission')
+          .setColor(0x5865F2)
+          .addFields(
+            { name: 'From', value: `${interaction.user} (ID: ${interaction.user.id})`, inline: false },
+            { name: 'Guild', value: interaction.guild?.name ?? 'DM/Unknown', inline: false },
+            { name: 'Content', value: content, inline: false },
+          );
         const sentTo: string[] = [];
         const missing: string[] = [];
         const wanted = new Set(SUGGESTION_DM_USERNAMES.map((u) => u.toLowerCase()));
@@ -2121,7 +2132,7 @@ async function main(): Promise<void> {
         for (const username of SUGGESTION_DM_USERNAMES) {
           const userObj = found.get(username.toLowerCase());
           if (!userObj) { missing.push(username); continue; }
-          try { await userObj.send(dmMessage); sentTo.push(username); } catch { missing.push(username); }
+          try { await userObj.send({ embeds: [dmEmbed] }); sentTo.push(username); } catch { missing.push(username); }
         }
         const statusLines: string[] = [];
         statusLines.push(sentTo.length
@@ -3371,18 +3382,20 @@ Message: ${cfg.message}`)],
         const targets = await db.getVerifiedGuildCounterChannelsByAlliance(nation.allianceId);
         if (!targets.length) return { ok: false as const, status: 404, error: 'No verified guild counter channel configured for this alliance.' };
         const requestedAt = new Date().toISOString();
-        const content = [
-          '🚨 **Counter request received from Bar3**',
-          `Alliance: **${nation.allianceName || nation.allianceId}** (\`${nation.allianceId}\`)`,
-          `Defender: **${nation.nationName}** (${nationUrl(nation.nationId)})`,
-          `War: [#${warId}](${warUrl(warId)})`,
-          `Requested at: ${requestedAt}`,
-        ].join('\n');
+        const counterRequestEmbed = new EmbedBuilder()
+          .setTitle('🚨 Counter request received from Bar3')
+          .setColor(0xE74C3C)
+          .addFields(
+            { name: 'Alliance', value: `**${nation.allianceName || nation.allianceId}** (\`${nation.allianceId}\`)`, inline: false },
+            { name: 'Defender', value: `**${nation.nationName}** (${nationUrl(nation.nationId)})`, inline: false },
+            { name: 'War', value: `[#${warId}](${warUrl(warId)})`, inline: false },
+            { name: 'Requested at', value: requestedAt, inline: false },
+          );
         for (const target of targets) {
           const guild = client.guilds.cache.get(target.guildId);
           const channel = guild?.channels?.cache?.get(target.channelId);
           if (!channel || !('send' in channel)) continue;
-          try { await (channel as TextChannel).send(content); } catch { /**/ }
+          try { await (channel as TextChannel).send({ embeds: [counterRequestEmbed] }); } catch { /**/ }
         }
         const existing = memberCounterRequestsByDiscordId.get(discordIdStr) ?? [];
         const withoutWar = existing.filter((request) => request.warId !== warId);
