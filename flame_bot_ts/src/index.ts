@@ -600,8 +600,6 @@ const coercePnwErrorValue = (value: unknown): string | undefined => {
   return undefined;
 };
 
-const delayMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
 function getPnwMessageSendApiKey(): string {
   return (PW_SCAN_API_KEY || PNW_API_KEY || '').trim();
 }
@@ -1961,7 +1959,7 @@ async function main(): Promise<void> {
 
       const subject = `BAR3 alliance verification (${pendingDispatch.guildName})`;
       const messageResults: Array<{ leader: { nationId: number; leaderName: string }; sent: PnwMessageSendResult }> = [];
-      for (const [index, leader] of pendingDispatch.leaders.entries()) {
+      for (const leader of pendingDispatch.leaders) {
         const verificationMessage = [
           `Hello ${leader.leaderName},`,
           `Please verify that this Discord server belongs to ${pendingDispatch.allianceName} (${pendingDispatch.allianceId}).`,
@@ -1971,9 +1969,6 @@ async function main(): Promise<void> {
         ].join('\n');
         const sent = await sendPnwMessageToNation(leader.nationId, subject, verificationMessage);
         messageResults.push({ leader, sent });
-        if (index < pendingDispatch.leaders.length - 1) {
-          await delayMs(750);
-        }
       }
       const sentCount = messageResults.filter((m) => m.sent.ok).length;
       const failed = messageResults.filter((m) => !m.sent.ok);
