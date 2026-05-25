@@ -1957,7 +1957,8 @@ async function main(): Promise<void> {
       const confirmed = (interaction.fields.getTextInputValue('verify_alliance_send_confirm') || '').trim().toUpperCase();
       if (confirmed !== 'SEND') return void interaction.reply({ content: 'Confirmation failed. Type exactly `SEND` to dispatch alliance verification mail.', flags: MessageFlags.Ephemeral });
 
-      const subject = `BAR3 alliance verification (${pendingDispatch.guildName})`;
+      const rawSubject = `BAR3 alliance verification (${pendingDispatch.guildName})`;
+      const subject = rawSubject.length <= 50 ? rawSubject : `${rawSubject.slice(0, 47)}...`;
       const messageResults: Array<{ leader: { nationId: number; leaderName: string }; sent: PnwMessageSendResult }> = [];
       for (const leader of pendingDispatch.leaders) {
         const verificationMessage = [
