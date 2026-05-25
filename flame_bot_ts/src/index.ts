@@ -1960,7 +1960,7 @@ async function main(): Promise<void> {
       const confirmed = (interaction.fields.getTextInputValue('verify_alliance_send_confirm') || '').trim().toUpperCase();
       if (confirmed !== 'SEND') return void interaction.reply({ content: 'Confirmation failed. Type exactly `SEND` to dispatch alliance verification mail.', flags: MessageFlags.Ephemeral });
 
-      const rawSubject = `BAR3 alliance verification (${pendingDispatch.guildName})`;
+      const rawSubject = 'BAR3 alliance verification';
       const subject = rawSubject.length <= MAX_PNW_MESSAGE_SUBJECT_LENGTH
         ? rawSubject
         : `${rawSubject.slice(0, PNW_SUBJECT_TRUNCATE_AT)}${PNW_SUBJECT_ELLIPSIS}`;
