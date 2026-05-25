@@ -560,6 +560,9 @@ function buildAllianceScoreHistoryQuickChartUrl(points: AllianceScoreHistoryPoin
 const PNW_BASE_URL = 'https://politicsandwar.com';
 const PNW_TEST_BASE_URL = 'https://test.politicsandwar.com';
 const ALLIANCE_VERIFY_TTL_MS = 30 * 60 * 1000;
+const MAX_PNW_MESSAGE_SUBJECT_LENGTH = 50;
+const PNW_SUBJECT_ELLIPSIS = '...';
+const PNW_SUBJECT_TRUNCATE_AT = MAX_PNW_MESSAGE_SUBJECT_LENGTH - PNW_SUBJECT_ELLIPSIS.length;
 const pendingAllianceVerifications = new Map<string, { code: string; createdAt: number; createdBy: string }>();
 const pendingAllianceVerificationDispatch = new Map<string, { code: string; createdAt: number; createdBy: string; allianceId: number; allianceName: string; guildName: string; leaders: Array<{ nationId: number; leaderName: string }> }>();
 
@@ -1957,7 +1960,10 @@ async function main(): Promise<void> {
       const confirmed = (interaction.fields.getTextInputValue('verify_alliance_send_confirm') || '').trim().toUpperCase();
       if (confirmed !== 'SEND') return void interaction.reply({ content: 'Confirmation failed. Type exactly `SEND` to dispatch alliance verification mail.', flags: MessageFlags.Ephemeral });
 
-      const subject = `BAR3 alliance verification (${pendingDispatch.guildName})`;
+      const rawSubject = 'BAR3 alliance verification';
+      const subject = rawSubject.length <= MAX_PNW_MESSAGE_SUBJECT_LENGTH
+        ? rawSubject
+        : `${rawSubject.slice(0, PNW_SUBJECT_TRUNCATE_AT)}${PNW_SUBJECT_ELLIPSIS}`;
       const messageResults: Array<{ leader: { nationId: number; leaderName: string }; sent: PnwMessageSendResult }> = [];
       for (const leader of pendingDispatch.leaders) {
         const verificationMessage = [
