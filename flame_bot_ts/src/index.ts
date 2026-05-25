@@ -565,6 +565,7 @@ const pendingAllianceVerificationDispatch = new Map<string, { code: string; crea
 
 
 type PnwMessageSendResult = { ok: true } | { ok: false; error: string };
+const PNW_ERROR_FIELDS = ['general_message', 'error_msg', 'message', 'error'] as const;
 
 const isPnwSuccessValue = (value: unknown): boolean => value === true
   || value === 1
@@ -606,7 +607,14 @@ async function sendPnwMessageToNation(nationId: number, subject: string, message
     const parsedObject = parsed as { success?: unknown; error?: unknown };
     const success = parsedObject?.success;
     if (isPnwSuccessValue(success)) return { ok: true };
-    const error = typeof parsedObject?.error === 'string' ? parsedObject.error : 'Unknown PnW API error.';
+    let error = 'Unknown PnW API error.';
+    for (const field of PNW_ERROR_FIELDS) {
+      const value = (parsedObject as Record<string, unknown>)[field];
+      if (typeof value === 'string' && value.trim()) {
+        error = value.trim();
+        break;
+      }
+    }
     return { ok: false, error };
   } catch {
     return { ok: false, error: raw || `PnW API returned status ${response.status}.` };
