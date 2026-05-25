@@ -593,10 +593,15 @@ async function sendPnwMessageToNation(nationId: number, subject: string, message
   const lowered = raw.toLowerCase();
   if (lowered === '1' || lowered === 'true') return { ok: true };
   try {
-    const parsed = JSON.parse(raw) as { success?: unknown; error?: unknown };
-    const success = parsed?.success;
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed === true || parsed === 1 || parsed === '1' || String(parsed ?? '').toLowerCase() === 'true') return { ok: true };
+    if (!parsed || typeof parsed !== 'object') {
+      return { ok: false, error: raw || `PnW API returned status ${response.status}.` };
+    }
+    const parsedObject = parsed as { success?: unknown; error?: unknown };
+    const success = parsedObject?.success;
     if (success === true || success === 1 || success === '1' || String(success || '').toLowerCase() === 'true') return { ok: true };
-    const error = typeof parsed?.error === 'string' ? parsed.error : 'Unknown PnW API error.';
+    const error = typeof parsedObject?.error === 'string' ? parsedObject.error : 'Unknown PnW API error.';
     return { ok: false, error };
   } catch {
     return { ok: false, error: raw || `PnW API returned status ${response.status}.` };
