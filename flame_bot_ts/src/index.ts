@@ -572,6 +572,34 @@ const isPnwSuccessValue = (value: unknown): boolean => value === true
   || value === '1'
   || String(value ?? '').toLowerCase() === 'true';
 
+const coercePnwErrorValue = (value: unknown): string | undefined => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  }
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((entry) => coercePnwErrorValue(entry))
+      .filter((entry): entry is string => !!entry);
+    return parts.length ? parts.join('; ') : undefined;
+  }
+  if (value && typeof value === 'object') {
+    const maybeMessage = coercePnwErrorValue((value as Record<string, unknown>).message);
+    if (maybeMessage) return maybeMessage;
+    const maybeError = coercePnwErrorValue((value as Record<string, unknown>).error);
+    if (maybeError) return maybeError;
+    const maybeErrors = coercePnwErrorValue((value as Record<string, unknown>).errors);
+    if (maybeErrors) return maybeErrors;
+    try {
+      const stringified = JSON.stringify(value);
+      return stringified && stringified !== '{}' ? stringified : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+};
+
 function getPnwMessageSendApiKey(): string {
   return (PW_SCAN_API_KEY || PNW_API_KEY || '').trim();
 }
@@ -589,7 +617,10 @@ async function sendPnwMessageToNation(nationId: number, subject: string, message
 
   const response = await fetch('https://politicsandwar.com/api/send-message', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+    },
     body,
   }).catch(() => null);
 
@@ -609,11 +640,15 @@ async function sendPnwMessageToNation(nationId: number, subject: string, message
     if (isPnwSuccessValue(success)) return { ok: true };
     let error = 'Unknown PnW API error.';
     for (const field of PNW_ERROR_FIELDS) {
-      const value = (parsedObject as Record<string, unknown>)[field];
-      if (typeof value === 'string' && value.trim()) {
-        error = value.trim();
+      const value = coercePnwErrorValue((parsedObject as Record<string, unknown>)[field]);
+      if (value) {
+        error = value;
         break;
       }
+    }
+    if (error === 'Unknown PnW API error.') {
+      const nested = coercePnwErrorValue((parsedObject as Record<string, unknown>).errors);
+      if (nested) error = nested;
     }
     return { ok: false, error };
   } catch {
@@ -1923,7 +1958,8 @@ async function main(): Promise<void> {
       if (confirmed !== 'SEND') return void interaction.reply({ content: 'Confirmation failed. Type exactly `SEND` to dispatch alliance verification mail.', flags: MessageFlags.Ephemeral });
 
       const subject = `BAR3 alliance verification (${pendingDispatch.guildName})`;
-      const messageResults = await Promise.all(pendingDispatch.leaders.map(async (leader) => {
+      const messageResults: Array<{ leader: { nationId: number; leaderName: string }; sent: PnwMessageSendResult }> = [];
+      for (const leader of pendingDispatch.leaders) {
         const verificationMessage = [
           `Hello ${leader.leaderName},`,
           `Please verify that this Discord server belongs to ${pendingDispatch.allianceName} (${pendingDispatch.allianceId}).`,
@@ -1932,8 +1968,8 @@ async function main(): Promise<void> {
           `Requested by: ${interaction.user.tag} (${interaction.user.id})`,
         ].join('\n');
         const sent = await sendPnwMessageToNation(leader.nationId, subject, verificationMessage);
-        return { leader, sent };
-      }));
+        messageResults.push({ leader, sent });
+      }
       const sentCount = messageResults.filter((m) => m.sent.ok).length;
       const failed = messageResults.filter((m) => !m.sent.ok);
       const failureLines = failed.length
