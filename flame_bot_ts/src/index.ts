@@ -566,6 +566,11 @@ const pendingAllianceVerificationDispatch = new Map<string, { code: string; crea
 
 type PnwMessageSendResult = { ok: true } | { ok: false; error: string };
 
+const isPnwSuccessValue = (value: unknown): boolean => value === true
+  || value === 1
+  || value === '1'
+  || String(value ?? '').toLowerCase() === 'true';
+
 function getPnwMessageSendApiKey(): string {
   return (PW_SCAN_API_KEY || PNW_API_KEY || '').trim();
 }
@@ -593,10 +598,15 @@ async function sendPnwMessageToNation(nationId: number, subject: string, message
   const lowered = raw.toLowerCase();
   if (lowered === '1' || lowered === 'true') return { ok: true };
   try {
-    const parsed = JSON.parse(raw) as { success?: unknown; error?: unknown };
-    const success = parsed?.success;
-    if (success === true || success === 1 || success === '1' || String(success || '').toLowerCase() === 'true') return { ok: true };
-    const error = typeof parsed?.error === 'string' ? parsed.error : 'Unknown PnW API error.';
+    const parsed = JSON.parse(raw) as unknown;
+    if (isPnwSuccessValue(parsed)) return { ok: true };
+    if (!parsed || typeof parsed !== 'object') {
+      return { ok: false, error: raw || `PnW API returned status ${response.status}.` };
+    }
+    const parsedObject = parsed as { success?: unknown; error?: unknown };
+    const success = parsedObject?.success;
+    if (isPnwSuccessValue(success)) return { ok: true };
+    const error = typeof parsedObject?.error === 'string' ? parsedObject.error : 'Unknown PnW API error.';
     return { ok: false, error };
   } catch {
     return { ok: false, error: raw || `PnW API returned status ${response.status}.` };
