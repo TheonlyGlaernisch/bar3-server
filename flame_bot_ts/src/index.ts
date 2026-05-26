@@ -2271,29 +2271,42 @@ async function main(): Promise<void> {
           milcom: '⚔️', milcom_gov: '🛡️', ia: '🤝', ia_asst: '📋', gov: '🏛️', member: '🧑‍🤝‍🧑',
         };
         const GOV_HIDDEN_FROM_EMBED = new Set(['gov', 'member']);
+        const configuredRoleIds = new Map<string, GovRoleKey>();
+        for (const key of Object.keys(GOV_DEPT_LABELS) as GovRoleKey[]) {
+          const rid = (cfg as Record<GovRoleKey, string | null>)[key];
+          const trimmed = (rid ?? '').trim();
+          if (trimmed && isSnowflakeId(trimmed)) configuredRoleIds.set(trimmed, key);
+        }
+        const membersByRole = new Map<string, GuildMember[]>();
+        for (const member of allGuildMembers.values()) {
+          if (member.user.bot) continue;
+          const roleIds = member.roles?.cache ? Array.from(member.roles.cache.keys()) : [];
+          for (const roleId of roleIds) {
+            if (!configuredRoleIds.has(roleId)) continue;
+            const list = membersByRole.get(roleId);
+            if (list) list.push(member);
+            else membersByRole.set(roleId, [member]);
+          }
+        }
+        for (const list of membersByRole.values()) {
+          list.sort((a, b) => a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase()));
+        }
         const embed = new EmbedBuilder().setTitle('Government').setColor(0x5865F2);
         const guildRoles = new Map(interaction.guild.roles.cache.map((r) => [r.id, r]));
         let total = 0;
         for (const [key, label] of Object.entries(GOV_DEPT_LABELS)) {
           if (GOV_HIDDEN_FROM_EMBED.has(key)) continue;
           const rid = (cfg as Record<string, string | null>)[key];
-          if (!rid) continue;
-          const role = guildRoles.get(rid);
-          if (!role) {
-            embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label}`, value: '*(role not found)*', inline: false });
-            continue;
-          }
-          const membersWithRole = [...allGuildMembers.values()].filter(
-            (m) => !m.user.bot && m.roles.cache.has(rid),
-          );
+          const roleId = (rid ?? '').trim();
+          if (!roleId) continue;
+          const role = guildRoles.get(roleId);
+          const membersWithRole = membersByRole.get(roleId) ?? [];
           total += membersWithRole.length;
           const value = membersWithRole.length
             ? formatMentionsForEmbed(
-              membersWithRole
-                .sort((a, b) => a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase()))
-                .map((m) => m.id)
+              membersWithRole.map((m) => m.id)
             )
-            : '*(no members)*';
+            : role ? '*(no members)*' : '*(role not found)*';
           embed.addFields({ name: `${GOV_DEPT_EMOJI[key] ?? ''} ${label} (${membersWithRole.length})`, value, inline: false });
         }
         embed.setFooter({ text: `${total} government member(s) total` });
