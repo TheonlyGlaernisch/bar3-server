@@ -2280,7 +2280,7 @@ async function main(): Promise<void> {
         const membersByRole = new Map<string, GuildMember[]>();
         for (const member of allGuildMembers.values()) {
           if (member.user.bot) continue;
-          const roleIds = member.roles?.cache ? Array.from(member.roles.cache.keys()) : [];
+          const roleIds = member.roles.cache ? Array.from(member.roles.cache.keys()) : [];
           for (const roleId of roleIds) {
             if (!configuredRoleIds.has(roleId)) continue;
             const list = membersByRole.get(roleId);
