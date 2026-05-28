@@ -269,7 +269,9 @@ export default defineComponent({
       if (editorTab.value === 0 && messageHTML.value.quill !== config.value.messageHTML) {
         saveChangesOpen.value = true;
         return;
-      } else if (
+      }
+
+      if (
         editorTab.value === 1 &&
         (
           advancedRaw.value.html !== (config.value.advancedRaw && config.value.advancedRaw.html) ||
@@ -278,7 +280,9 @@ export default defineComponent({
       ) {
         saveChangesOpen.value = true;
         return;
-      } else if (subject.value !== config.value.messageSubject) {
+      }
+
+      if (subject.value !== config.value.messageSubject) {
         saveChangesOpen.value = true;
         return;
       }
