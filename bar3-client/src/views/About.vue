@@ -73,21 +73,24 @@
 </template>
 
 <script lang="ts">
-  import { Component, Vue } from 'vue-property-decorator';
-  import UpdateAvailableBanner from '@/components/UpdateAvailableBanner.vue';
-  
-  @Component({
-    components: {
-      UpdateAvailableBanner
-    }
-  })
-  export default class About extends Vue {
-    get appVersion() {
-      return this.$store.getters.appVersion;
-    }
+import { computed, defineComponent } from 'vue';
+import { useStore } from 'vuex';
+import UpdateAvailableBanner from '@/components/UpdateAvailableBanner.vue';
 
-    get serverVersion() {
-      return this.$store.getters.serverVersion;
-    }
-  }
+export default defineComponent({
+  name: 'AboutView',
+  components: {
+    UpdateAvailableBanner,
+  },
+  setup() {
+    const store = useStore();
+    const appVersion = computed(() => store.getters.appVersion);
+    const serverVersion = computed(() => store.getters.serverVersion);
+
+    return {
+      appVersion,
+      serverVersion,
+    };
+  },
+});
 </script>
