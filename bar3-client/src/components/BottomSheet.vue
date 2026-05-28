@@ -125,7 +125,7 @@ export default Vue.extend({
     this.checkForMinState();
   },
 
-  beforeDestroy() {
+  beforeUnmount() {
     if (this.mc != null) this.mc.destroy();
     window.onresize = null;
   },

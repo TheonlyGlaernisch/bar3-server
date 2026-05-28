@@ -36,5 +36,14 @@ module.exports = {
       args[0].title = 'TRF owns this thing';
       return args;
     });
+
+    config.plugins.delete('fork-ts-checker');
+
+    ['ts', 'tsx'].forEach((rule) => {
+      config.module.rule(rule).use('ts-loader').tap((options = {}) => ({
+        ...options,
+        transpileOnly: true,
+      }));
+    });
   },
 };
