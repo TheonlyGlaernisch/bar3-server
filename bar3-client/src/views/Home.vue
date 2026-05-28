@@ -34,7 +34,7 @@ import getAppData from '@/actions/getAppData';
 import { getPwApiKeyDetails } from '@/utilities/pwApi';
 
 export default defineComponent({
-  name: 'Home',
+  name: 'HomeView',
   components: {
     GraphCard,
     MessagesSentCard,
