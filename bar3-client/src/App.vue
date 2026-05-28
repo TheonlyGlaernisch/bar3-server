@@ -39,27 +39,28 @@
 </template>
 
 <script lang="ts">
-import Vue from 'vue';
-import Component from 'vue-class-component';
+import { defineComponent } from 'vue';
 import SideBar from '@/components/SideBar.vue';
 import V2AutomationToggle from '@/components/V2AutomationToggle.vue';
 import { hasV2Credentials, v2Api } from '@/utilities/v2Api';
 import { discordAuth } from '@/utilities/discordAuth';
 
-@Component({
+export default defineComponent({
   name: 'App',
   components: {
     SideBar,
     V2AutomationToggle,
-  }
-})
-export default class App extends Vue {
-  sideBarOpen = false;
-
-  get isDiscordAuthed(): boolean {
-    return this.$store.getters.isDiscordAuthed;
-  }
-
+  },
+  data() {
+    return {
+      sideBarOpen: false,
+    };
+  },
+  computed: {
+    isDiscordAuthed(): boolean {
+      return this.$store.getters.isDiscordAuthed;
+    },
+  },
   async mounted() {
     const session = await discordAuth.getSession();
     this.$store.commit('setDiscordAuthed', session.authenticated);
@@ -81,8 +82,8 @@ export default class App extends Vue {
         }
       })(),
     ]);
-  }
-}
+  },
+});
 </script>
 
 <style>

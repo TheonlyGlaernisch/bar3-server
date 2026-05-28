@@ -17,11 +17,6 @@ module.exports = {
     'entities',
   ],
   configureWebpack: {
-    resolve: {
-      alias: {
-        vue: '@vue/compat',
-      },
-    },
     plugins: [
       new webpack.DefinePlugin({
         'process.env.PACKAGE_VERSION': JSON.stringify(version),

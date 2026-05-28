@@ -1,6 +1,6 @@
 <template>
   <transition name="slideup">
-    <v-card class="save-changes-card elevation-5" v-if="value">
+    <v-card class="save-changes-card elevation-5" v-if="modelValue">
       <v-card-title>
         Save Your Changes
       </v-card-title>
@@ -24,21 +24,23 @@
 </template>
 
 <script lang="ts">
-  import {Component, Prop, Watch, Vue} from 'vue-property-decorator';
+  import { defineComponent } from 'vue';
 
-  @Component
-  export default class SavedChangesCard extends Vue {
-    @Prop(Boolean) value!: boolean;
-
-    @Watch('value')
-    valueChanged(value: boolean) {
-      this.value = value;
-    }
-
-    save() {
-      this.$emit('save');
-    }
-  }
+  export default defineComponent({
+    name: 'SavedChangesCard',
+    emits: ['save'],
+    props: {
+      modelValue: {
+        type: Boolean,
+        default: false,
+      },
+    },
+    methods: {
+      save() {
+        this.$emit('save');
+      },
+    },
+  });
 </script>
 
 <style>

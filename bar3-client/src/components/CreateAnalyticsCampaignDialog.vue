@@ -61,46 +61,52 @@
 </template>
 
 <script lang="ts">
-import {Component, Vue, Prop, Watch} from 'vue-property-decorator';
+import { defineComponent } from 'vue';
 import createNewCampaign from '@/actions/createNewCampaign';
 
-@Component
-export default class CreateAnalyticsCampaignDialog extends Vue {
-  dialog = false;
-  loading = false;
-  campaignName = '';
-  @Prop(Boolean) value!: boolean;
+export default defineComponent({
+  name: 'CreateAnalyticsCampaignDialog',
+  emits: ['update:modelValue', 'created'],
+  props: {
+    modelValue: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  data() {
+    return {
+      loading: false,
+      campaignName: '',
+    };
+  },
+  computed: {
+    dialog: {
+      get(): boolean {
+        return this.modelValue;
+      },
+      set(val: boolean) {
+        this.$emit('update:modelValue', val);
+      },
+    },
+  },
+  methods: {
+    async createCampaign() {
+      this.loading = true;
 
-  @Watch('value')
-  onValueChanged(val: boolean) {
-    this.dialog = val;
-  }
+      let error = false;
+      await createNewCampaign(this.campaignName).catch(() => {
+        this.loading = false;
+        alert('Failed to create campaign, make sure your campaign\'s name is unique or the server is running. Otherwise contact us or try again later.');
+        error = true;
+      });
 
-  @Watch('dialog')
-  onDialogChanged(val: boolean) {
-    this.$emit('input', val);
-  }
+      if (!error) {
+        this.dialog = false;
+        this.$emit('created');
+      }
 
-  async createCampaign() {
-    this.loading = true;
-
-    let error = false;
-    await createNewCampaign(this.campaignName).catch(() => {
       this.loading = false;
-      alert('Failed to create campaign, make sure your campaign\'s name is unique or the server is running. Otherwise contact us or try again later.');
-      error = true;
-    });
-
-    if (!error) {
-      this.dialog = false;
-      this.$emit('created');
-    }
-
-    this.loading = false;
-  }
-
-  mounted() {
-    this.dialog = this.value;
-  }
-}
+    },
+  },
+});
 </script>

@@ -90,75 +90,76 @@
 </template>
 
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator';
+import { defineComponent } from 'vue';
 import { botApi, BotServer, BotCommand } from '@/utilities/botApi';
 
-@Component
-export default class BotPanel extends Vue {
-  // Send message
-  messageContent = '';
-  sendLoading = false;
-  sendError = '';
-  sendSuccess = false;
+export default defineComponent({
+  name: 'BotPanel',
+  data() {
+    return {
+      // Send message
+      messageContent: '',
+      sendLoading: false,
+      sendError: '',
+      sendSuccess: false,
 
-  // Servers
-  servers: BotServer[] = [];
-  serversLoading = false;
-  serversError = '';
+      // Servers
+      servers: [] as BotServer[],
+      serversLoading: false,
+      serversError: '',
 
-  // Commands
-  commands: BotCommand[] = [];
-  commandsLoading = false;
-  commandsError = '';
-
-  serverIconUrl(server: BotServer): string {
-    if (!server.icon || server.icon.includes('{')) return '';
-    if (/^https?:\/\//.test(server.icon)) return server.icon;
-    return `https://cdn.discordapp.com/icons/${server.id}/${server.icon}.png?size=64`;
-  }
-
+      // Commands
+      commands: [] as BotCommand[],
+      commandsLoading: false,
+      commandsError: '',
+    };
+  },
   async created() {
     await Promise.all([this.loadServers(), this.loadCommands()]);
-  }
-
-  async loadServers() {
-    this.serversLoading = true;
-    this.serversError = '';
-    try {
-      this.servers = await botApi.getServers();
-    } catch (e) {
-      this.serversError = (e as any)?.message || 'Failed to load servers';
-    } finally {
-      this.serversLoading = false;
-    }
-  }
-
-  async loadCommands() {
-    this.commandsLoading = true;
-    this.commandsError = '';
-    try {
-      this.commands = await botApi.getCommandUsage();
-    } catch (e) {
-      this.commandsError = (e as any)?.message || 'Failed to load command usage';
-    } finally {
-      this.commandsLoading = false;
-    }
-  }
-
-  async sendMessage() {
-    if (!this.messageContent.trim()) return;
-    this.sendLoading = true;
-    this.sendError = '';
-    this.sendSuccess = false;
-    try {
-      await botApi.sendMessage(this.messageContent.trim());
-      this.sendSuccess = true;
-      this.messageContent = '';
-    } catch (e) {
-      this.sendError = (e as any)?.message || 'Failed to send message';
-    } finally {
-      this.sendLoading = false;
-    }
-  }
-}
+  },
+  methods: {
+    serverIconUrl(server: BotServer): string {
+      if (!server.icon || server.icon.includes('{')) return '';
+      if (/^https?:\/\//.test(server.icon)) return server.icon;
+      return `https://cdn.discordapp.com/icons/${server.id}/${server.icon}.png?size=64`;
+    },
+    async loadServers() {
+      this.serversLoading = true;
+      this.serversError = '';
+      try {
+        this.servers = await botApi.getServers();
+      } catch (e) {
+        this.serversError = (e as any)?.message || 'Failed to load servers';
+      } finally {
+        this.serversLoading = false;
+      }
+    },
+    async loadCommands() {
+      this.commandsLoading = true;
+      this.commandsError = '';
+      try {
+        this.commands = await botApi.getCommandUsage();
+      } catch (e) {
+        this.commandsError = (e as any)?.message || 'Failed to load command usage';
+      } finally {
+        this.commandsLoading = false;
+      }
+    },
+    async sendMessage() {
+      if (!this.messageContent.trim()) return;
+      this.sendLoading = true;
+      this.sendError = '';
+      this.sendSuccess = false;
+      try {
+        await botApi.sendMessage(this.messageContent.trim());
+        this.sendSuccess = true;
+        this.messageContent = '';
+      } catch (e) {
+        this.sendError = (e as any)?.message || 'Failed to send message';
+      } finally {
+        this.sendLoading = false;
+      }
+    },
+  },
+});
 </script>

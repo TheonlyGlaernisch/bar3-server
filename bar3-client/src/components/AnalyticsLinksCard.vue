@@ -40,19 +40,25 @@
 </template>
 
 <script lang="ts">
+import { defineComponent, PropType } from 'vue';
 import { AnalyticalCampaign } from '@/interfaces/analytics';
-import {Component, Vue, Prop} from 'vue-property-decorator';
 
-@Component
-export default class AnalyticsLinkCard extends Vue {
-  @Prop(Object) campaign!: AnalyticalCampaign;
+export default defineComponent({
+  name: 'AnalyticsLinkCard',
+  props: {
+    campaign: {
+      type: Object as PropType<AnalyticalCampaign>,
+      required: true,
+    },
+  },
+  methods: {
+    urlName(urlString: string) {
+      const url = new URL(urlString);
 
-  urlName(urlString: string) {
-    const url = new URL(urlString);
-
-    return `${url.hostname + url.pathname}`;
-  }
-}
+      return `${url.hostname + url.pathname}`;
+    },
+  },
+});
 </script>
 
 <style scoped>

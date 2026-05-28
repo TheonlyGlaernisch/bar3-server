@@ -199,102 +199,106 @@
 </template>
 
 <script lang="ts">
-  import Vue from 'vue'
-  import Component from 'vue-class-component'
-  import {Watch, Prop} from 'vue-property-decorator';
+  import { defineComponent } from 'vue';
   import MessageCreator from '@/components/MessageCreator.vue';
   import AdvancedMessageCreator from '@/components/AdvancedMessageCreator.vue';
   import sendConfig from '@/actions/sendConfig';
 
-  @Component({
+  export default defineComponent({
+    name: 'SetupCard',
     components: {
       MessageCreator,
-      AdvancedMessageCreator
-    }
-  })
-  export default class SetupCard extends Vue {
-    isShowing = false;
-    page = 1;
-    maxPage = 5;
-    editorTab = 0;
-    setup = {
-      apiKey: '',
-      subjectLine: '',
-      quill: '',
-      advanced: '',
-      advancedRaw: {
-        html: '',
-        css: '',
+      AdvancedMessageCreator,
+    },
+    emits: ['update:modelValue', 'complete'],
+    props: {
+      modelValue: {
+        type: Boolean,
+        default: false,
       },
-      analyticsEnabled: false,
-      minutesToUpdate: 3,
-    };
-    error = false; // TODO: Add error stopper
-
-    @Prop(Boolean) readonly value!: boolean;
-
-    mounted() {
-      this.isShowing = this.value;
-    }
-
-    get canGoToNextPage() {
-      if (this.page == 2) {
-        if (!this.setup.apiKey || !this.setup.minutesToUpdate) return false;
-      } else if (this.page == 3) {
-        if ((!(this.setup.quill && this.editorTab == 0) && 
-            !(this.setup.advanced && this.editorTab == 1)) ||
-            !this.setup.subjectLine) {
-              return false;
-            }
-      }
-
-      return true;
-    }
-
-    nextPage() {
-      if (!this.canGoToNextPage) return;
-      if (this.page == this.maxPage) {
-        this.complete();
-
-        return;
-      }
-
-      this.page++;
-    }
-
-    complete() {
-      this.isShowing = false;
-      const res = sendConfig({
-        apiKey: this.setup.apiKey,
-        messageSubject: this.setup.subjectLine,
-        messageHTML: (this.editorTab == 0) ? this.setup.quill : this.setup.advanced,
-        advancedRaw: {
-          html: this.setup.advancedRaw.html,
-          css: this.setup.advancedRaw.css,
+    },
+    data() {
+      return {
+        isShowing: false,
+        page: 1,
+        maxPage: 5,
+        editorTab: 0,
+        setup: {
+          apiKey: '',
+          subjectLine: '',
+          quill: '',
+          advanced: '',
+          advancedRaw: {
+            html: '',
+            css: '',
+          },
+          analyticsEnabled: false,
+          minutesToUpdate: 3,
         },
-        analyticsEnabled: this.setup.analyticsEnabled,
-        currentEditor: this.editorTab,
-        updatePeriodMilliseconds: this.setup.minutesToUpdate * 60000,
-      }); // we are done, send the config to the app
+        error: false, // TODO: Add error stopper
+      };
+    },
+    computed: {
+      canGoToNextPage() {
+        if (this.page == 2) {
+          if (!this.setup.apiKey || !this.setup.minutesToUpdate) return false;
+        } else if (this.page == 3) {
+          if ((!(this.setup.quill && this.editorTab == 0) &&
+              !(this.setup.advanced && this.editorTab == 1)) ||
+              !this.setup.subjectLine) {
+            return false;
+          }
+        }
 
-      if (!res) {
-        this.error = true;
-        alert('Couldn\'t update config! Please try again and verify the server is running.');
-      }
+        return true;
+      },
+    },
+    watch: {
+      modelValue(val: boolean) {
+        this.isShowing = val;
+      },
+      isShowing(val: boolean) {
+        this.$emit('update:modelValue', val);
+      },
+    },
+    mounted() {
+      this.isShowing = this.modelValue;
+    },
+    methods: {
+      nextPage() {
+        if (!this.canGoToNextPage) return;
+        if (this.page == this.maxPage) {
+          this.complete();
 
-      this.$emit('complete');
-    }
-  
-    @Watch('value')
-    onValueChanged(val: boolean) {
-      this.isShowing = val;
-    }
+          return;
+        }
 
-    @Watch('isShowing')
-    onIsShowingChanged(val: boolean) {
-      this.$emit('input', val);
-    }
-  }
+        this.page++;
+      },
+      complete() {
+        this.isShowing = false;
+        const res = sendConfig({
+          apiKey: this.setup.apiKey,
+          messageSubject: this.setup.subjectLine,
+          messageHTML: (this.editorTab == 0) ? this.setup.quill : this.setup.advanced,
+          advancedRaw: {
+            html: this.setup.advancedRaw.html,
+            css: this.setup.advancedRaw.css,
+          },
+          analyticsEnabled: this.setup.analyticsEnabled,
+          currentEditor: this.editorTab,
+          updatePeriodMilliseconds: this.setup.minutesToUpdate * 60000,
+        }); // we are done, send the config to the app
+
+        if (!res) {
+          this.error = true;
+          alert('Couldn\'t update config! Please try again and verify the server is running.');
+        }
+
+        this.$emit('complete');
+      },
+    },
+  });
 </script>
 
 <style scoped>

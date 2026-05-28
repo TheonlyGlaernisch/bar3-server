@@ -15,20 +15,27 @@
 </template>
 
 <script lang="ts">
-  import {Component, Vue, Prop} from 'vue-property-decorator';
+  import { defineComponent } from 'vue';
   import setApplicationState from '@/actions/setApplicationState';
 
-  @Component
-  export default class ApplicationOnControl extends Vue {
-    @Prop(Boolean) disabled!: boolean;
-
-    get applicationOn() {
-      return this.$store.getters.applicationOn;
-    }
-
-    toggleApplication() {
-      this.$store.commit('setApplicationState', !this.applicationOn);
-      setApplicationState(this.applicationOn);
-    }
-  }
+  export default defineComponent({
+    name: 'ApplicationOnControl',
+    props: {
+      disabled: {
+        type: Boolean,
+        default: false,
+      },
+    },
+    computed: {
+      applicationOn() {
+        return this.$store.getters.applicationOn;
+      },
+    },
+    methods: {
+      toggleApplication() {
+        this.$store.commit('setApplicationState', !this.applicationOn);
+        setApplicationState(this.applicationOn);
+      },
+    },
+  });
 </script>

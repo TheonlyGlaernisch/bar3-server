@@ -80,74 +80,76 @@
 </template>
 
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator';
+import { defineComponent } from 'vue';
 import { getMemberNationContext, MemberNationContextResponse } from '@/utilities/memberNationApi';
 
 type NationViewContext = MemberNationContextResponse;
 
-@Component
-export default class Nation extends Vue {
-  loading = false;
-  error = '';
-  counterNotice = '';
-  context: NationViewContext = {
-    registered: false,
-    nation: null,
-    alliance: null,
-    activeDefensiveWars: [],
-    nationDefensiveWars: [],
-    counterRequests: [],
-  };
-
-  get canRefresh(): boolean {
-    return this.context.cache?.canRefreshNow !== false;
-  }
-
-  get cacheText(): string {
-    if (!this.context.cache?.cachedAt) return 'Not loaded yet';
-    const source = this.context.cache.source === 'cache' ? 'cached' : 'fresh';
-    const nextRefresh = this.context.cache.nextRefreshAt ? new Date(this.context.cache.nextRefreshAt).toLocaleTimeString() : '';
-    if (this.context.cache.canRefreshNow) {
-      return `Last updated ${new Date(this.context.cache.cachedAt).toLocaleTimeString()} (${source})`;
-    }
-    return `Last updated ${new Date(this.context.cache.cachedAt).toLocaleTimeString()} (${source}) · refresh after ${nextRefresh}`;
-  }
-
+export default defineComponent({
+  name: 'NationView',
+  data() {
+    return {
+      loading: false,
+      error: '',
+      counterNotice: '',
+      context: {
+        registered: false,
+        nation: null,
+        alliance: null,
+        activeDefensiveWars: [],
+        nationDefensiveWars: [],
+        counterRequests: [],
+      } as NationViewContext,
+    };
+  },
+  computed: {
+    canRefresh(): boolean {
+      return this.context.cache?.canRefreshNow !== false;
+    },
+    cacheText(): string {
+      if (!this.context.cache?.cachedAt) return 'Not loaded yet';
+      const source = this.context.cache.source === 'cache' ? 'cached' : 'fresh';
+      const nextRefresh = this.context.cache.nextRefreshAt ? new Date(this.context.cache.nextRefreshAt).toLocaleTimeString() : '';
+      if (this.context.cache.canRefreshNow) {
+        return `Last updated ${new Date(this.context.cache.cachedAt).toLocaleTimeString()} (${source})`;
+      }
+      return `Last updated ${new Date(this.context.cache.cachedAt).toLocaleTimeString()} (${source}) · refresh after ${nextRefresh}`;
+    },
+  },
   async mounted() {
     await this.load(false);
-  }
-
-  async refresh() {
-    await this.load(true);
-  }
-
-  async requestCounter(war: NationViewContext['nationDefensiveWars'][number]) {
-    const text = `Request counter: war #${war.warId} vs ${war.attackerName} (${war.url})`;
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-        this.counterNotice = 'Counter request copied to clipboard.';
-      } else {
+  },
+  methods: {
+    async refresh() {
+      await this.load(true);
+    },
+    async requestCounter(war: NationViewContext['nationDefensiveWars'][number]) {
+      const text = `Request counter: war #${war.warId} vs ${war.attackerName} (${war.url})`;
+      try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+          this.counterNotice = 'Counter request copied to clipboard.';
+        } else {
+          this.counterNotice = text;
+        }
+      } catch {
         this.counterNotice = text;
       }
-    } catch {
-      this.counterNotice = text;
-    }
-    setTimeout(() => {
-      this.counterNotice = '';
-    }, 3000);
-  }
-
-  async load(refresh: boolean) {
-    this.loading = true;
-    this.error = '';
-    try {
-      this.context = await getMemberNationContext(refresh);
-    } catch (e) {
-      this.error = e instanceof Error ? e.message : 'Failed to load nation information';
-    } finally {
-      this.loading = false;
-    }
-  }
-}
+      setTimeout(() => {
+        this.counterNotice = '';
+      }, 3000);
+    },
+    async load(refresh: boolean) {
+      this.loading = true;
+      this.error = '';
+      try {
+        this.context = await getMemberNationContext(refresh);
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : 'Failed to load nation information';
+      } finally {
+        this.loading = false;
+      }
+    },
+  },
+});
 </script>

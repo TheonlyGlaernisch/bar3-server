@@ -65,64 +65,66 @@
 </template>
 
 <script lang="ts">
-  import {Component, Vue} from 'vue-property-decorator';
+  import { defineComponent } from 'vue';
   import getConfig from '@/actions/getConfig';
   import sendConfig from '@/actions/sendConfig';
   import { Config, DefaultConfig } from '@/types';
   import PreviewMessage from '@/components/PreviewMessage.vue';
   import SavedChangesCard from '@/components/SavedChangesCard.vue';
 
-  @Component({
+  export default defineComponent({
+    name: 'ConfigurationView',
     components: {
       PreviewMessage,
-      SavedChangesCard
-    }
-  })
-  export default class Configuration extends Vue {
-    config: Config = new DefaultConfig();
-    minutesToUpdate = 0;
-    apiKey = '';
-    analyticsEnabled = false;
-    saveChangesOpen = false;
-    error = false;
-
-    async save() {
-      const newConfig = {
-        apiKey: this.apiKey,
-        analyticsEnabled: this.analyticsEnabled,
-        updatePeriodMilliseconds: this.minutesToUpdate * 60000
+      SavedChangesCard,
+    },
+    data() {
+      return {
+        config: new DefaultConfig() as Config,
+        minutesToUpdate: 0,
+        apiKey: '',
+        analyticsEnabled: false,
+        saveChangesOpen: false,
+        error: false,
       };
+    },
+    methods: {
+      async save() {
+        const newConfig = {
+          apiKey: this.apiKey,
+          analyticsEnabled: this.analyticsEnabled,
+          updatePeriodMilliseconds: this.minutesToUpdate * 60000
+        };
 
-      const res = await sendConfig(newConfig);
-      Object.assign(this.config, newConfig);
+        const res = await sendConfig(newConfig);
+        Object.assign(this.config, newConfig);
 
-      if (!res) {
-        this.error = true;
-        alert('Couldn\'t update config! Please try again and verify the server is running.');
-      } else {
+        if (!res) {
+          this.error = true;
+          alert('Couldn\'t update config! Please try again and verify the server is running.');
+        } else {
+          this.saveChangesOpen = false;
+        }
+      },
+      changes() {
+        if (this.apiKey != this.config.apiKey) {
+          this.saveChangesOpen = true;
+          return;
+        }
+
+        if (this.minutesToUpdate != (this.config.updatePeriodMilliseconds || 0) / 60000) {
+          this.saveChangesOpen = true;
+          return;
+        }
+
+        if (this.analyticsEnabled != this.config.analyticsEnabled) {
+          this.saveChangesOpen = true;
+          return;
+        }
+
         this.saveChangesOpen = false;
-      }
-    }
-
-    changes() {
-      if (this.apiKey != this.config.apiKey) {
-        this.saveChangesOpen = true;
-        return;
-      }
-      
-      if (this.minutesToUpdate != (this.config.updatePeriodMilliseconds || 0) / 60000) {
-        this.saveChangesOpen = true;
-        return;
-      }
-
-      if (this.analyticsEnabled != this.config.analyticsEnabled) {
-        this.saveChangesOpen = true;
-        return;
-      }
-
-      this.saveChangesOpen = false;
-    }
-
+      },
+    },
     async mounted() {
       const config = await getConfig();
       if (config && !(config instanceof Error)) {
@@ -133,8 +135,8 @@
       } else {
         alert('Couldn\'t retrieve your config!');
       }
-    }
-  }
+    },
+  });
 </script>
 
 <style scoped>

@@ -45,91 +45,48 @@
 </template>
 
 <script lang="ts">
+import { defineComponent, PropType } from 'vue';
 import { AnalyticalCampaign } from '@/interfaces/analytics';
 import { VueLineChart } from '@/types';
-import {Prop, Component, Vue, Watch} from 'vue-property-decorator';
 import LineChart from '@/components/LineChart.vue';
 
-@Component({
+export default defineComponent({
+  name: 'AnalyticsGraphCard',
   components: {
-    LineChart
-  }
-})
-export default class AnalyticsGraphCard extends Vue {
-  chartData = new VueLineChart.ChartData();
-  loaded = false;
-
-  totalLinkClicks = 0;
-
-  @Prop(Object) campaign!: AnalyticalCampaign;
-  
-  generateViewsHistory() {
-    const dataset = new VueLineChart.Dataset();
-    dataset.borderColor = `rgb(255, 107, 0)`;
-    dataset.label = 'Message Views';
-    dataset.fill = false;
-
-    if (this.campaign.messagePixel.readCount == 0) {
-      this.chartData.datasets.push(dataset);
-      return [];
-    }
-
-    const history = this.campaign.messagePixel.readHistory;
-
-    // Single data point: show total views on that day
-    if (history.length === 1) {
-      dataset.data.push({ x: new Date(history[0]).toLocaleDateString('en-US'), y: this.campaign.messagePixel.readCount });
-      this.chartData.datasets.push(dataset);
-      return;
-    }
-
-    const firstRead = history[0];
-
-    const dayInMiliseconds = 24 * 60 * 60 * 1000;
-    const totalIncrements = Math.ceil((history[history.length - 1] - firstRead) / dayInMiliseconds) + 1;
-
-    let lastReadIndex = 0;
-
-    for (let i = 1; i <= totalIncrements; i++) {
-      let messagesAtIncrement = 0;
-      while(history[lastReadIndex] && history[lastReadIndex] < (i * dayInMiliseconds) + firstRead) {
-        messagesAtIncrement++;
-        lastReadIndex++;
-      }
-
-      dataset.data.push({ x: (new Date((i * dayInMiliseconds) + firstRead).toLocaleDateString('en-US')), y: messagesAtIncrement });
-    }
-
-    this.chartData.datasets.push(dataset);
-  }
-
-  generateLinkClicksGraph() {
-    let colorIncremeter = 0;
-    const maxColorIndex = VueLineChart.color.length;
-
-    for (const link of this.campaign.links) {
-      colorIncremeter++;
-      if (colorIncremeter >= maxColorIndex) colorIncremeter = 0;
-
-      const urlInfo = new URL(link.url);
-
+    LineChart,
+  },
+  props: {
+    campaign: {
+      type: Object as PropType<AnalyticalCampaign>,
+      required: true,
+    },
+  },
+  data() {
+    return {
+      chartData: new VueLineChart.ChartData(),
+      loaded: false,
+      totalLinkClicks: 0,
+    };
+  },
+  methods: {
+    generateViewsHistory() {
       const dataset = new VueLineChart.Dataset();
-      dataset.label = urlInfo.hostname + urlInfo.pathname;
-      dataset.borderColor = VueLineChart.color[colorIncremeter];
+      dataset.borderColor = `rgb(255, 107, 0)`;
+      dataset.label = 'Message Views';
       dataset.fill = false;
 
-      if (link.readCount == 0) {
+      if (this.campaign.messagePixel.readCount == 0) {
         this.chartData.datasets.push(dataset);
-        continue;
+        return [];
       }
 
-      const history = link.readHistory;
+      const history = this.campaign.messagePixel.readHistory;
 
-      // Single data point: show total clicks on that day
+      // Single data point: show total views on that day
       if (history.length === 1) {
-        dataset.data.push({ x: new Date(history[0]).toLocaleDateString('en-US'), y: link.readCount });
+        dataset.data.push({ x: new Date(history[0]).toLocaleDateString('en-US'), y: this.campaign.messagePixel.readCount });
         this.chartData.datasets.push(dataset);
-        continue;
+        return;
       }
 
       const firstRead = history[0];
@@ -140,48 +97,91 @@ export default class AnalyticsGraphCard extends Vue {
       let lastReadIndex = 0;
 
       for (let i = 1; i <= totalIncrements; i++) {
-        let readsAtIncrement = 0;
-        while(history[lastReadIndex] && history[lastReadIndex] < (i * dayInMiliseconds) + firstRead) {
-          readsAtIncrement++;
+        let messagesAtIncrement = 0;
+        while (history[lastReadIndex] && history[lastReadIndex] < (i * dayInMiliseconds) + firstRead) {
+          messagesAtIncrement++;
           lastReadIndex++;
         }
 
-        dataset.data.push({x: (new Date((i * dayInMiliseconds) + firstRead).toLocaleDateString('en-US')), y: readsAtIncrement});
+        dataset.data.push({ x: (new Date((i * dayInMiliseconds) + firstRead).toLocaleDateString('en-US')), y: messagesAtIncrement });
       }
 
       this.chartData.datasets.push(dataset);
-    }
-  }
+    },
+    generateLinkClicksGraph() {
+      let colorIncremeter = 0;
+      const maxColorIndex = VueLineChart.color.length;
 
-  getTotalLinkClicks() {
-    this.totalLinkClicks = 0;
-    
-    for (const link of this.campaign.links) {
-      this.totalLinkClicks += link.readCount;
-    }
-  }
+      for (const link of this.campaign.links) {
+        colorIncremeter++;
+        if (colorIncremeter >= maxColorIndex) colorIncremeter = 0;
 
-  generateData() {
-    this.chartData = new VueLineChart.ChartData();
+        const urlInfo = new URL(link.url);
 
-    this.getTotalLinkClicks();
-    this.generateViewsHistory();
-    this.generateLinkClicksGraph();
+        const dataset = new VueLineChart.Dataset();
+        dataset.label = urlInfo.hostname + urlInfo.pathname;
+        dataset.borderColor = VueLineChart.color[colorIncremeter];
+        dataset.fill = false;
 
-    this.loaded = true;
-  }
+        if (link.readCount == 0) {
+          this.chartData.datasets.push(dataset);
+          continue;
+        }
 
-  @Watch('campaign')
-  onCampaignChanged() {
-    this.loaded = false;
+        const history = link.readHistory;
 
-    this.generateData();
+        // Single data point: show total clicks on that day
+        if (history.length === 1) {
+          dataset.data.push({ x: new Date(history[0]).toLocaleDateString('en-US'), y: link.readCount });
+          this.chartData.datasets.push(dataset);
+          continue;
+        }
 
-    this.loaded = true;
-  }
+        const firstRead = history[0];
 
+        const dayInMiliseconds = 24 * 60 * 60 * 1000;
+        const totalIncrements = Math.ceil((history[history.length - 1] - firstRead) / dayInMiliseconds) + 1;
+
+        let lastReadIndex = 0;
+
+        for (let i = 1; i <= totalIncrements; i++) {
+          let readsAtIncrement = 0;
+          while (history[lastReadIndex] && history[lastReadIndex] < (i * dayInMiliseconds) + firstRead) {
+            readsAtIncrement++;
+            lastReadIndex++;
+          }
+
+          dataset.data.push({ x: (new Date((i * dayInMiliseconds) + firstRead).toLocaleDateString('en-US')), y: readsAtIncrement });
+        }
+
+        this.chartData.datasets.push(dataset);
+      }
+    },
+    getTotalLinkClicks() {
+      this.totalLinkClicks = 0;
+
+      for (const link of this.campaign.links) {
+        this.totalLinkClicks += link.readCount;
+      }
+    },
+    generateData() {
+      this.chartData = new VueLineChart.ChartData();
+
+      this.getTotalLinkClicks();
+      this.generateViewsHistory();
+      this.generateLinkClicksGraph();
+
+      this.loaded = true;
+    },
+  },
+  watch: {
+    campaign() {
+      this.loaded = false;
+      this.generateData();
+    },
+  },
   mounted() {
     this.generateData();
-  }
-}
+  },
+});
 </script>

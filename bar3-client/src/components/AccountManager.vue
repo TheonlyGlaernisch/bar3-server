@@ -35,56 +35,56 @@
 </template>
 
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator';
+import { defineComponent } from 'vue';
 import { hasV2Credentials, v2Api } from '../utilities/v2Api';
 import { API_BASE_URL } from '@/utilities/serverUrls';
 
-@Component
-export default class AccountManager extends Vue {
-  apiKey = localStorage.getItem('apiKey') || '';
-  error = '';
-  statusMessage: { type: string; text: string } | null = null;
-  v2Session = hasV2Credentials();
+export default defineComponent({
+  name: 'AccountManager',
+  data() {
+    return {
+      apiKey: localStorage.getItem('apiKey') || '',
+      error: '',
+      statusMessage: null as { type: string; text: string } | null,
+      v2Session: hasV2Credentials(),
+    };
+  },
+  methods: {
+    async loginV2() {
+      this.error = '';
+      this.statusMessage = null;
+      try {
+        await v2Api.loginWithPwApiKey(this.apiKey);
+        localStorage.setItem('apiKey', this.apiKey);
+        this.v2Session = hasV2Credentials();
+        this.$store.commit('setLoggedIn', true);
+        this.$router.push({ path: '/' });
+        this.statusMessage = { type: 'success', text: 'User loaded successfully' };
 
-  async loginV2() {
-    this.error = '';
-    this.statusMessage = null;
-    try {
-      await v2Api.loginWithPwApiKey(this.apiKey);
-      localStorage.setItem('apiKey', this.apiKey);
-      this.v2Session = hasV2Credentials();
-      this.$store.commit('setLoggedIn', true);
-      this.$router.push({ path: '/' });
-      this.statusMessage = { type: 'success', text: 'User loaded successfully' };
-
-      // Immediately sync the top-right toggle state after login.
-      const state = await v2Api.getAutomationState().catch(() => null);
-      if (state) this.$store.commit('setApplicationState', !!state.enabled);
-    } catch (e) {
-      const maybeMessage =
-        typeof e === 'object' && e !== null && 'message' in e ? (e as any).message : undefined;
-      this.error = maybeMessage || 'Login failed';
-      this.v2Session = hasV2Credentials();
-    }
-  }
-
-  async logoutV2() {
-    await fetch(`${API_BASE_URL}/api/v2/auth/logout`, {
-      method: 'POST',
-      credentials: 'include',
-    }).catch(() => undefined);
-    localStorage.removeItem('apiKey');
-    this.apiKey = '';
-    this.v2Session = false;
-    this.$store.commit('setLoggedIn', false);
-    this.$store.commit('setApplicationState', false);
-    this.statusMessage = { type: 'success', text: 'Logged out' };
-  }
-
-  mounted() {
-    // Don’t auto-login; keep current behavior predictable.
-  }
-}
+        // Immediately sync the top-right toggle state after login.
+        const state = await v2Api.getAutomationState().catch(() => null);
+        if (state) this.$store.commit('setApplicationState', !!state.enabled);
+      } catch (e) {
+        const maybeMessage =
+          typeof e === 'object' && e !== null && 'message' in e ? (e as any).message : undefined;
+        this.error = maybeMessage || 'Login failed';
+        this.v2Session = hasV2Credentials();
+      }
+    },
+    async logoutV2() {
+      await fetch(`${API_BASE_URL}/api/v2/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      }).catch(() => undefined);
+      localStorage.removeItem('apiKey');
+      this.apiKey = '';
+      this.v2Session = false;
+      this.$store.commit('setLoggedIn', false);
+      this.$store.commit('setApplicationState', false);
+      this.statusMessage = { type: 'success', text: 'Logged out' };
+    },
+  },
+});
 </script>
 
 <style scoped>

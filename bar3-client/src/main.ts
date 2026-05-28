@@ -1,12 +1,10 @@
-import { createApp, configureCompat } from 'vue';
+import { createApp } from 'vue';
 import App from './App.vue';
 import router from './router';
 import store from './store';
 import vuetify from './plugins/vuetify';
 import '@mdi/font/css/materialdesignicons.css';
 import { ensureGoogleTag } from '@/utilities/googleTag';
-
-configureCompat({ MODE: 2 });
 
 ensureGoogleTag();
 document.title = 'TRF owns this thing';
