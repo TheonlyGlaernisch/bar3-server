@@ -1,7 +1,7 @@
 <template>
   <div class="home view-small-inner-wrapper view-padding-inner-wrapper">
     <h1>Dashboard</h1>
-    <div class="text-subtitle-1 grey--text text--lighten-1">Last refreshed {{ refreshedSecondsAgo }} second{{ refreshedSecondsAgo != 1 ? 's' : '' }} ago</div>
+    <div class="text-subtitle-1 grey--text text--lighten-1">Last refreshed {{ refreshedSecondsAgo }} second{{ refreshedSecondsAgo !== 1 ? 's' : '' }} ago</div>
     <update-available-banner class="mt-4"/>
     <div class="dashboard-cards-container mt-6">
       <graph-card class="dashboard-card" graphType="messagesSentOverTime"/>
@@ -25,64 +25,75 @@
 </template>
 
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator';
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref } from 'vue';
+import { useStore } from 'vuex';
 import GraphCard from '@/components/GraphCard.vue';
 import MessagesSentCard from '@/components/MessagesSentCard.vue';
 import UpdateAvailableBanner from '@/components/UpdateAvailableBanner.vue';
 import getAppData from '@/actions/getAppData';
 import { getPwApiKeyDetails } from '@/utilities/pwApi';
 
-@Component({
+export default defineComponent({
+  name: 'Home',
   components: {
     GraphCard,
     MessagesSentCard,
-    UpdateAvailableBanner
-  }
-})
-export default class Home extends Vue {
-  refreshedSecondsAgo = 0;
+    UpdateAvailableBanner,
+  },
+  setup() {
+    const store = useStore();
+    const refreshedSecondsAgo = ref(0);
+    const lastRefreshed = computed(() => store.getters.lastRefreshed as number);
+    let refreshTimer: number | undefined;
 
-  get lastRefreshed() {
-    return this.$store.getters.lastRefreshed;
-  }
+    const updateLastRefreshed = () => {
+      refreshedSecondsAgo.value = Math.floor((Date.now() - lastRefreshed.value) / 1000);
+    };
 
-  updateLastRefreshed() {
-    setTimeout(() => {
-      this.updateLastRefreshed();
-      this.refreshedSecondsAgo = Math.floor((Date.now() - this.lastRefreshed) / 1000);
-    }, 1000);
-  }
+    const fetchApiDetails = async () => {
+      const apiKey = localStorage.getItem('apiKey');
+      if (!apiKey) return;
 
-  async fetchApiDetails() {
-    const apiKey = localStorage.getItem('apiKey');
-    if (!apiKey) return;
+      // Fetch sent messages and app state from the server.
+      const data = await getAppData();
+      if (data) {
+        store.commit('setSentMessages', data.sentMessages);
+      }
 
-    // Fetch sent messages and app state from the server.
-    const data = await getAppData();
-    if (data) {
-      this.$store.commit('setSentMessages', data.sentMessages);
-    }
+      // Always query P&W directly with the stored API key so the dashboard
+      // shows accurate usage regardless of what the server reports.
+      const details = await getPwApiKeyDetails(apiKey).catch(() => ({ used: 0, max: 0 }));
+      if (details.max > 0) {
+        store.commit('setAPIDetails', details);
+      } else if (data && data.apiDetails.max > 0) {
+        store.commit('setAPIDetails', data.apiDetails);
+      }
+    };
 
-    // Always query P&W directly with the stored API key so the dashboard
-    // shows accurate usage regardless of what the server reports.
-    const details = await getPwApiKeyDetails(apiKey).catch(() => ({ used: 0, max: 0 }));
-    if (details.max > 0) {
-      this.$store.commit('setAPIDetails', details);
-    } else if (data && data.apiDetails.max > 0) {
-      this.$store.commit('setAPIDetails', data.apiDetails);
-    }
-  }
+    const refreshData = async () => {
+      store.commit('setLastRefreshed', Date.now());
+      updateLastRefreshed();
+      await fetchApiDetails();
+    };
 
-  async refreshData() {
-    this.$store.commit('setLastRefreshed', Date.now());
-    await this.fetchApiDetails();
-  }
+    onMounted(async () => {
+      updateLastRefreshed();
+      refreshTimer = window.setInterval(updateLastRefreshed, 1000);
+      await refreshData();
+    });
 
-  async mounted() {
-    this.updateLastRefreshed();
-    await this.refreshData();
-  }
-}
+    onBeforeUnmount(() => {
+      if (refreshTimer) {
+        window.clearInterval(refreshTimer);
+      }
+    });
+
+    return {
+      refreshedSecondsAgo,
+      refreshData,
+    };
+  },
+});
 </script>
 
 <style scoped>

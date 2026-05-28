@@ -35,12 +35,18 @@
 
 <script lang="ts">
 import {GitHubRelease} from '@/types';
-import {Component, Vue} from 'vue-property-decorator';
+import {computed, defineComponent} from 'vue';
+import {useStore} from 'vuex';
 
-  @Component
-  export default class UpdateAvailableBanner extends Vue {
-    get update(): GitHubRelease {
-      return this.$store.getters.newUpdate;
-    }
-  }
+export default defineComponent({
+  name: 'UpdateAvailableBanner',
+  setup() {
+    const store = useStore();
+    const update = computed(() => store.getters.newUpdate as GitHubRelease | null);
+
+    return {
+      update,
+    };
+  },
+});
 </script>
