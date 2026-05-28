@@ -147,8 +147,8 @@
       <v-tabs
         v-model="editorTab"
         class="editor-tabs"
-        :direction="$vuetify.breakpoint.mdAndUp ? 'vertical' : 'horizontal'"
-        show-arrows
+        :direction="mdAndUp ? 'vertical' : 'horizontal'"
+        :show-arrows="!mdAndUp"
         @update:modelValue="changes()"
       >
         <v-tab :value="0" class="editor-tab">
@@ -195,6 +195,7 @@
 import { computed, defineComponent, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useStore } from 'vuex';
+import { useDisplay } from 'vuetify';
 import getConfig from '@/actions/getConfig';
 import sendConfig from '@/actions/sendConfig';
 import { Config, DefaultConfig } from '@/types';
@@ -220,6 +221,7 @@ export default defineComponent({
   setup() {
     const route = useRoute();
     const store = useStore();
+    const { mdAndUp } = useDisplay();
 
     const config = ref<Config>(new DefaultConfig());
     const messageHTML = ref({
@@ -550,6 +552,7 @@ export default defineComponent({
       bulkPreviewRows,
       bulkResultFailures,
       isAutomationPage,
+      mdAndUp,
       changes,
       save,
       testMessage,
@@ -609,13 +612,13 @@ export default defineComponent({
 }
 
 @media only screen and (max-width: 959px) {
-  .editor-tabs ::v-deep .v-slide-group__wrapper {
+  .editor-tabs :deep(.v-slide-group__wrapper) {
     overflow-x: auto;
     scroll-snap-type: x proximity;
     -webkit-overflow-scrolling: touch;
   }
 
-  .editor-tabs ::v-deep .v-tab {
+  .editor-tabs :deep(.v-tab) {
     scroll-snap-align: start;
     white-space: nowrap;
   }

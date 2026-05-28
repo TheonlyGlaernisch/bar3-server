@@ -57,7 +57,7 @@
       </v-card-subtitle>
       <v-card-text>
         <div>Bar 3 is offered by bsnk-dev.</div>
-        <div class="mt-2 text-primary font-weight-medium">Provided by Glaernisch and The Reclaimed Flame.</div>
+        <div class="mt-2 provided-by-text font-weight-medium">Provided by Glaernisch and The Reclaimed Flame.</div>
         <div class="mt-2">&copy; Copyright 2021 bsnk-dev. All rights reserved.</div>
         <a href="mailto: admin@bsnk.dev">Email</a>
       </v-card-text>
@@ -87,3 +87,9 @@ export default defineComponent({
   },
 });
 </script>
+
+<style scoped>
+.provided-by-text {
+  color: #ff9500;
+}
+</style>
