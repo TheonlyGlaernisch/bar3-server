@@ -28,12 +28,12 @@
 </template>
 
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator';
+import { defineComponent } from 'vue';
 import { discordAuth } from '@/utilities/discordAuth';
 import { normalizeReturnTo } from '@/utilities/serverUrls';
 
-@Component
-export default class DiscordCallback extends Vue {
+export default defineComponent({
+  name: 'DiscordCallback',
   async created() {
     const authed = await discordAuth.isAuthed();
 
@@ -54,6 +54,6 @@ export default class DiscordCallback extends Vue {
     // only accept relative paths to prevent open-redirect attacks.
     const target = normalizeReturnTo(this.$route.query.returnTo) || '/';
     this.$router.replace(target);
-  }
-}
+  },
+});
 </script>

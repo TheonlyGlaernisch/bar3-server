@@ -93,79 +93,79 @@
 </template>
 
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator';
+import { defineComponent } from 'vue';
 import { getMemberNationContext, MemberNationContextResponse, requestCounterForWar } from '@/utilities/memberNationApi';
 
 type AllianceViewContext = MemberNationContextResponse;
 
-@Component
-export default class Alliance extends Vue {
-  loading = false;
-  error = '';
-  requestingWarId: number | null = null;
-  context: AllianceViewContext = {
-    registered: false,
-    nation: null,
-    alliance: null,
-    activeDefensiveWars: [],
-    nationDefensiveWars: [],
-    counterRequests: [],
-  };
-
-  get canRefresh(): boolean {
-    return this.context.cache?.canRefreshNow !== false;
-  }
-
-  get cacheText(): string {
-    if (!this.context.cache?.cachedAt) return 'Not loaded yet';
-    const source = this.context.cache.source === 'cache' ? 'cached' : 'fresh';
-    const nextRefresh = this.context.cache.nextRefreshAt ? new Date(this.context.cache.nextRefreshAt).toLocaleTimeString() : '';
-    if (this.context.cache.canRefreshNow) {
-      return `Last updated ${new Date(this.context.cache.cachedAt).toLocaleTimeString()} (${source})`;
-    }
-    return `Last updated ${new Date(this.context.cache.cachedAt).toLocaleTimeString()} (${source}) · refresh after ${nextRefresh}`;
-  }
-
-  get requestedCounterWars() {
-    return this.context.activeDefensiveWars.filter((war) => war.counterRequested);
-  }
-
-  canRequestCounter(war: AllianceViewContext['activeDefensiveWars'][number]): boolean {
-    const nationId = this.context.nation?.nationId;
-    return !!nationId && war.defenderId === nationId;
-  }
-
+export default defineComponent({
+  name: 'AllianceView',
+  data() {
+    return {
+      loading: false,
+      error: '',
+      requestingWarId: null as number | null,
+      context: {
+        registered: false,
+        nation: null,
+        alliance: null,
+        activeDefensiveWars: [],
+        nationDefensiveWars: [],
+        counterRequests: [],
+      } as AllianceViewContext,
+    };
+  },
+  computed: {
+    canRefresh(): boolean {
+      return this.context.cache?.canRefreshNow !== false;
+    },
+    cacheText(): string {
+      if (!this.context.cache?.cachedAt) return 'Not loaded yet';
+      const source = this.context.cache.source === 'cache' ? 'cached' : 'fresh';
+      const nextRefresh = this.context.cache.nextRefreshAt ? new Date(this.context.cache.nextRefreshAt).toLocaleTimeString() : '';
+      if (this.context.cache.canRefreshNow) {
+        return `Last updated ${new Date(this.context.cache.cachedAt).toLocaleTimeString()} (${source})`;
+      }
+      return `Last updated ${new Date(this.context.cache.cachedAt).toLocaleTimeString()} (${source}) · refresh after ${nextRefresh}`;
+    },
+    requestedCounterWars() {
+      return this.context.activeDefensiveWars.filter((war) => war.counterRequested);
+    },
+  },
   async mounted() {
     await this.load(false);
-  }
-
-  async refresh() {
-    await this.load(true);
-  }
-
-  async load(refresh: boolean) {
-    this.loading = true;
-    this.error = '';
-    try {
-      this.context = await getMemberNationContext(refresh);
-    } catch (e) {
-      this.error = e instanceof Error ? e.message : 'Failed to load alliance information';
-    } finally {
-      this.loading = false;
-    }
-  }
-
-  async requestCounter(warId: number) {
-    this.requestingWarId = warId;
-    this.error = '';
-    try {
-      await requestCounterForWar(warId);
+  },
+  methods: {
+    canRequestCounter(war: AllianceViewContext['activeDefensiveWars'][number]): boolean {
+      const nationId = this.context.nation?.nationId;
+      return !!nationId && war.defenderId === nationId;
+    },
+    async refresh() {
       await this.load(true);
-    } catch (e) {
-      this.error = e instanceof Error ? e.message : 'Failed to request counter';
-    } finally {
-      this.requestingWarId = null;
-    }
-  }
-}
+    },
+    async load(refresh: boolean) {
+      this.loading = true;
+      this.error = '';
+      try {
+        this.context = await getMemberNationContext(refresh);
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : 'Failed to load alliance information';
+      } finally {
+        this.loading = false;
+      }
+    },
+    async requestCounter(warId: number) {
+      this.requestingWarId = warId;
+      this.error = '';
+      try {
+        await requestCounterForWar(warId);
+        await this.load(true);
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : 'Failed to request counter';
+      } finally {
+        this.requestingWarId = null;
+      }
+    },
+  },
+});
 </script>

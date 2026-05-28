@@ -21,29 +21,40 @@
 </template>
 
 <script lang="ts">
-import { Component, Vue, Prop } from 'vue-property-decorator';
+import { defineComponent } from 'vue';
 
-@Component
-export default class ConfirmDialog extends Vue {
-  @Prop(String) message = '';
-  @Prop(Boolean) value = false;
-
-  get isOpen(): boolean {
-    return this.value;
-  }
-
-  set isOpen(val: boolean) {
-    this.$emit('input', val);
-  }
-
-  confirm() {
-    this.$emit('confirm', true);
-    this.isOpen = false;
-  }
-
-  cancel() {
-    this.$emit('confirm', false);
-    this.isOpen = false;
-  }
-}
+export default defineComponent({
+  name: 'ConfirmDialog',
+  emits: ['update:modelValue', 'confirm'],
+  props: {
+    message: {
+      type: String,
+      default: '',
+    },
+    modelValue: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  computed: {
+    isOpen: {
+      get(): boolean {
+        return this.modelValue;
+      },
+      set(val: boolean) {
+        this.$emit('update:modelValue', val);
+      },
+    },
+  },
+  methods: {
+    confirm() {
+      this.$emit('confirm', true);
+      this.isOpen = false;
+    },
+    cancel() {
+      this.$emit('confirm', false);
+      this.isOpen = false;
+    },
+  },
+});
 </script>

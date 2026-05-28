@@ -138,7 +138,7 @@
 </template>
 
 <script lang="ts">
-import {Vue, Component} from 'vue-property-decorator';
+import { defineComponent } from 'vue';
 import AnalyticsGraphCard from '@/components/AnalyticsGraphCard.vue';
 import AnalyticsLinkCard from '@/components/AnalyticsLinksCard.vue';
 import CreateCampaignDialog from '@/components/CreateAnalyticsCampaignDialog.vue';
@@ -147,117 +147,115 @@ import getConfig from '@/actions/getConfig';
 import { AnalyticalCampaign } from '@/interfaces/analytics';
 import { v2Api } from '@/utilities/v2Api';
 
-@Component({
+export default defineComponent({
+  name: 'AnalyticsManager',
   components: {
     AnalyticsGraphCard,
     AnalyticsLinkCard,
     CreateCampaignDialog
-  }
-})
-export default class AnalyticsManager extends Vue {
-  loaded = false;
-  enabled = false
-  selectedCampaign: AnalyticalCampaign | null = null;
-  createCampaignDialog = false;
-  get v2LoggedIn() {
-  return this.$store.getters.isLoggedIn;
-  }
-  v2AnalyticsLoaded = false;
-  v2Analytics: any = { links: [], messages: [] };
-
-  get v2ViewsTotal(): number {
-    return (this.v2Analytics?.messages || []).reduce((sum: number, m: any) => sum + (m.viewCount || 0), 0);
-  }
-
-  get v2ClicksTotal(): number {
-    return (this.v2Analytics?.links || []).reduce((sum: number, l: any) => sum + (l.clickCount || 0), 0);
-  }
-
-  /** Build a synthetic AnalyticalCampaign from v2 data for the graph card. */
-  get v2Campaign(): AnalyticalCampaign {
-    const links = (this.v2Analytics?.links || []) as any[];
-    const messages = (this.v2Analytics?.messages || []) as any[];
-
-    // Collect all view timestamps across messages (full history if server returns it,
-    // otherwise fall back to lastViewedAt as a single-point proxy).
-    const allViewTimes: number[] = [];
-    for (const m of messages) {
-      if (Array.isArray(m.viewHistory) && m.viewHistory.length) {
-        for (const t of m.viewHistory) allViewTimes.push(new Date(t).getTime());
-      } else if (m.lastViewedAt) {
-        allViewTimes.push(new Date(m.lastViewedAt).getTime());
-      }
-    }
-    allViewTimes.sort((a, b) => a - b);
-
-    const mappedLinks = links.map((l: any) => {
-      const clickTimes: number[] = [];
-      if (Array.isArray(l.clickHistory) && l.clickHistory.length) {
-        for (const t of l.clickHistory) clickTimes.push(new Date(t).getTime());
-      } else if (l.lastClickedAt) {
-        clickTimes.push(new Date(l.lastClickedAt).getTime());
-      }
-      clickTimes.sort((a, b) => a - b);
-      return {
-        url: l.url,
-        id: l.shortId,
-        auth: '',
-        readCount: l.clickCount || 0,
-        readHistory: clickTimes,
-      };
-    });
-
+  },
+  data() {
     return {
-      _id: 'v2',
-      name: 'Message Analytics',
-      sentCount: 0,
-      createdTime: allViewTimes[0] || Date.now(),
-      links: mappedLinks,
-      messagePixel: {
-        id: 'v2',
-        auth: '',
-        readCount: this.v2ViewsTotal,
-        readHistory: allViewTimes,
-      },
+      loaded: false,
+      enabled: false,
+      selectedCampaign: null as AnalyticalCampaign | null,
+      createCampaignDialog: false,
+      v2AnalyticsLoaded: false,
+      v2Analytics: { links: [], messages: [] } as any,
     };
-  }
+  },
+  computed: {
+    v2LoggedIn(): boolean {
+      return this.$store.getters.isLoggedIn;
+    },
+    v2ViewsTotal(): number {
+      return (this.v2Analytics?.messages || []).reduce((sum: number, m: any) => sum + (m.viewCount || 0), 0);
+    },
+    v2ClicksTotal(): number {
+      return (this.v2Analytics?.links || []).reduce((sum: number, l: any) => sum + (l.clickCount || 0), 0);
+    },
+    /** Build a synthetic AnalyticalCampaign from v2 data for the graph card. */
+    v2Campaign(): AnalyticalCampaign {
+      const links = (this.v2Analytics?.links || []) as any[];
+      const messages = (this.v2Analytics?.messages || []) as any[];
 
-  linkName(urlString: string): string {
-    try {
-      const url = new URL(urlString);
-      return url.hostname + url.pathname;
-    } catch {
-      return urlString;
-    }
-  }
+      // Collect all view timestamps across messages (full history if server returns it,
+      // otherwise fall back to lastViewedAt as a single-point proxy).
+      const allViewTimes: number[] = [];
+      for (const m of messages) {
+        if (Array.isArray(m.viewHistory) && m.viewHistory.length) {
+          for (const t of m.viewHistory) allViewTimes.push(new Date(t).getTime());
+        } else if (m.lastViewedAt) {
+          allViewTimes.push(new Date(m.lastViewedAt).getTime());
+        }
+      }
+      allViewTimes.sort((a, b) => a - b);
 
-  get campaigns() {
-    return this.$store.getters['analytics/campaigns'];
-  }
+      const mappedLinks = links.map((l: any) => {
+        const clickTimes: number[] = [];
+        if (Array.isArray(l.clickHistory) && l.clickHistory.length) {
+          for (const t of l.clickHistory) clickTimes.push(new Date(t).getTime());
+        } else if (l.lastClickedAt) {
+          clickTimes.push(new Date(l.lastClickedAt).getTime());
+        }
+        clickTimes.sort((a, b) => a - b);
+        return {
+          url: l.url,
+          id: l.shortId,
+          auth: '',
+          readCount: l.clickCount || 0,
+          readHistory: clickTimes,
+        };
+      });
 
-  openCreateDialog() {
-    this.createCampaignDialog = true;
-  }
+      return {
+        _id: 'v2',
+        name: 'Message Analytics',
+        sentCount: 0,
+        createdTime: allViewTimes[0] || Date.now(),
+        links: mappedLinks,
+        messagePixel: {
+          id: 'v2',
+          auth: '',
+          readCount: this.v2ViewsTotal,
+          readHistory: allViewTimes,
+        },
+      };
+    },
+    campaigns() {
+      return this.$store.getters['analytics/campaigns'];
+    },
+  },
+  methods: {
+    linkName(urlString: string): string {
+      try {
+        const url = new URL(urlString);
+        return url.hostname + url.pathname;
+      } catch {
+        return urlString;
+      }
+    },
+    openCreateDialog() {
+      this.createCampaignDialog = true;
+    },
+    createdNewCampaign() {
+      this.loaded = false;
 
-  createdNewCampaign() {
-    this.loaded = false;
-    
-    this.loadAnalytics();
-  }
+      this.loadAnalytics();
+    },
+    async loadAnalytics() {
+      this.enabled = true;
 
-  async loadAnalytics() {
-    this.enabled = true;
+      await getCampaigns();
 
-    await getCampaigns();
-
-    if (this.campaigns.length > 0) {
-      this.selectedCampaign = this.campaigns[this.campaigns.length - 1];
-      this.loaded = true;
-    } else {
-      this.openCreateDialog();
-    }
-  }
-
+      if (this.campaigns.length > 0) {
+        this.selectedCampaign = this.campaigns[this.campaigns.length - 1];
+        this.loaded = true;
+      } else {
+        this.openCreateDialog();
+      }
+    },
+  },
   async mounted() {
     if (this.v2LoggedIn) {
       try {
@@ -274,7 +272,6 @@ export default class AnalyticsManager extends Vue {
     } else {
       this.loaded = true;
     }
-  }
-}
+  },
+});
 </script>
-

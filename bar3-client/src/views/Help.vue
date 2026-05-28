@@ -5,7 +5,7 @@
 </template>
 
 <script lang="ts">
-  import {Component, Vue} from 'vue-property-decorator';
+  import { defineComponent } from 'vue';
   import MarkdownIt from 'markdown-it';
   import main from '!!raw-loader!@/assets/help/index.md';
   import { sanitizeHtml } from '@/utilities/sanitizeHtml';
@@ -16,10 +16,12 @@
     breaks: true,
   });
 
-  @Component
-  export default class Help extends Vue {
-    get marked() {
-      return sanitizeHtml(markdownParser.render(main));
-    }
-  }
+  export default defineComponent({
+    name: 'HelpView',
+    computed: {
+      marked() {
+        return sanitizeHtml(markdownParser.render(main));
+      },
+    },
+  });
 </script>

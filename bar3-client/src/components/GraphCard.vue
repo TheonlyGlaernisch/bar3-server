@@ -45,43 +45,45 @@
 </template>
 
 <script lang="ts">
-  import { Component, Prop, Vue, Watch } from 'vue-property-decorator';
-  import { Message, VueLineChart } from '@/types';
-  import LineChart from '@/components/LineChart.vue';
+import { computed, defineComponent, onMounted, ref, watch } from 'vue';
+import { useStore } from 'vuex';
+import { Message, VueLineChart } from '@/types';
+import LineChart from '@/components/LineChart.vue';
 
-  @Component({
-    components: {
-      LineChart
+export default defineComponent({
+  name: 'GraphCard',
+  components: {
+    LineChart,
+  },
+  props: {
+    graphType: {
+      type: String,
+      required: true,
     },
-  })
-  export default class GraphCard extends Vue {
-    loaded = false;
-    chartData = new VueLineChart.ChartData();
+  },
+  setup(props) {
+    const store = useStore();
+    const loaded = ref(false);
+    const chartData = ref(new VueLineChart.ChartData());
+    const sentMessages = computed(() => store.getters.sentMessages as Message[]);
+    const APIRequests = computed(() => store.getters.apiDetails as {max: number; used: number});
 
-    @Prop(String) graphType!: string;
-
-    get sentMessages(): Message[] {
-      return this.$store.getters.sentMessages;
-    }
-
-    get APIRequests(): {max: number; used: number} {
-      return this.$store.getters.apiDetails;
-    }
-
-    generateSentMessagesChartData() {
+    const generateSentMessagesChartData = () => {
       const dataset = new VueLineChart.Dataset();
       dataset.label = 'Message Count';
-      dataset.borderColor = `rgb(255, 107, 0)`;
+      dataset.borderColor = 'rgb(255, 107, 0)';
       dataset.fill = false;
 
-      if (this.sentMessages.length == 0) {
-        this.chartData.datasets.push(dataset);
-        this.loaded = true;
+      const data = new VueLineChart.ChartData();
+
+      if (sentMessages.value.length === 0) {
+        data.datasets.push(dataset);
+        chartData.value = data;
+        loaded.value = true;
         return;
       }
 
-      const firstMessage = this.sentMessages[0];
-
+      const firstMessage = sentMessages.value[0];
       const twoHours = 7200000;
       const totalIncrements = Math.ceil((Date.now() - firstMessage.sentTimeMilliseconds) / twoHours);
 
@@ -92,37 +94,46 @@
        */
       for (let i = 1; i <= totalIncrements; i++) {
         let messagesAtIncrement = 0;
-        while(this.sentMessages[lastMessageIndex] && this.sentMessages[lastMessageIndex].sentTimeMilliseconds < (i * twoHours) + firstMessage.sentTimeMilliseconds) {
+        while (
+          sentMessages.value[lastMessageIndex] &&
+          sentMessages.value[lastMessageIndex].sentTimeMilliseconds < (i * twoHours) + firstMessage.sentTimeMilliseconds
+        ) {
           messagesAtIncrement++;
           lastMessageIndex++;
         }
 
-        dataset.data.push({ x: (new Date((i * twoHours) + firstMessage.sentTimeMilliseconds).toLocaleDateString('en-US')), y: messagesAtIncrement });
+        dataset.data.push({ x: new Date((i * twoHours) + firstMessage.sentTimeMilliseconds).toLocaleDateString('en-US'), y: messagesAtIncrement });
       }
 
-      this.chartData.datasets.push(dataset);
-      this.loaded = true;
-    }
+      data.datasets.push(dataset);
+      chartData.value = data;
+      loaded.value = true;
+    };
 
-    generateData() {
-      if (this.graphType == 'messagesSentOverTime') {
-        this.generateSentMessagesChartData();
+    const generateData = () => {
+      if (props.graphType === 'messagesSentOverTime') {
+        generateSentMessagesChartData();
       }
-    }
+    };
 
-    @Watch('sentMessages')
-    onSentMessagesChanged() {
-      if (this.graphType === 'messagesSentOverTime') {
-        this.chartData = new VueLineChart.ChartData();
-        this.loaded = false;
-        this.generateSentMessagesChartData();
+    watch(sentMessages, () => {
+      if (props.graphType === 'messagesSentOverTime') {
+        loaded.value = false;
+        generateSentMessagesChartData();
       }
-    }
+    });
 
-    mounted() {
-      this.generateData();
-    }
-  }
+    onMounted(() => {
+      generateData();
+    });
+
+    return {
+      loaded,
+      chartData,
+      APIRequests,
+    };
+  },
+});
 </script>
 
 <style scoped>

@@ -20,12 +20,12 @@
 </template>
 
 <script lang="ts">
-import Vue from 'vue';
+import { defineComponent } from 'vue';
 import Hammer from 'hammerjs';
 
-export default Vue.extend({
-  name: 'bottom-sheet',
-
+export default defineComponent({
+  name: 'BottomSheet',
+  emits: ['update:modelValue'],
   props: {
     defaultState: {
       type: String,
@@ -37,7 +37,7 @@ export default Vue.extend({
       default: 'rgba(0, 0, 0, .3)',
     },
 
-    value: {
+    modelValue: {
       type: String,
       default: 'half',
     },
@@ -121,7 +121,7 @@ export default Vue.extend({
     });
 
     // init
-    this.state = this.value;
+    this.state = this.modelValue;
     this.checkForMinState();
   },
 
@@ -158,12 +158,12 @@ export default Vue.extend({
   },
 
   watch: {
-    value(newState) {
+    modelValue(newState) {
       this.state = newState;
     },
 
     state(newState) {
-      this.$emit('input', newState);
+      this.$emit('update:modelValue', newState);
     },
 
     y(yVal) { // Fix for mobile getting stuck at very top without panend

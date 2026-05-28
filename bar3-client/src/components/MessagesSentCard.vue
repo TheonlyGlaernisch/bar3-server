@@ -28,12 +28,11 @@
             </template>
             <template v-else>
               <v-tooltip top>
-                <template v-slot:activator="{ on, attrs }">
+                <template #activator="{ props }">
                   <v-icon
                     color="red"
                     dark
-                    v-bind="attrs"
-                    v-on="on"
+                    v-bind="props"
                   >
                     mdi-close
                   </v-icon>
@@ -53,7 +52,7 @@
         </v-list-item>
         <v-divider/>
       </div>
-      <div v-if="this.messageItems.length == 0" class="ml-4">
+      <div v-if="messageItems.length === 0" class="ml-4">
         No messages sent since you started Bar 3.
       </div>
     </v-list>
@@ -61,22 +60,22 @@
 </template>
 
 <script lang="ts">
-  import { Component, Vue } from 'vue-property-decorator';
-  import { VueLineChart } from '@/types';
-  import LineChart from '@/components/LineChart.vue';
+import { computed, defineComponent } from 'vue';
+import { useStore } from 'vuex';
+import { Message } from '@/types';
 
-  @Component({
-    components: {
-      LineChart
-    },
-  })
-  export default class MessagesSentCard extends Vue {
-    loaded = false;
-    chartData = new VueLineChart.ChartData();
-    get messageItems() {
-      return this.$store.getters.sentMessages.slice().reverse();
-    }
-  }
+export default defineComponent({
+  name: 'MessagesSentCard',
+  setup() {
+    const store = useStore();
+
+    const messageItems = computed(() => (store.getters.sentMessages as Message[]).slice().reverse());
+
+    return {
+      messageItems,
+    };
+  },
+});
 </script>
 
 <style scoped>

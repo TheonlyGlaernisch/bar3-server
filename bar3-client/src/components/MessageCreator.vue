@@ -8,21 +8,28 @@
   </div>
 </template>
 <script lang="ts">
-  import Vue from 'vue';
-  import Component from 'vue-class-component';
-  import { Prop, Watch } from 'vue-property-decorator';
+  import { defineComponent } from 'vue';
   import Quill from 'quill';
   import 'quill/dist/quill.snow.css';
   import juice from 'juice';
   import quillStyles from '!!raw-loader!quill/dist/quill.snow.css';
   import { debounce } from 'debounce';
   import { sanitizeHtml } from '@/utilities/sanitizeHtml';
-  
-  @Component
-  export default class MessageCreator extends Vue {
-    messageQuill = '';
-    editor: Quill | undefined;
-    toolbarOptions = [
+
+  export default defineComponent({
+    name: 'MessageCreator',
+    props: {
+      inputHTML: {
+        type: String,
+        default: '',
+      },
+    },
+    emits: ['change'],
+    data() {
+      return {
+        messageQuill: '',
+        editor: null as Quill | null,
+        toolbarOptions: [
       ['bold', 'italic', 'underline', 'strike'],        // toggled buttons
       ['blockquote', 'code-block'],
 
@@ -41,25 +48,19 @@
       [{ 'align': [] }],
 
       ['clean']                                         // remove formatting button
-    ];
-
-    @Prop(String) inputHTML!: string;
-
-    @Watch('inputHTML')
-    onInputHTMLChanged(value: string) {
-      this.messageQuill = sanitizeHtml(value || '');
-      this.editor?.clipboard.dangerouslyPasteHTML(this.messageQuill);
-    }
-
-    beforeDestroy() {
-      this.editor?.disable();
-      this.digestQuill((this.$refs.editor as Element).children[0].innerHTML);
-    }
-
+        ],
+      };
+    },
+    watch: {
+      inputHTML(value: string) {
+        this.messageQuill = sanitizeHtml(value || '');
+        this.editor?.clipboard.dangerouslyPasteHTML(this.messageQuill);
+      },
+    },
     mounted() {
       this.editor = new Quill('#editor', {
         modules: { toolbar: this.toolbarOptions },
-        theme: 'snow'
+        theme: 'snow',
       });
 
       this.editor.on('text-change', debounce((delta: any, oldContents: any, source: string) => {
@@ -70,19 +71,24 @@
 
       this.messageQuill = this.inputHTML || '';
       this.editor?.setText(this.messageQuill);
-    }
+    },
+    beforeUnmount() {
+      this.editor?.disable();
+      this.digestQuill((this.$refs.editor as Element).children[0].innerHTML);
+    },
+    methods: {
+      digestQuill(html: string) {
+        const digested = juice(sanitizeHtml(html), {
+          extraCss: quillStyles,
+          preserveMediaQueries: false,
+          preserveFontFaces: false,
+          preserveKeyFrames: false,
+        });
 
-    digestQuill(html: string) {
-      const digested = juice(sanitizeHtml(html), {
-        extraCss: quillStyles,
-        preserveMediaQueries: false,
-        preserveFontFaces: false,
-        preserveKeyFrames: false
-      });
-
-      this.$emit('change', digested);
-    }
-  }
+        this.$emit('change', digested);
+      },
+    },
+  });
 </script>
 
 <style scoped>

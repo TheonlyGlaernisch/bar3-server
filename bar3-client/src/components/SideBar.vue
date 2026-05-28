@@ -61,28 +61,39 @@
 </template>
 
 <script lang="ts">
-  import { SideBarItem } from '@/types';
-import Vue from 'vue';
-  import Component from "vue-class-component";
-  import { Prop, Watch } from "vue-property-decorator";
+import { defineComponent } from 'vue';
+import { SideBarItem } from '@/types';
 
-  @Component
-  export default class SideBar extends Vue {
-    isShowing = false;
-
-    get isAdmin(): boolean {
+export default defineComponent({
+  name: 'SideBar',
+  emits: ['update:modelValue'],
+  props: {
+    modelValue: {
+      type: Boolean,
+      default: false,
+    },
+    disabled: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  data() {
+    return {
+      isShowing: false,
+      selectedItem: 0,
+    };
+  },
+  computed: {
+    isAdmin(): boolean {
       return this.$store.getters.isAdmin;
-    }
-
-    get hasClientRole(): boolean {
+    },
+    hasClientRole(): boolean {
       return this.$store.getters.hasClientRole;
-    }
-
-    get hasMemberRole(): boolean {
+    },
+    hasMemberRole(): boolean {
       return this.$store.getters.hasMemberRole;
-    }
-
-    get items(): SideBarItem[] {
+    },
+    items(): SideBarItem[] {
       const base: SideBarItem[] = [];
       if (this.hasClientRole) {
         base.push(
@@ -152,44 +163,39 @@ import Vue from 'vue';
         });
       }
       return base;
-    }
-
-    selectedItem = 0;
-
+    },
+  },
+  watch: {
+    modelValue(val: boolean) {
+      this.isShowing = val;
+    },
+    isShowing(val: boolean) {
+      this.$emit('update:modelValue', val);
+    },
+    '$route.path': {
+      handler(value: string) {
+        let option;
+        let index;
+        for ([index, option] of Object.entries(this.items)) {
+          if (option.path === value) {
+            this.selectedItem = parseInt(index);
+            break;
+          }
+        }
+      },
+      immediate: true,
+    },
+  },
+  mounted() {
+    this.isShowing = this.modelValue;
+  },
+  methods: {
     goto(path: string) {
       if (this.$route.path != path) {
-        this.$router.push({'path': path})
+        this.$router.push({'path': path});
       }
       if (this.$vuetify.breakpoint.mobile) this.isShowing = false;
-    }
-
-    @Prop(Boolean) value!: boolean;
-    @Prop(Boolean) disabled!: boolean;
-
-    mounted() {
-      this.isShowing = this.value;
-    }
-
-    @Watch('value')
-    valueChanged(val: boolean) {
-      this.isShowing = val;
-    }
-
-    @Watch('isShowing')
-    isShowingChanged(val: boolean) {
-      this.$emit('input', val); 
-    }
-
-    @Watch('$route.path', { immediate: true, deep: true })
-    onPathChange(value: string) {
-      let option;
-      let index;
-      for ([index, option] of Object.entries(this.items)) {
-        if (option.path === value) {
-          this.selectedItem = parseInt(index);
-          break;
-        }
-      }
-    }
-  }
+    },
+  },
+});
 </script>

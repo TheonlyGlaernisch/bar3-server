@@ -31,9 +31,7 @@
   </div>
 </template>
 <script lang="ts">
-  import Vue from 'vue';
-  import Component from 'vue-class-component';
-  import { Prop, Watch } from 'vue-property-decorator';
+  import { defineComponent } from 'vue';
   import PreviewMessage from '@/components/PreviewMessage.vue';
   import { PrismEditor } from "vue-prism-editor";
   import "vue-prism-editor/dist/prismeditor.min.css";
@@ -48,63 +46,72 @@
   import { debounce } from 'debounce';
   import { sanitizeHtml } from '@/utilities/sanitizeHtml';
 
-  @Component({
+  export default defineComponent({
+    name: 'AdvancedMessageCreator',
     components: {
       PreviewMessage,
-      PrismEditor
-    }
-  })
-  export default class AdvancedMessageCreator extends Vue {
-    html = '<div></div>';
-    css = '';
-    digested = '';
-    
-    @Prop(String) inputHTML!: string;
-    @Prop(String) inputCSS!: string;
-
+      PrismEditor,
+    },
+    props: {
+      inputHTML: {
+        type: String,
+        default: '',
+      },
+      inputCSS: {
+        type: String,
+        default: '',
+      },
+    },
+    emits: ['change', 'css', 'html'],
+    data() {
+      return {
+        html: '<div></div>',
+        css: '',
+        digested: '',
+        debouncedDigest: (() => {}) as () => void,
+      };
+    },
+    created() {
+      this.debouncedDigest = debounce(this.digest, 500) as () => void;
+    },
     mounted() {
       this.html = this.inputHTML || '';
       this.css = this.inputCSS || '';
 
       this.digest();
-    }
+    },
+    watch: {
+      inputHTML(value: string) {
+        this.html = value || '';
+        this.debouncedDigest();
+      },
+      inputCSS(value: string) {
+        this.css = value || '';
+        this.debouncedDigest();
+      },
+    },
+    methods: {
+      highlighterHTML(code: string) {
+        return highlight(code, languages.html); //returns html
+      },
+      highlighterCSS(code: string) {
+        return highlight(code, languages.css); //returns html
+      },
+      digest() {
+        const digested = juice(sanitizeHtml(this.html), {
+          extraCss: this.css.replace(/\n/g, ''),
+          preserveMediaQueries: false,
+          preserveFontFaces: false,
+          preserveKeyFrames: false
+        });
 
-    @Watch('inputHTML')
-    onInputHTMLChanged(value: string) {
-      this.html = value || '';
-      this.debouncedDigest();
-    }
-
-    @Watch('inputCSS')
-    onInputCSSChanged(value: string) {
-      this.css = value || '';
-      this.debouncedDigest();
-    }
-
-    highlighterHTML(code: string) {
-      return highlight(code, languages.html); //returns html
-    }
-
-    highlighterCSS(code: string) {
-      return highlight(code, languages.css); //returns html
-    }
-
-    digest() {
-      const digested = juice(sanitizeHtml(this.html), {
-        extraCss: this.css.replace(/\n/g, ''),
-        preserveMediaQueries: false,
-        preserveFontFaces: false,
-        preserveKeyFrames: false
-      });
-
-      this.digested = digested;
-      this.$emit('change', digested);
-      this.$emit('css', this.css);
-      this.$emit('html', this.html);
-    }
-
-    debouncedDigest: Function = debounce(this.digest, 500);
-  }
+        this.digested = digested;
+        this.$emit('change', digested);
+        this.$emit('css', this.css);
+        this.$emit('html', this.html);
+      },
+    },
+  });
 </script>
 <style scoped>
   .preview {
