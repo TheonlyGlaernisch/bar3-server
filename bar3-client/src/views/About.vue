@@ -3,56 +3,49 @@
     <h1 class="mb-4">About</h1>
     <update-available-banner/>
     <v-card
-      outlined
+      variant="outlined"
       class="mt-10"
     >
-     <v-list-item style="height: 63px;">
-        <div class="text-h5 mt-3 mb-3 font-weight-medium d-flex align-center">
+      <v-card-item>
+        <div class="text-h5 font-weight-medium d-flex align-center">
           <v-img
             class="shrink mr-2"
             contain
             src="/src/favicon.ico"
             width="45"
           />
-          <div class="ml-2"> 
+          <div class="ml-2">
             Bar 3
           </div>
         </div>
-      </v-list-item>
+      </v-card-item>
       <v-divider/>
-      <v-list-item class="pa-3">
+      <v-card-text class="d-flex flex-wrap pa-3" style="gap: 16px;">
         <v-btn
           color="primary"
-          depressed
-          dark
+          variant="flat"
           href="https://github.com/bsnk-dev/bar3-server"
           target="_blank"
         >
-          <v-icon
-            left
-            dark
-          >
+          <v-icon start>
             mdi-github
           </v-icon>
           GitHub
         </v-btn>
         <v-btn
-          depressed
-          class="ml-4"
+          variant="outlined"
           href="https://bar3.bsnk.dev"
           target="_blank"
         >
-          <v-icon
-            left
-          >
+          <v-icon start>
             mdi-web
           </v-icon>
           Web
         </v-btn>
-      </v-list-item>
+      </v-card-text>
     </v-card>
     <v-card
-      outlined
+      variant="outlined"
       class="mt-10"
     >
       <v-card-title>
@@ -64,9 +57,9 @@
       </v-card-subtitle>
       <v-card-text>
         <div>Bar 3 is offered by bsnk-dev.</div>
-        <div class="mt-2 orange--text font-weight-medium">Provided by Glaernisch and The Reclaimed Flame.</div>
+        <div class="mt-2 text-primary font-weight-medium">Provided by Glaernisch and The Reclaimed Flame.</div>
         <div class="mt-2">&copy; Copyright 2021 bsnk-dev. All rights reserved.</div>
-        <a href = "mailto: admin@bsnk.dev">Email</a>
+        <a href="mailto: admin@bsnk.dev">Email</a>
       </v-card-text>
     </v-card>
   </div>

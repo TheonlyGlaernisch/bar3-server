@@ -32,12 +32,12 @@
       nation name, and use <code>\(leader)</code> to substitute the leader name in your messages or subject line.
     </div>
 
-    <v-card v-if="isAutomationPage" outlined class="pa-4 mt-4 mb-4">
+    <v-card v-if="isAutomationPage" variant="outlined" class="pa-4 mt-4 mb-4">
       <h3 class="mb-3">Automation Bulk Send</h3>
       <div class="d-flex align-center flex-wrap" style="gap: 12px;">
         <v-text-field
-          dense
-          outlined
+          density="compact"
+          variant="outlined"
           hide-details
           class="city-filter-input"
           type="number"
@@ -46,8 +46,8 @@
           label="Min Cities"
         />
         <v-text-field
-          dense
-          outlined
+          density="compact"
+          variant="outlined"
           hide-details
           class="city-filter-input"
           type="number"
@@ -56,8 +56,8 @@
           label="Max Cities"
         />
         <v-select
-          dense
-          outlined
+          density="compact"
+          variant="outlined"
           hide-details
           class="discord-filter-select"
           :items="discordFilterOptions"
@@ -79,7 +79,7 @@
         </v-btn>
         <v-btn
           color="primary"
-          outlined
+          variant="outlined"
           :loading="bulkActionLoading === 'discord'"
           :disabled="!!bulkActionLoading"
           @click="runDiscordBulkSend"
@@ -91,8 +91,8 @@
       <v-alert
         v-if="bulkError"
         type="error"
-        dense
-        outlined
+        density="compact"
+        variant="outlined"
         class="mt-3 mb-0"
       >
         {{ bulkError }}
@@ -102,8 +102,8 @@
 
       <h3 class="mb-3">Send by Nation IDs</h3>
       <v-text-field
-        dense
-        outlined
+        density="compact"
+        variant="outlined"
         v-model="nationIdsInput"
         label="Nation IDs (comma-separated)"
         placeholder="12345, 67890, 11223"
@@ -122,20 +122,12 @@
 
       <div v-if="bulkPreview" class="mt-4">
         <h4 class="mb-1">Preview</h4>
-        <div class="grey--text text--lighten-1">
+        <div class="text-medium-emphasis">
           {{ bulkPreview.totalCandidates }} candidate{{ bulkPreview.totalCandidates === 1 ? '' : 's' }}
         </div>
-        <v-list dense class="preview-list mt-2">
-          <v-list-item v-for="(row, idx) in bulkPreviewRows" :key="`preview-${idx}`">
-            <v-list-item-content>
-              <v-list-item-title>{{ row }}</v-list-item-title>
-            </v-list-item-content>
-          </v-list-item>
-          <v-list-item v-if="bulkPreviewRows.length === 0">
-            <v-list-item-content>
-              <v-list-item-title class="grey--text">No preview rows returned.</v-list-item-title>
-            </v-list-item-content>
-          </v-list-item>
+        <v-list density="compact" class="preview-list mt-2">
+          <v-list-item v-for="(row, idx) in bulkPreviewRows" :key="`preview-${idx}`" :title="row" />
+          <v-list-item v-if="bulkPreviewRows.length === 0" class="text-medium-emphasis" title="No preview rows returned." />
         </v-list>
       </div>
 
@@ -144,13 +136,9 @@
         <div>Attempted: {{ bulkResult.attempted }}</div>
         <div>Sent: {{ bulkResult.sent }}</div>
         <div>Failed: {{ bulkResult.failed }}</div>
-        <v-list dense v-if="bulkResultFailures.length > 0" class="preview-list mt-2">
-          <v-subheader>Failures (first {{ bulkResultFailures.length }})</v-subheader>
-          <v-list-item v-for="(failure, idx) in bulkResultFailures" :key="`failure-${idx}`">
-            <v-list-item-content>
-              <v-list-item-title>{{ failure }}</v-list-item-title>
-            </v-list-item-content>
-          </v-list-item>
+        <v-list density="compact" v-if="bulkResultFailures.length > 0" class="preview-list mt-2">
+          <v-list-subheader>Failures (first {{ bulkResultFailures.length }})</v-list-subheader>
+          <v-list-item v-for="(failure, idx) in bulkResultFailures" :key="`failure-${idx}`" :title="failure" />
         </v-list>
       </div>
     </v-card>
@@ -159,33 +147,35 @@
       <v-tabs
         v-model="editorTab"
         class="editor-tabs"
-        :vertical="$vuetify.breakpoint.mdAndUp"
+        :direction="$vuetify.breakpoint.mdAndUp ? 'vertical' : 'horizontal'"
         show-arrows
-        @change="changes()"
+        @update:modelValue="changes()"
       >
-      <v-tab class="editor-tab">
-        Basic Editor
-      </v-tab>
-      <v-tab class="editor-tab">
-        Advanced Editor
-      </v-tab>
+        <v-tab :value="0" class="editor-tab">
+          Basic Editor
+        </v-tab>
+        <v-tab :value="1" class="editor-tab">
+          Advanced Editor
+        </v-tab>
+      </v-tabs>
 
-      <v-tab-item class="mt-2">
-        <message-creator 
-          @change="messageHTML.quill = $event; changes()" 
-          :inputHTML="config.messageHTML"
-        />
-      </v-tab-item>
-      <v-tab-item class="mt-2">
-        <advanced-message-creator 
-          @change="messageHTML.advanced = $event; changes()" 
-          :inputHTML="config.advancedRaw.html" 
-          :inputCSS="config.advancedRaw.css" 
-          @html="advancedRaw.html = $event; changes()"
-          @css="advancedRaw.css = $event; changes()"
-        />
-      </v-tab-item>
-    </v-tabs>
+      <v-window v-model="editorTab" class="editor-tabs-window mt-2">
+        <v-window-item :value="0">
+          <message-creator
+            @change="messageHTML.quill = $event; changes()"
+            :inputHTML="config.messageHTML"
+          />
+        </v-window-item>
+        <v-window-item :value="1">
+          <advanced-message-creator
+            @change="messageHTML.advanced = $event; changes()"
+            :inputHTML="config.advancedRaw.html"
+            :inputCSS="config.advancedRaw.css"
+            @html="advancedRaw.html = $event; changes()"
+            @css="advancedRaw.css = $event; changes()"
+          />
+        </v-window-item>
+      </v-window>
     </div>
     <saved-changes-card
       v-if="!isAutomationPage"
@@ -607,6 +597,10 @@ export default defineComponent({
 }
 
 .editor-tabs {
+  width: 100%;
+}
+
+.editor-tabs-window {
   width: 100%;
 }
 
