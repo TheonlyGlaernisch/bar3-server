@@ -1,25 +1,22 @@
-import Vue from 'vue'
-import VueRouter, { RouteConfig } from 'vue-router'
+import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router';
 
-import Home from '@/views/Home.vue'
-import Configuration from '@/views/Configuration.vue'
-import MessageCreator from '@/views/MessageCreator.vue'
-import Analytics from '@/views/Analytics.vue'
-import AccountManager from '@/components/AccountManager.vue'
-import About from '@/views/About.vue'
-import Help from '@/views/Help.vue'
-import DiscordCallback from '@/views/DiscordCallback.vue'
-import BotPanel from '@/views/BotPanel.vue'
-import Nation from '@/views/Nation.vue'
-import Alliance from '@/views/Alliance.vue'
-import { discordAuth } from '@/utilities/discordAuth'
-import { normalizeReturnTo } from '@/utilities/serverUrls'
-
-Vue.use(VueRouter)
+import Home from '@/views/Home.vue';
+import Configuration from '@/views/Configuration.vue';
+import MessageCreator from '@/views/MessageCreator.vue';
+import Analytics from '@/views/Analytics.vue';
+import AccountManager from '@/components/AccountManager.vue';
+import About from '@/views/About.vue';
+import Help from '@/views/Help.vue';
+import DiscordCallback from '@/views/DiscordCallback.vue';
+import BotPanel from '@/views/BotPanel.vue';
+import Nation from '@/views/Nation.vue';
+import Alliance from '@/views/Alliance.vue';
+import { discordAuth } from '@/utilities/discordAuth';
+import { normalizeReturnTo } from '@/utilities/serverUrls';
 
 const DISCORD_PUBLIC_PATHS = ['/auth/discord/callback'];
 
-const routes: Array<RouteConfig> = [
+const routes: Array<RouteRecordRaw> = [
   { path: '/', redirect: '/dashboard' },
   { path: '/dashboard', name: 'Dashboard', component: Home, meta: { requiresClientAccess: true } },
   { path: '/automation', name: 'Automation', component: MessageCreator, meta: { requiresClientAccess: true } },
@@ -33,17 +30,16 @@ const routes: Array<RouteConfig> = [
   { path: '/help', name: 'Help', component: Help },
   { path: '/auth/discord/callback', name: 'Discord Callback', component: DiscordCallback },
   { path: '/bot', name: 'Bot Panel', component: BotPanel, meta: { requiresBotAuth: true } },
-]
+];
 
-const router = new VueRouter({
-  mode: 'history',
-  routes
-})
+const router = createRouter({
+  history: createWebHistory(),
+  routes,
+});
 
-router.beforeEach(async (to, _from, next) => {
+router.beforeEach(async (to) => {
   if (DISCORD_PUBLIC_PATHS.includes(to.path)) {
-    next();
-    return;
+    return true;
   }
 
   const session = await discordAuth.getSession();
@@ -54,42 +50,32 @@ router.beforeEach(async (to, _from, next) => {
       loginParams.set('returnTo', returnTo);
     }
     window.location.assign(`/auth/login?${loginParams.toString()}`);
-    next(false);
-    return;
+    return false;
   }
 
   const hasClientAccess = session.roles.bar3Client || session.roles.bar3Server || session.isAdmin;
   const hasMemberAccess = session.roles.memberGuild;
 
   if (to.meta?.requiresClientAccess && !hasClientAccess) {
-    next(hasMemberAccess ? '/nation' : '/about');
-    return;
+    return hasMemberAccess ? '/nation' : '/about';
   }
 
   if (to.meta?.requiresMemberAccess && !hasMemberAccess) {
-    next(hasClientAccess ? '/dashboard' : '/about');
-    return;
+    return hasClientAccess ? '/dashboard' : '/about';
   }
 
-  // Bot panel access is controlled by ADMIN_DISCORD_IDS.
-  if (to.meta?.requiresBotAuth) {
-    if (!session.isAdmin) {
-      next(hasClientAccess ? '/dashboard' : (hasMemberAccess ? '/nation' : '/about'));
-      return;
-    }
+  if (to.meta?.requiresBotAuth && !session.isAdmin) {
+    return hasClientAccess ? '/dashboard' : (hasMemberAccess ? '/nation' : '/about');
   }
 
-  // Consume a ?returnTo= parameter left by the server after OAuth, but only
-  // accept relative paths to prevent open-redirect attacks.
   if (to.query.returnTo) {
     const returnTo = normalizeReturnTo(to.query.returnTo);
     if (returnTo) {
-      next({ path: returnTo, replace: true });
-      return;
+      return { path: returnTo, replace: true };
     }
   }
 
-  next();
+  return true;
 });
 
-export default router
+export default router;

@@ -1,20 +1,24 @@
-import Vue from 'vue';
-import Vuetify from 'vuetify/lib/framework';
+import 'vuetify/styles';
+import { createVuetify } from 'vuetify';
+import * as components from 'vuetify/components';
+import * as directives from 'vuetify/directives';
 
-Vue.use(Vuetify);
-
-export default new Vuetify({
+export default createVuetify({
+  components,
+  directives,
   theme: {
-    dark: true,
+    defaultTheme: 'dark',
     themes: {
       dark: {
-        primary: '#FF6B00',
-        secondary: '#424242',
-        accent: '#FF9500',
-        error: '#FF5252',
-        info: '#2196F3',
-        success: '#4CAF50',
-        warning: '#FFC107',
+        colors: {
+          primary: '#FF6B00',
+          secondary: '#424242',
+          accent: '#FF9500',
+          error: '#FF5252',
+          info: '#2196F3',
+          success: '#4CAF50',
+          warning: '#FFC107',
+        },
       },
     },
   },

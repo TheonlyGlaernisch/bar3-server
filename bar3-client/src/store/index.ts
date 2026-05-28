@@ -1,13 +1,10 @@
 import { GitHubRelease } from '@/types';
-import Vue from 'vue'
-import Vuex from 'vuex'
-
-Vue.use(Vuex)
+import { createStore } from 'vuex';
 
 import analytics from './modules/analytics';
 import { API_BASE_URL } from '@/utilities/serverUrls';
 
-export default new Vuex.Store({
+export default createStore({
   state: {
     isApplicationOn: false,
     serverIP: API_BASE_URL,
@@ -29,7 +26,7 @@ export default new Vuex.Store({
       bar3Server: false,
       memberGuild: false,
     },
-    isBotAuthed: false
+    isBotAuthed: false,
   },
   getters: {
     applicationOn(state) {
@@ -49,58 +46,6 @@ export default new Vuex.Store({
 
     sentMessages(state) {
       return state.sentMessages;
-
-      const twoHours = 7200000;
-
-      return [{
-        nation: {
-          name: 'One',
-          leader: 'One',
-        },
-        sentTimeMilliseconds: Date.now(),
-        successful: true
-      },
-      {
-        nation: {
-          name: 'Two',
-          leader: 'Two',
-        },
-        sentTimeMilliseconds: Date.now() + twoHours * 1.5,
-        successful: true
-      },
-      {
-        nation: {
-          name: 'Three',
-          leader: 'Three',
-        },
-        sentTimeMilliseconds: Date.now() + twoHours * 5,
-        successful: true
-      },
-      {
-        nation: {
-          name: 'Three',
-          leader: 'Three',
-        },
-        sentTimeMilliseconds: Date.now() + twoHours * 5.2,
-        successful: true
-      },
-      {
-        nation: {
-          name: 'Three',
-          leader: 'Three',
-        },
-        sentTimeMilliseconds: Date.now() + twoHours * 5.3,
-        successful: true
-      },
-      {
-        nation: {
-          name: 'Four',
-          leader: 'Four',
-        },
-        sentTimeMilliseconds: Date.now() + twoHours * 7.8,
-        successful: false,
-        error: 'Nation too new!'
-      }];
     },
 
     appVersion: (state) => {
@@ -121,14 +66,14 @@ export default new Vuex.Store({
 
     newUpdate: (state) => {
       return state.newUpdate;
-    }
+    },
   },
   mutations: {
     setApplicationState(state, isOn) {
       state.isApplicationOn = isOn;
     },
     setLoggedIn(state, isLoggedIn) {
-    state.isLoggedIn = isLoggedIn;
+      state.isLoggedIn = isLoggedIn;
     },
     setDiscordAuthed(state, value: boolean) {
       state.isDiscordAuthed = value;
@@ -157,8 +102,8 @@ export default new Vuex.Store({
       state.sentMessages = sentMessagesRefresh;
     },
 
-    setAPIDetails(state, newAPIDetails: {used: number; max: number}) {
-        state.apiDetails = newAPIDetails;
+    setAPIDetails(state, newAPIDetails: { used: number; max: number }) {
+      state.apiDetails = newAPIDetails;
     },
 
     setLastRefreshed: (state, time: number) => {
@@ -171,11 +116,10 @@ export default new Vuex.Store({
 
     setServerVersion(state, newServerVersion: string) {
       state.serverVersion = newServerVersion;
-    }
+    },
   },
-  actions: {
-  },
+  actions: {},
   modules: {
-    analytics
-  }
-})
+    analytics,
+  },
+});
