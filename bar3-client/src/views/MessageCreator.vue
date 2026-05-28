@@ -148,7 +148,7 @@
         v-model="editorTab"
         class="editor-tabs"
         :direction="mdAndUp ? 'vertical' : 'horizontal'"
-        :show-arrows="!mdAndUp"
+        show-arrows
         @update:modelValue="changes()"
       >
         <v-tab :value="0" class="editor-tab">
