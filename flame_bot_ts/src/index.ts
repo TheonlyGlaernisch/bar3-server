@@ -2243,9 +2243,9 @@ async function main(): Promise<void> {
         await interaction.deferReply();
 
         // Fetch both roles and members so the cache is warm.
-        let fetchedRoles = interaction.guild.roles.cache;
+        let guildRoleCollection = interaction.guild.roles.cache;
         try {
-          fetchedRoles = await interaction.guild.roles.fetch();
+          guildRoleCollection = await interaction.guild.roles.fetch();
         } catch (err) {
           logWarn(`[gov] Failed to fetch roles for ${interaction.guildId}: ${String((err as Error)?.message ?? err)}`);
         }
@@ -2273,7 +2273,7 @@ async function main(): Promise<void> {
         };
         const GOV_HIDDEN_FROM_EMBED = new Set(['gov', 'member']);
         const embed = new EmbedBuilder().setTitle('Government').setColor(0x5865F2);
-        const guildRoles = new Map(fetchedRoles.map((r) => [r.id, r]));
+        const guildRoles = new Map(guildRoleCollection.map((r) => [r.id, r]));
         let total = 0;
         for (const [key, label] of Object.entries(GOV_DEPT_LABELS)) {
           if (GOV_HIDDEN_FROM_EMBED.has(key)) continue;
