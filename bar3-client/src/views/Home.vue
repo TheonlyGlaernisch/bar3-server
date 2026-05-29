@@ -9,18 +9,14 @@
       <messages-sent-card class="dashboard-card"/>
     </div>
     <v-btn
-      fab
-      fixed
+      class="dashboard-refresh-button"
       color="primary"
-
-      bottom
-      right
+      icon="mdi-refresh"
+      size="large"
+      aria-label="Refresh dashboard data"
+      :loading="isRefreshing"
       @click="refreshData"
-    >
-      <v-icon>
-        mdi-refresh
-      </v-icon>
-    </v-btn>
+    />
   </div>
 </template>
 
@@ -43,6 +39,7 @@ export default defineComponent({
   setup() {
     const store = useStore();
     const refreshedSecondsAgo = ref(0);
+    const isRefreshing = ref(false);
     const lastRefreshed = computed(() => store.getters.lastRefreshed as number);
     let refreshTimer: number | undefined;
 
@@ -71,9 +68,16 @@ export default defineComponent({
     };
 
     const refreshData = async () => {
-      store.commit('setLastRefreshed', Date.now());
-      updateLastRefreshed();
-      await fetchApiDetails();
+      if (isRefreshing.value) return;
+
+      isRefreshing.value = true;
+      try {
+        await fetchApiDetails();
+        store.commit('setLastRefreshed', Date.now());
+        updateLastRefreshed();
+      } finally {
+        isRefreshing.value = false;
+      }
     };
 
     onMounted(async () => {
@@ -90,6 +94,7 @@ export default defineComponent({
 
     return {
       refreshedSecondsAgo,
+      isRefreshing,
       refreshData,
     };
   },
@@ -104,6 +109,13 @@ export default defineComponent({
 
   .dashboard-card {
     margin-top: 16px;
+  }
+
+  .dashboard-refresh-button {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 10;
   }
 
   @media only screen and (min-width: 450px) {
