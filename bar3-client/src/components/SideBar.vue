@@ -1,7 +1,7 @@
 <template>
   <div>
     <v-navigation-drawer
-      v-model="isShowing"
+      v-model="drawerOpen"
       :permanent="!isMobile"
       :temporary="isMobile"
       color="#1A1A1A"
@@ -66,12 +66,17 @@ export default defineComponent({
     const { mobile: isMobile } = useDisplay();
     return { isMobile };
   },
-  data() {
-    return {
-      isShowing: false,
-    };
-  },
   computed: {
+    drawerOpen: {
+      get(): boolean {
+        return !this.isMobile || this.modelValue;
+      },
+      set(value: boolean) {
+        if (this.isMobile) {
+          this.$emit('update:modelValue', value);
+        }
+      },
+    },
     isAdmin(): boolean {
       return this.$store.getters.isAdmin;
     },
@@ -153,23 +158,12 @@ export default defineComponent({
       return base;
     },
   },
-  watch: {
-    modelValue(val: boolean) {
-      this.isShowing = val;
-    },
-    isShowing(val: boolean) {
-      this.$emit('update:modelValue', val);
-    },
-  },
-  mounted() {
-    this.isShowing = this.modelValue;
-  },
   methods: {
     goto(path: string) {
       if (this.$route.path != path) {
         this.$router.push({'path': path});
       }
-      if (this.isMobile) this.isShowing = false;
+      if (this.isMobile) this.$emit('update:modelValue', false);
     },
   },
 });
