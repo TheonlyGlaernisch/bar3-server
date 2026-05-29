@@ -13,7 +13,7 @@
       </div>
       <v-row>
         <v-col cols="12" md="4">
-          <v-card outlined height="250px">
+          <v-card variant="outlined" height="250px">
             <v-card-title>Views</v-card-title>
             <v-card-text>
               <h4>Total Message Views</h4>
@@ -22,21 +22,21 @@
           </v-card>
         </v-col>
         <v-col cols="12" md="8">
-          <v-card height="250px" outlined>
+          <v-card height="250px" variant="outlined">
             <v-card-title>Links</v-card-title>
             <v-divider/>
-            <v-list dense class="scrolling-list">
+            <v-list density="compact" class="scrolling-list">
               <div v-for="l in v2Analytics.links" :key="l.shortId">
                 <v-list-item>
-                  <v-list-item-icon><v-icon>mdi-link-variant</v-icon></v-list-item-icon>
-                  <v-list-item-content>
+                  <template #prepend><v-icon>mdi-link-variant</v-icon></template>
+                  <div>
                     <v-list-item-title>{{ linkName(l.url) }}</v-list-item-title>
                     <v-list-item-subtitle>{{ l.clickCount }} Clicks</v-list-item-subtitle>
-                  </v-list-item-content>
+                  </div>
                 </v-list-item>
                 <v-divider/>
               </div>
-              <div v-if="v2Analytics.links.length === 0" class="ml-4 pa-2 grey--text">
+              <div v-if="v2Analytics.links.length === 0" class="ml-4 pa-2 text-grey">
                 No tracked links yet.
               </div>
             </v-list>
@@ -58,12 +58,12 @@
             v-model="selectedCampaign"
             return-object
             v-if="loaded"
-            filled
+            variant="filled"
             hide-details
-            item-text="name"
+            item-title="name"
             label="Select a Campaign"
-            append-outer-icon="mdi-plus-circle"
-            @click:append-outer="openCreateDialog()"
+            append-icon="mdi-plus-circle"
+            @click:append="openCreateDialog()"
           >
           </v-select>
         </v-col>
@@ -74,7 +74,7 @@
       <v-row>
       <v-col cols="12" md="4">
         <v-card
-          outlined
+          variant="outlined"
           height="250px"
           v-if="loaded"
         >

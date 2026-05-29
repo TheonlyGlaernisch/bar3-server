@@ -6,7 +6,7 @@
       <h1 class="">{{ isAutomationPage ? 'Automation' : 'Message Creator' }}</h1>
       <v-btn
         v-if="!isAutomationPage"
-        outlined
+        variant="outlined"
         color="primary"
         class="ml-auto"
         @click="testDialog = true"
@@ -17,8 +17,8 @@
     <update-available-banner/>
     <v-text-field
       v-if="!isAutomationPage"
-      dense
-      outlined
+      density="compact"
+      variant="outlined"
       placeholder="Subject Line"
       maxlength="40"
       v-model="subject"
@@ -61,7 +61,7 @@
           hide-details
           class="discord-filter-select"
           :items="discordFilterOptions"
-          item-text="label"
+          item-title="label"
           item-value="value"
           v-model="discordFilterHasDiscord"
           label="Discord Filter"

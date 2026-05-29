@@ -1,9 +1,9 @@
 <template>
   <v-card
-    outlined
+    variant="outlined"
     min-height="500px"
   >
-    <v-row class="blue darken-2 white--text ma-0 align-center pb-4">
+    <v-row class="bg-blue-darken-2 text-white ma-0 align-center pb-4">
       <v-col cols="12" sm="6">
         <div class="text-h6">
           {{ campaign.name }}
@@ -13,7 +13,7 @@
         </div>
       </v-col>
 
-      <v-col cols="3" sm="2" lg="1" :class="(!['xs','sm'].includes($vuetify.breakpoint.name)) ? 'ml-auto' : ''">
+      <v-col cols="3" sm="2" lg="1" :class="mdAndUp ? 'ml-auto' : ''">
         <div class="text-md-h6" style="opacity: 0.8">
           Sent
         </div>
@@ -46,6 +46,7 @@
 
 <script lang="ts">
 import { defineComponent, PropType } from 'vue';
+import { useDisplay } from 'vuetify';
 import { AnalyticalCampaign } from '@/interfaces/analytics';
 import { VueLineChart } from '@/types';
 import LineChart from '@/components/LineChart.vue';
@@ -54,6 +55,10 @@ export default defineComponent({
   name: 'AnalyticsGraphCard',
   components: {
     LineChart,
+  },
+  setup() {
+    const { mdAndUp } = useDisplay();
+    return { mdAndUp };
   },
   props: {
     campaign: {

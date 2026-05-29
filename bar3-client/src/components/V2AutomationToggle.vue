@@ -1,12 +1,12 @@
 <template>
   <v-btn
     :color="!isLoggedIn ? 'grey' : (enabled ? 'green' : 'red')"
-    depressed
-    small
+    variant="flat"
+    size="small"
     :disabled="loading"
     @click="toggle()"
   >
-    <v-icon left>mdi-power</v-icon>
+    <v-icon class="mr-1">mdi-power</v-icon>
     {{ !isLoggedIn ? 'Login to enable Bar3' : (enabled ? 'Turn Bar3 Off' : 'Turn Bar3 On') }}
   </v-btn>
 </template>

@@ -2,27 +2,27 @@
   <div class="view-small-inner-wrapper view-padding-inner-wrapper">
     <h1>Alliance</h1>
     <div class="d-flex align-center mt-4 mb-4">
-      <v-btn color="primary" small :loading="loading" :disabled="loading || !canRefresh" @click="refresh">
-        <v-icon left small>mdi-refresh</v-icon>
+      <v-btn color="primary" size="small" :loading="loading" :disabled="loading || !canRefresh" @click="refresh">
+        <v-icon class="mr-1" size="small">mdi-refresh</v-icon>
         Refresh
       </v-btn>
-      <span class="ml-3 caption grey--text text--lighten-1">{{ cacheText }}</span>
+      <span class="ml-3 caption text-grey-lighten-1">{{ cacheText }}</span>
     </div>
 
     <div v-if="loading" class="d-flex justify-center py-6">
       <v-progress-circular indeterminate color="primary" />
     </div>
-    <v-alert v-else-if="error" type="error" dense>{{ error }}</v-alert>
-    <v-card v-else-if="!context.registered" dark color="#1A1A1A" class="pa-4">
-      <div class="text-subtitle-1 white--text font-weight-medium mb-2">No registered nation found</div>
+    <v-alert v-else-if="error" type="error" density="compact">{{ error }}</v-alert>
+    <v-card v-else-if="!context.registered" color="#1A1A1A" class="pa-4">
+      <div class="text-subtitle-1 text-white font-weight-medium mb-2">No registered nation found</div>
       <div class="text-body-2">Link your Discord account with <code>/register</code></div>
     </v-card>
-    <v-card v-else-if="!context.alliance" dark color="#1A1A1A" class="pa-4">
-      <div class="text-subtitle-1 white--text font-weight-medium">No alliance found for your nation</div>
+    <v-card v-else-if="!context.alliance" color="#1A1A1A" class="pa-4">
+      <div class="text-subtitle-1 text-white font-weight-medium">No alliance found for your nation</div>
     </v-card>
     <div v-else>
-      <v-card dark color="#1A1A1A" class="pa-4 mb-4">
-        <div class="text-subtitle-1 white--text font-weight-medium mb-3">
+      <v-card color="#1A1A1A" class="pa-4 mb-4">
+        <div class="text-subtitle-1 text-white font-weight-medium mb-3">
           <a :href="context.alliance.url" target="_blank" rel="noopener noreferrer">
             {{ context.alliance.name }} <span v-if="context.alliance.acronym">({{ context.alliance.acronym }})</span>
           </a>
@@ -34,12 +34,12 @@
         <div class="text-body-2"><strong>Average Score:</strong> {{ context.alliance.averageScore.toFixed(2) }}</div>
       </v-card>
 
-      <v-card dark color="#1A1A1A" class="pa-4">
-        <div class="text-subtitle-1 white--text font-weight-medium mb-3">Active Defensive Wars</div>
-        <v-list v-if="context.activeDefensiveWars.length" dense dark color="transparent">
+      <v-card color="#1A1A1A" class="pa-4">
+        <div class="text-subtitle-1 text-white font-weight-medium mb-3">Active Defensive Wars</div>
+        <v-list v-if="context.activeDefensiveWars.length" density="compact" color="transparent">
           <v-list-item v-for="war in context.activeDefensiveWars" :key="war.warId" class="px-0">
-            <v-list-item-content>
-              <v-list-item-title class="white--text">
+            <div>
+              <v-list-item-title class="text-white">
                 <a :href="war.url" target="_blank" rel="noopener noreferrer">War #{{ war.warId }}</a>
               </v-list-item-title>
               <v-list-item-subtitle>
@@ -47,13 +47,13 @@
                 vs
                 {{ war.defenderName }} ({{ war.defenderAllianceName || war.defenderAllianceId }})
               </v-list-item-subtitle>
-              <v-list-item-subtitle v-if="war.counterRequested" class="green--text text--lighten-2">
+              <v-list-item-subtitle v-if="war.counterRequested" class="text-green-lighten-2">
                 Counter requested{{ war.counterRequestedAt ? ` · ${new Date(war.counterRequestedAt).toLocaleString()}` : '' }}
               </v-list-item-subtitle>
-            </v-list-item-content>
-            <v-list-item-action v-if="canRequestCounter(war)">
+            </div>
+            <template v-if="canRequestCounter(war)" #append>
               <v-btn
-                x-small
+                size="x-small"
                 color="primary"
                 :loading="requestingWarId === war.warId"
                 :disabled="requestingWarId === war.warId || war.counterRequested"
@@ -61,18 +61,18 @@
               >
                 {{ war.counterRequested ? 'Requested' : 'Request Counter' }}
               </v-btn>
-            </v-list-item-action>
+            </template>
           </v-list-item>
         </v-list>
-        <div v-else class="caption grey--text text--lighten-1">No active defensive wars found.</div>
+        <div v-else class="caption text-grey-lighten-1">No active defensive wars found.</div>
       </v-card>
 
-      <v-card dark color="#1A1A1A" class="pa-4 mt-4">
-        <div class="text-subtitle-1 white--text font-weight-medium mb-3">Requested Counters</div>
-        <v-list v-if="requestedCounterWars.length" dense dark color="transparent">
+      <v-card color="#1A1A1A" class="pa-4 mt-4">
+        <div class="text-subtitle-1 text-white font-weight-medium mb-3">Requested Counters</div>
+        <v-list v-if="requestedCounterWars.length" density="compact" color="transparent">
           <v-list-item v-for="war in requestedCounterWars" :key="`counter-${war.warId}`" class="px-0">
-            <v-list-item-content>
-              <v-list-item-title class="white--text">
+            <div>
+              <v-list-item-title class="text-white">
                 <a :href="war.url" target="_blank" rel="noopener noreferrer">War #{{ war.warId }}</a>
               </v-list-item-title>
               <v-list-item-subtitle>
@@ -80,13 +80,13 @@
                 vs
                 {{ war.defenderName }} ({{ war.defenderAllianceName || war.defenderAllianceId }})
               </v-list-item-subtitle>
-              <v-list-item-subtitle class="green--text text--lighten-2">
+              <v-list-item-subtitle class="text-green-lighten-2">
                 Requested{{ war.counterRequestedAt ? ` · ${new Date(war.counterRequestedAt).toLocaleString()}` : '' }}
               </v-list-item-subtitle>
-            </v-list-item-content>
+            </div>
           </v-list-item>
         </v-list>
-        <div v-else class="caption grey--text text--lighten-1">No requested counters in active wars.</div>
+        <div v-else class="caption text-grey-lighten-1">No requested counters in active wars.</div>
       </v-card>
     </div>
   </div>

@@ -4,7 +4,7 @@
       <v-container class="fill-height" fluid>
         <v-row align="center" justify="center">
           <v-col cols="12" sm="8" md="5" lg="4">
-            <v-card class="pa-8" dark color="#1A1A1A" style="border-radius: 16px !important;">
+            <v-card class="pa-8" color="#1A1A1A" style="border-radius: 16px !important;">
               <div class="text-center">
                 <v-progress-circular
                   indeterminate
@@ -12,10 +12,10 @@
                   size="56"
                   class="mb-4"
                 />
-                <div class="text-h6 white--text font-weight-medium mb-2">
+                <div class="text-h6 text-white font-weight-medium mb-2">
                   Signing you in…
                 </div>
-                <div class="body-2 text--secondary">
+                <div class="body-2 text-medium-emphasis">
                   Please wait a moment.
                 </div>
               </div>

@@ -1,12 +1,9 @@
 <template>
   <div>
-    <!-- Sidebar -->
     <v-navigation-drawer
       v-model="isShowing"
-      :permanent="!$vuetify.breakpoint.mobile"
-      :temporary="$vuetify.breakpoint.mobile"
-      app
-      dark
+      :permanent="!isMobile"
+      :temporary="isMobile"
       color="#1A1A1A"
       class="elevation-0"
     >
@@ -19,7 +16,7 @@
             transition="scale-transition"
             width="45"
           />
-          <div class="ml-2 white--text">
+          <div class="ml-2 text-white">
             Bar 3
           </div>
         </div>
@@ -28,40 +25,28 @@
       <v-divider style="border-color: rgba(255, 107, 0, 0.4);"></v-divider>
 
       <v-list
-        dense
+        density="compact"
         nav
-        shaped
         class="pl-0"
       >
-        <v-list-item-group
-          v-model="selectedItem"
-          mandatory
+        <v-list-item
+          v-for="item in items"
+          :key="item.title"
+          :active="$route.path === item.path"
+          :disabled="disabled"
+          :prepend-icon="item.icon"
+          :title="item.title"
           color="primary"
-        >
-          <v-list-item
-            v-for="item in items"
-            :key="item.title"
-            :disabled="disabled"
-            @click="goto(item.path)"
-            dark
-          >
-            <v-list-item-icon>
-              <v-icon>{{ item.icon }}</v-icon>
-            </v-list-item-icon>
-
-            <v-list-item-content>
-              <v-list-item-title>{{ item.title }}</v-list-item-title>
-            </v-list-item-content>
-          </v-list-item>
-        </v-list-item-group>
+          @click="goto(item.path)"
+        />
       </v-list>
     </v-navigation-drawer>
-
   </div>
 </template>
 
 <script lang="ts">
 import { defineComponent } from 'vue';
+import { useDisplay } from 'vuetify';
 import { SideBarItem } from '@/types';
 
 export default defineComponent({
@@ -77,10 +62,13 @@ export default defineComponent({
       default: false,
     },
   },
+  setup() {
+    const { mobile: isMobile } = useDisplay();
+    return { isMobile };
+  },
   data() {
     return {
       isShowing: false,
-      selectedItem: 0,
     };
   },
   computed: {
@@ -172,19 +160,6 @@ export default defineComponent({
     isShowing(val: boolean) {
       this.$emit('update:modelValue', val);
     },
-    '$route.path': {
-      handler(value: string) {
-        let option;
-        let index;
-        for ([index, option] of Object.entries(this.items)) {
-          if (option.path === value) {
-            this.selectedItem = parseInt(index);
-            break;
-          }
-        }
-      },
-      immediate: true,
-    },
   },
   mounted() {
     this.isShowing = this.modelValue;
@@ -194,7 +169,7 @@ export default defineComponent({
       if (this.$route.path != path) {
         this.$router.push({'path': path});
       }
-      if (this.$vuetify.breakpoint.mobile) this.isShowing = false;
+      if (this.isMobile) this.isShowing = false;
     },
   },
 });

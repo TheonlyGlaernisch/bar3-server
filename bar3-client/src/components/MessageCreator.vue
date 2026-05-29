@@ -2,7 +2,7 @@
   <div>
     <div id="toolbar">
     </div>
-    
+
     <div id="editor" class="editor no-overflow" ref="editor">
     </div>
   </div>

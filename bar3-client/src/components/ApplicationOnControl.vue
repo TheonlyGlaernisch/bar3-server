@@ -1,12 +1,12 @@
 <template>
   <v-btn
     :color="applicationOn ? 'green' : 'red'"
-    depressed
+    variant="flat"
     :disabled="disabled"
     @click="toggleApplication()"
   >
     <v-icon
-      left
+      class="mr-1"
     >
       mdi-power
     </v-icon>

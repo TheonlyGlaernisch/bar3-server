@@ -7,7 +7,7 @@
       >
         <v-row align="center" justify="center">
           <v-col cols="12" sm="8" md="5" lg="4">
-            <v-card class="discord-login-card pa-8" dark color="#1A1A1A">
+            <v-card class="discord-login-card pa-8" color="#1A1A1A">
               <div class="text-center mb-6">
                 <v-img
                   class="mx-auto mb-4"
@@ -15,13 +15,13 @@
                   src="/src/favicon.ico"
                   max-width="72"
                 />
-                <div class="text-h5 white--text font-weight-bold mb-1">Bar 3</div>
-                <div class="text--secondary body-2">
+                <div class="text-h5 text-white font-weight-bold mb-1">Bar 3</div>
+                <div class="text-medium-emphasis body-2">
                   You must verify your Discord membership before accessing this site.
                 </div>
               </div>
 
-              <v-alert v-if="error" type="error" dense class="mb-4">
+              <v-alert v-if="error" type="error" density="compact" class="mb-4">
                 {{ error }}
                 <div v-if="errorHint" class="caption mt-1">
                   {{ errorHint }}
@@ -35,15 +35,15 @@
                 block
                 large
                 color="#5865F2"
-                dark
+
                 class="discord-btn"
                 @click="login"
               >
-                <v-icon left>mdi-discord</v-icon>
+                <v-icon class="mr-1">mdi-discord</v-icon>
                 Login with Discord
               </v-btn>
 
-              <div class="text-center mt-4 caption text--secondary">
+              <div class="text-center mt-4 caption text-medium-emphasis">
                 Access is restricted to authorized Discord members only.
               </div>
             </v-card>

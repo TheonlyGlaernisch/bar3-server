@@ -2,23 +2,23 @@
   <div class="view-small-inner-wrapper view-padding-inner-wrapper">
     <h1>Nation</h1>
     <div class="d-flex align-center mt-4 mb-4">
-      <v-btn color="primary" small :loading="loading" :disabled="loading || !canRefresh" @click="refresh">
-        <v-icon left small>mdi-refresh</v-icon>
+      <v-btn color="primary" size="small" :loading="loading" :disabled="loading || !canRefresh" @click="refresh">
+        <v-icon class="mr-1" size="small">mdi-refresh</v-icon>
         Refresh
       </v-btn>
-      <span class="ml-3 caption grey--text text--lighten-1">{{ cacheText }}</span>
+      <span class="ml-3 caption text-grey-lighten-1">{{ cacheText }}</span>
     </div>
 
     <div v-if="loading" class="d-flex justify-center py-6">
       <v-progress-circular indeterminate color="primary" />
     </div>
-    <v-alert v-else-if="error" type="error" dense>{{ error }}</v-alert>
-    <v-card v-else-if="!context.registered" dark color="#1A1A1A" class="pa-4">
-      <div class="text-subtitle-1 white--text font-weight-medium mb-2">No registered nation found</div>
+    <v-alert v-else-if="error" type="error" density="compact">{{ error }}</v-alert>
+    <v-card v-else-if="!context.registered" color="#1A1A1A" class="pa-4">
+      <div class="text-subtitle-1 text-white font-weight-medium mb-2">No registered nation found</div>
       <div class="text-body-2">Link your Discord account with <code>/register</code></div>
     </v-card>
-    <v-card v-else-if="context.nation" dark color="#1A1A1A" class="pa-4">
-      <div class="text-subtitle-1 white--text font-weight-medium mb-3">
+    <v-card v-else-if="context.nation" color="#1A1A1A" class="pa-4">
+      <div class="text-subtitle-1 text-white font-weight-medium mb-3">
         <a :href="context.nation.url" target="_blank" rel="noopener noreferrer">{{ context.nation.nationName }}</a>
       </div>
       <div class="text-body-2 mb-1"><strong>Leader:</strong> {{ context.nation.leaderName }}</div>
@@ -33,10 +33,10 @@
       </div>
       <div class="text-body-2"><strong>Position:</strong> {{ context.nation.alliancePosition || 'N/A' }}</div>
     </v-card>
-    <v-card v-if="context.nation" dark color="#1A1A1A" class="pa-4 mt-4">
-      <div class="text-subtitle-1 white--text font-weight-medium mb-3">Defensive Wars</div>
-      <v-alert v-if="counterNotice" type="success" dense class="mb-3">{{ counterNotice }}</v-alert>
-      <v-simple-table v-if="context.nationDefensiveWars.length" dark>
+    <v-card v-if="context.nation" color="#1A1A1A" class="pa-4 mt-4">
+      <div class="text-subtitle-1 text-white font-weight-medium mb-3">Defensive Wars</div>
+      <v-alert v-if="counterNotice" type="success" density="compact" class="mb-3">{{ counterNotice }}</v-alert>
+      <v-table v-if="context.nationDefensiveWars.length">
         <template v-slot:default>
           <thead>
             <tr>
@@ -63,17 +63,17 @@
                 N: {{ war.attackerUnits.nukes.toLocaleString() }}
               </td>
               <td>
-                <v-btn x-small color="primary" @click="requestCounter(war)">Request Counter</v-btn>
+                <v-btn size="x-small" color="primary" @click="requestCounter(war)">Request Counter</v-btn>
               </td>
             </tr>
           </tbody>
         </template>
-      </v-simple-table>
-      <div v-else class="caption grey--text text--lighten-1">
+      </v-table>
+      <div v-else class="caption text-grey-lighten-1">
         No active defensive wars right now.
       </div>
     </v-card>
-    <v-card v-else dark color="#1A1A1A" class="pa-4">
+    <v-card v-else color="#1A1A1A" class="pa-4">
       <div class="text-subtitle-2">This account is registered, but nation details are currently unavailable.</div>
     </v-card>
   </div>
