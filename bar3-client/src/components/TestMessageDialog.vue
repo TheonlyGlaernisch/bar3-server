@@ -1,6 +1,6 @@
 <template>
   <div v-if="modelValue">
-    <template v-if="$vuetify.breakpoint.name == 'xs'">
+    <template v-if="isXs">
       <bottom-sheet
         v-model="bottomSheetState"
         v-if="bottomSheetState != 'close'"
@@ -17,27 +17,26 @@
             label="Nation ID"
             type="number"
             class="mt-2 mb-2"
-            outlined
+            variant="outlined"
             v-model="nationDetails.nationID"
           />
           <v-text-field
             label="Nation Name"
             class="mt-2 mb-2"
-            outlined
+            variant="outlined"
             v-model="nationDetails.nationName"
           />
           <v-text-field
             label="Leader Name"
             class="mt-2 mb-2"
-            outlined
+            variant="outlined"
             v-model="nationDetails.leaderName"
           />
           <div class="d-flex">
             <v-btn
               class="ml-auto"
               color="primary"
-              depressed
-              dark
+              variant="flat"
               @click="send()"
             >
               Send
@@ -64,27 +63,27 @@
               label="Nation ID"
               type="number"
               class="mt-2 mb-2"
-              outlined
+              variant="outlined"
               v-model="nationDetails.nationID"
             />
             <v-text-field
               label="Nation Name"
               class="mt-2 mb-2"
-              outlined
+              variant="outlined"
               v-model="nationDetails.nationName"
             />
             <v-text-field
               label="Leader Name"
               class="mt-2 mb-2"
-              outlined
+              variant="outlined"
               v-model="nationDetails.leaderName"
             />
             <div class="d-flex">
               <v-btn
                 class="ml-auto"
                 color="primary"
-                depressed
-                dark
+                variant="flat"
+
                 @click="send()"
               >
                 Send
@@ -99,6 +98,7 @@
 
 <script lang="ts">
   import { defineComponent } from 'vue';
+import { useDisplay } from 'vuetify';
   import BottomSheet from '@/components/BottomSheet.vue';
 
   export default defineComponent({
@@ -107,7 +107,11 @@
       BottomSheet,
     },
     emits: ['update:modelValue', 'send'],
-    props: {
+    setup() {
+    const { xs: isXs } = useDisplay();
+    return { isXs };
+  },
+  props: {
       modelValue: {
         type: Boolean,
         default: false,

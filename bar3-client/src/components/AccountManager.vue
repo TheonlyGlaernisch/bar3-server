@@ -20,15 +20,15 @@
       <button class="ml-2" @click="logoutV2" :disabled="!v2Session">Logout</button>
     </div>
 
-    <v-alert v-if="v2Session" type="success" dense class="mt-4">
+    <v-alert v-if="v2Session" type="success" density="compact" class="mt-4">
       Logged in
     </v-alert>
 
-    <v-alert v-if="statusMessage" :type="statusMessage.type === 'success' ? 'success' : 'info'" dense class="mt-4">
+    <v-alert v-if="statusMessage" :type="statusMessage.type === 'success' ? 'success' : 'info'" density="compact" class="mt-4">
       {{ statusMessage.text }}
     </v-alert>
 
-    <v-alert v-if="error" type="error" dense class="mt-4">
+    <v-alert v-if="error" type="error" density="compact" class="mt-4">
       {{ error }}
     </v-alert>
   </div>

@@ -1,12 +1,11 @@
 <template>
     <v-alert
-      text
       type="info"
       v-if="update"
       prominent
-      outlined
+      variant="outlined"
     >
-      
+
       <v-row align="center">
         <v-col class="grow">
           <h3>Update</h3>
@@ -16,7 +15,7 @@
             :href="`https://github.com/bsnk-dev/bar3-server/releases/${update.tag_name}`"
             :target="_blank"
             color="primary"
-            depressed
+            variant="flat"
             class="ml-auto"
           >
             Download
@@ -25,8 +24,8 @@
       </v-row>
       <v-row>
         <v-col class="grow">
-          Bar 3 {{ update.name }} is available for download. 
-          It is recommended you update to the newest version to get the latest patches, 
+          Bar 3 {{ update.name }} is available for download.
+          It is recommended you update to the newest version to get the latest patches,
           features, and security fixes.
         </v-col>
       </v-row>

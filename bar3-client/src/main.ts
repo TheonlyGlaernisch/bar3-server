@@ -11,20 +11,6 @@ document.title = 'TRF owns this thing';
 
 const app = createApp(App);
 
-const display = (vuetify as any)?.display;
-app.config.globalProperties.$vuetify = {
-  breakpoint: {
-    get mobile() {
-      return !!display?.mobile?.value;
-    },
-    get name() {
-      return display?.name?.value || 'md';
-    },
-    get mdAndUp() {
-      return !!display?.mdAndUp?.value;
-    },
-  },
-};
 
 app.use(store);
 app.use(router);

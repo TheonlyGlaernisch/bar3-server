@@ -1,34 +1,34 @@
 <template>
   <v-card
     height="250px"
-    outlined
+    variant="outlined"
   >
     <v-card-title>
       Links
     </v-card-title>
     <v-divider/>
     <v-list
-      dense
+      density="compact"
       class="scrolling-list"
     >
       <div
-        v-for="link of campaign.links" 
+        v-for="link of campaign.links"
         :key="link.url"
       >
         <v-list-item>
-          <v-list-item-icon>
+          <template #prepend>
             <v-icon>
               mdi-link-variant
             </v-icon>
-          </v-list-item-icon>
-          <v-list-item-content>
+          </template>
+          <div>
             <v-list-item-title>
               {{ urlName(link.url) }}
             </v-list-item-title>
             <v-list-item-subtitle>
               {{ link.readCount }} Clicks
             </v-list-item-subtitle>
-          </v-list-item-content>
+          </div>
         </v-list-item>
         <v-divider/>
       </div>

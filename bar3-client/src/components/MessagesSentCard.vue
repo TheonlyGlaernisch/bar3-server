@@ -1,6 +1,6 @@
 <template>
   <v-card
-    outlined
+    variant="outlined"
     width="400px"
     height="380px"
   >
@@ -9,29 +9,29 @@
     </v-card-title>
     <v-divider/>
     <v-list
-      dense
+      density="compact"
       class="scrolling-list"
     >
       <div
-        v-for="(messageItem, index) in messageItems" 
+        v-for="(messageItem, index) in messageItems"
         :key="index"
       >
         <v-list-item>
-          <v-list-item-icon>
+          <template #prepend>
             <template v-if="messageItem.successful">
               <v-icon
                 color="green"
-                dark
+
               >
                 mdi-check
               </v-icon>
             </template>
             <template v-else>
-              <v-tooltip top>
+              <v-tooltip location="top">
                 <template #activator="{ props }">
                   <v-icon
                     color="red"
-                    dark
+
                     v-bind="props"
                   >
                     mdi-close
@@ -40,15 +40,15 @@
                 <span>{{ messageItem.error }}</span>
               </v-tooltip>
             </template>
-          </v-list-item-icon>
-          <v-list-item-content>
+          </template>
+          <div>
             <v-list-item-title>
               {{ messageItem.nation.leader }}
             </v-list-item-title>
             <v-list-item-subtitle>
               {{ new Date(messageItem.sentTimeMilliseconds).toLocaleString() }}
             </v-list-item-subtitle>
-          </v-list-item-content>
+          </div>
         </v-list-item>
         <v-divider/>
       </div>

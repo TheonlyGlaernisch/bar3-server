@@ -1,90 +1,92 @@
 <template>
   <div class="pa-4">
-    <div class="text-h5 white--text font-weight-medium mb-6">
+    <div class="text-h5 text-white font-weight-medium mb-6">
       <v-icon color="primary" class="mr-2">mdi-robot</v-icon>
       Bot Panel
     </div>
 
     <!-- Send message section -->
-    <v-card dark color="#1A1A1A" class="mb-6 pa-4">
-      <div class="text-subtitle-1 white--text font-weight-medium mb-3">
-        <v-icon small class="mr-1">mdi-send</v-icon>
+    <v-card color="#1A1A1A" class="mb-6 pa-4">
+      <div class="text-subtitle-1 text-white font-weight-medium mb-3">
+        <v-icon size="small" class="mr-1">mdi-send</v-icon>
         Send Bot Message
       </div>
       <v-textarea
         v-model="messageContent"
         label="Message content"
-        dark
-        dense
-        outlined
+
+        density="compact"
+        variant="outlined"
         color="primary"
         rows="3"
         auto-grow
         :disabled="sendLoading"
         class="mb-2"
       />
-      <v-alert v-if="sendError" type="error" dense class="mb-2">{{ sendError }}</v-alert>
-      <v-alert v-if="sendSuccess" type="success" dense class="mb-2">Message sent!</v-alert>
+      <v-alert v-if="sendError" type="error" density="compact" class="mb-2">{{ sendError }}</v-alert>
+      <v-alert v-if="sendSuccess" type="success" density="compact" class="mb-2">Message sent!</v-alert>
       <v-btn
         color="primary"
         :loading="sendLoading"
         :disabled="!messageContent.trim()"
         @click="sendMessage"
       >
-        <v-icon left>mdi-send</v-icon>
+        <v-icon class="mr-1">mdi-send</v-icon>
         Send
       </v-btn>
     </v-card>
 
     <!-- Servers section -->
-    <v-card dark color="#1A1A1A" class="mb-6 pa-4">
-      <div class="text-subtitle-1 white--text font-weight-medium mb-3">
-        <v-icon small class="mr-1">mdi-server</v-icon>
+    <v-card color="#1A1A1A" class="mb-6 pa-4">
+      <div class="text-subtitle-1 text-white font-weight-medium mb-3">
+        <v-icon size="small" class="mr-1">mdi-server</v-icon>
         Servers
       </div>
       <div v-if="serversLoading" class="d-flex justify-center py-4">
         <v-progress-circular indeterminate color="primary" />
       </div>
-      <v-alert v-else-if="serversError" type="error" dense>{{ serversError }}</v-alert>
-      <v-list v-else-if="servers.length" dense dark color="transparent">
+      <v-alert v-else-if="serversError" type="error" density="compact">{{ serversError }}</v-alert>
+      <v-list v-else-if="servers.length" density="compact" color="transparent">
         <v-list-item v-for="server in servers" :key="server.id" class="px-0">
-          <v-list-item-avatar size="36" color="#2a2a2a">
-            <v-img v-if="server.icon" :src="serverIconUrl(server)" />
-            <v-icon v-else small>mdi-discord</v-icon>
-          </v-list-item-avatar>
-          <v-list-item-content>
-            <v-list-item-title class="white--text">{{ server.name }}</v-list-item-title>
+          <template #prepend>
+            <v-avatar size="36" color="#2a2a2a">
+              <v-img v-if="server.icon" :src="serverIconUrl(server)" />
+              <v-icon v-else size="small">mdi-discord</v-icon>
+            </v-avatar>
+          </template>
+          <div>
+            <v-list-item-title class="text-white">{{ server.name }}</v-list-item-title>
             <v-list-item-subtitle>{{ server.memberCount.toLocaleString() }} members</v-list-item-subtitle>
-          </v-list-item-content>
+          </div>
         </v-list-item>
       </v-list>
-      <div v-else class="text--secondary caption">No servers found.</div>
+      <div v-else class="text-medium-emphasis caption">No servers found.</div>
     </v-card>
 
     <!-- Command usage section -->
-    <v-card dark color="#1A1A1A" class="pa-4">
-      <div class="text-subtitle-1 white--text font-weight-medium mb-3">
-        <v-icon small class="mr-1">mdi-slash-forward-box</v-icon>
+    <v-card color="#1A1A1A" class="pa-4">
+      <div class="text-subtitle-1 text-white font-weight-medium mb-3">
+        <v-icon size="small" class="mr-1">mdi-slash-forward-box</v-icon>
         Most Used Commands
       </div>
       <div v-if="commandsLoading" class="d-flex justify-center py-4">
         <v-progress-circular indeterminate color="primary" />
       </div>
-      <v-alert v-else-if="commandsError" type="error" dense>{{ commandsError }}</v-alert>
-      <v-list v-else-if="commands.length" dense dark color="transparent">
+      <v-alert v-else-if="commandsError" type="error" density="compact">{{ commandsError }}</v-alert>
+      <v-list v-else-if="commands.length" density="compact" color="transparent">
         <v-list-item v-for="cmd in commands" :key="cmd.name" class="px-0">
-          <v-list-item-content>
-            <v-list-item-title class="white--text">
-              <span class="primary--text font-weight-bold">/{{ cmd.name }}</span>
-              <span class="text--secondary caption ml-2">{{ cmd.description }}</span>
+          <div>
+            <v-list-item-title class="text-white">
+              <span class="text-primary font-weight-bold">/{{ cmd.name }}</span>
+              <span class="text-medium-emphasis caption ml-2">{{ cmd.description }}</span>
             </v-list-item-title>
-          </v-list-item-content>
-          <v-list-item-action>
-            <v-chip small color="primary" dark>{{ cmd.usageCount.toLocaleString() }}</v-chip>
-          </v-list-item-action>
+          </div>
+          <template #append>
+            <v-chip size="small" color="primary">{{ cmd.usageCount.toLocaleString() }}</v-chip>
+          </template>
         </v-list-item>
       </v-list>
-      <div v-else class="text--secondary caption">No command usage data found.</div>
+      <div v-else class="text-medium-emphasis caption">No command usage data found.</div>
     </v-card>
   </div>
 </template>

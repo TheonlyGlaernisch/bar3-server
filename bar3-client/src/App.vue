@@ -2,13 +2,11 @@
   <v-app>
     <template v-if="isDiscordAuthed">
       <v-app-bar
-        app
         color="#1A1A1A"
-        dark
-        flat
+        elevation="0"
       >
         <v-app-bar-nav-icon
-          v-if="$vuetify.breakpoint.mobile"
+          v-if="isMobile"
           @click.stop="sideBarOpen = !sideBarOpen"
         />
         <div class="d-flex align-center">
@@ -19,7 +17,7 @@
             transition="scale-transition"
             width="45"
           />
-          <div class="ml-2 white--text text-h6 font-weight-medium">
+          <div class="ml-2 text-white text-h6 font-weight-medium">
             Bar 3
           </div>
         </div>
@@ -40,6 +38,7 @@
 
 <script lang="ts">
 import { defineComponent } from 'vue';
+import { useDisplay } from 'vuetify';
 import SideBar from '@/components/SideBar.vue';
 import V2AutomationToggle from '@/components/V2AutomationToggle.vue';
 import { hasV2Credentials, v2Api } from '@/utilities/v2Api';
@@ -50,6 +49,10 @@ export default defineComponent({
   components: {
     SideBar,
     V2AutomationToggle,
+  },
+  setup() {
+    const { mobile: isMobile } = useDisplay();
+    return { isMobile };
   },
   data() {
     return {

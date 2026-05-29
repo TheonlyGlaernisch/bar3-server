@@ -1,30 +1,34 @@
 <template>
   <div>
-    <v-subheader>
+    <div class="text-subtitle-1 font-weight-medium mb-2">
       Your HTML
-    </v-subheader>
-    <prism-editor
-      class="editor height-300"
+    </div>
+    <v-textarea
       v-model="html"
-      @input="debouncedDigest()"
-      :highlight="highlighterHTML"
-      line-numbers
-    ></prism-editor>
+      class="editor-field"
+      variant="outlined"
+      rows="12"
+      no-resize
+      spellcheck="false"
+      @update:model-value="debouncedDigest()"
+    />
 
-    <v-subheader>
+    <div class="text-subtitle-1 font-weight-medium mt-4 mb-2">
       Your CSS
-    </v-subheader>
-    <prism-editor
-      class="editor height-300"
+    </div>
+    <v-textarea
       v-model="css"
-      @input="debouncedDigest()"
-      :highlight="highlighterCSS"
-      line-numbers
-    ></prism-editor>
+      class="editor-field"
+      variant="outlined"
+      rows="12"
+      no-resize
+      spellcheck="false"
+      @update:model-value="debouncedDigest()"
+    />
 
-    <v-subheader>
+    <div class="text-subtitle-1 font-weight-medium mt-4 mb-2">
       Preview
-    </v-subheader>
+    </div>
     <div>
       <preview-message :htmlPreview="digested" class="preview"/>
     </div>
@@ -33,15 +37,6 @@
 <script lang="ts">
   import { defineComponent } from 'vue';
   import PreviewMessage from '@/components/PreviewMessage.vue';
-  import { PrismEditor } from "vue-prism-editor";
-  import "vue-prism-editor/dist/prismeditor.min.css";
-
-  import { highlight, languages } from "prismjs/components/prism-core";
-  import "prismjs/components/prism-clike";
-  import "prismjs/components/prism-css";
-  import "prismjs/components/prism-markup";
-  import "prismjs/components/prism-xml-doc";
-  import "prismjs/themes/prism-tomorrow.css";
   import juice from 'juice';
   import { debounce } from 'debounce';
   import { sanitizeHtml } from '@/utilities/sanitizeHtml';
@@ -50,7 +45,6 @@
     name: 'AdvancedMessageCreator',
     components: {
       PreviewMessage,
-      PrismEditor,
     },
     props: {
       inputHTML: {
@@ -91,18 +85,12 @@
       },
     },
     methods: {
-      highlighterHTML(code: string) {
-        return highlight(code, languages.html); //returns html
-      },
-      highlighterCSS(code: string) {
-        return highlight(code, languages.css); //returns html
-      },
       digest() {
         const digested = juice(sanitizeHtml(this.html), {
           extraCss: this.css.replace(/\n/g, ''),
           preserveMediaQueries: false,
           preserveFontFaces: false,
-          preserveKeyFrames: false
+          preserveKeyFrames: false,
         });
 
         this.digested = digested;
@@ -119,25 +107,12 @@
     padding: 10px;
     min-height: 200px;
     width: 100%;
-    font-family: "Roboto",Arial;
+    font-family: "Roboto", Arial, sans-serif;
   }
 
-  .editor {
-    background: #2d2d2d;
-    color: #ccc;
-
-    font-family: Fira code, Fira Mono, Consolas, Menlo, Courier, monospace;
+  .editor-field :deep(textarea) {
+    font-family: "Fira Code", "Fira Mono", Consolas, Menlo, Courier, monospace;
     font-size: 14px;
-    width: 100%;
-    border-radius: 5px;
-    height: 300px;
     line-height: 1.5;
-    padding: 5px;
-  }
-</style>
-
-<style>
-  .prism-editor__textarea:focus {
-    outline: none;
   }
 </style>

@@ -5,7 +5,7 @@
       API Details
     </h2>
     <article>
-      To send messages Bar 3 requires your API key from Politics and War. 
+      To send messages Bar 3 requires your API key from Politics and War.
       To retrieve the key go to <a target="_blank" href="https://politicsandwar.com/account">the account page</a>.
       Additionally, you need to set how often you want to check for new nations. Just set the minutes to update in the second box.
     </article>
@@ -13,7 +13,7 @@
     <v-text-field
       label="API Key"
       class="mt-6"
-      outlined
+      variant="outlined"
       v-model="apiKey"
       @input="changes()"
     />
@@ -21,7 +21,7 @@
     <v-text-field
       label="Minutes to Update"
       type="number"
-      outlined
+      variant="outlined"
       v-model="minutesToUpdate"
       @input="changes()"
     />
@@ -47,7 +47,7 @@
       <v-btn
         class="ml-auto"
         color="primary"
-        outlined
+        variant="outlined"
         @click="$router.push('/message-creator')"
       >
         Edit

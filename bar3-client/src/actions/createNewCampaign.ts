@@ -10,7 +10,6 @@ export default async function createNewCampaign(name: string) {
     { name }
   ).catch((e) => {
     error = e;
-    console.error(e);
   });
 
   if (!response) return error;

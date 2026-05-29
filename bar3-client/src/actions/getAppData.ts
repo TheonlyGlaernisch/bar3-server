@@ -13,18 +13,12 @@ export interface AppData {
 }
 
 export default async function getAppData(): Promise<AppData | null> {
-  const response = await apiFetch('/api/appData').catch((e) => {
-    console.error(e);
-    return undefined;
-  });
+  const response = await apiFetch('/api/appData').catch(() => undefined);
 
   if (!response) return null;
   if (response.status !== 200) return null;
 
-  const data: AppData | undefined = await response.json().catch(() => {
-    console.error('Could not parse appData!');
-    return undefined;
-  });
+  const data: AppData | undefined = await response.json().catch(() => undefined);
 
   if (!data) return null;
 

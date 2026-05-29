@@ -6,13 +6,13 @@
       </v-card-title>
       <v-card-text>
         <v-btn
-          depressed
+          variant="flat"
           block
           color="primary"
           @click="save()"
         >
           <v-icon
-            left
+            class="mr-1"
           >
             mdi-check
           </v-icon>

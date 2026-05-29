@@ -7,7 +7,6 @@ export default async function getCampaigns() {
 
   const response = await apiFetch('/analytics/campaigns').catch((e) => {
     error = e;
-    console.error(e);
   });
 
   if (!response) return error;

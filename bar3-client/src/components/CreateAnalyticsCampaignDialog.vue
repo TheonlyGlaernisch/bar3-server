@@ -11,7 +11,7 @@
             size="40"
           >
             <v-icon
-              dark
+
             >
               mdi-chart-timeline-variant
             </v-icon>
@@ -33,7 +33,7 @@
           label="New Campaign Name"
           v-model="campaignName"
         >
-          
+
         </v-text-field>
       </v-card-text>
 
@@ -42,14 +42,14 @@
         <v-spacer></v-spacer>
         <v-btn
           color="primary"
-          text
+          variant="text"
           @click="dialog = false"
         >
           Cancel
         </v-btn>
         <v-btn
           color="primary"
-          depressed
+          variant="flat"
           :loading="loading"
           @click="createCampaign()"
         >

@@ -1,6 +1,6 @@
 <template>
   <v-card
-    outlined
+    variant="outlined"
     width="400px"
     height="380px"
     class="graph-card"

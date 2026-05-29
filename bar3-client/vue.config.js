@@ -25,6 +25,9 @@ module.exports = {
       }),
     ],
     devtool: 'source-map',
+    performance: {
+      hints: false,
+    },
   },
   chainWebpack: (config) => {
     config.plugin('html').tap((args) => {
@@ -33,6 +36,19 @@ module.exports = {
     });
 
     config.plugins.delete('fork-ts-checker');
+
+    if (config.optimization.minimizers.has('css')) {
+      config.optimization.minimizer('css').tap((args) => {
+        const [options = {}] = args;
+        return [{
+          ...options,
+          minimizerOptions: {
+            ...(options.minimizerOptions || {}),
+            preset: ['default', { calc: false }],
+          },
+        }];
+      });
+    }
 
     ['ts', 'tsx'].forEach((rule) => {
       config.module.rule(rule).use('ts-loader').tap((options = {}) => ({

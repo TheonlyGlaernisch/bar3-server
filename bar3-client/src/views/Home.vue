@@ -1,7 +1,7 @@
 <template>
   <div class="home view-small-inner-wrapper view-padding-inner-wrapper">
     <h1>Dashboard</h1>
-    <div class="text-subtitle-1 grey--text text--lighten-1">Last refreshed {{ refreshedSecondsAgo }} second{{ refreshedSecondsAgo !== 1 ? 's' : '' }} ago</div>
+    <div class="text-subtitle-1 text-grey-lighten-1">Last refreshed {{ refreshedSecondsAgo }} second{{ refreshedSecondsAgo !== 1 ? 's' : '' }} ago</div>
     <update-available-banner class="mt-4"/>
     <div class="dashboard-cards-container mt-6">
       <graph-card class="dashboard-card" graphType="messagesSentOverTime"/>
@@ -12,7 +12,7 @@
       fab
       fixed
       color="primary"
-      dark
+
       bottom
       right
       @click="refreshData"
