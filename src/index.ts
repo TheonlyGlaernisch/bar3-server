@@ -388,6 +388,10 @@ app.use('/admin', adminRouter);
 // Discord authentication guard — protects every subsequent route and static file.
 app.use(requireDiscordAuth);
 
+// The constitution is a member-only page; gate the SPA entry route before
+// static files or the catch-all index route can serve it.
+app.get('/constitution', requireDiscordMember, (_req: Request, _res: Response, next: NextFunction) => next());
+
 const clientUiPath = join(__dirname, '../..', 'bar3-client', 'dist');
 if (!existsSync(clientUiPath)) {
   console.warn(`[Warning] bar3-client build output not found at ${clientUiPath}. UI routes may return 503 until the client is built.`);

@@ -17,18 +17,47 @@ export interface RenderedConstitution {
   toc: TocItem[];
 }
 
+const HTML_ENTITY_LOOKUP: Record<string, string> = {
+  amp: '&',
+  apos: "'",
+  gt: '>',
+  lt: '<',
+  mdash: '—',
+  nbsp: ' ',
+  ndash: '–',
+  quot: '"',
+};
+
+function decodeCodePoint(codePoint: number, fallback: string): string {
+  if (!Number.isFinite(codePoint) || codePoint < 0 || codePoint > 0x10ffff) return fallback;
+  return String.fromCodePoint(codePoint);
+}
+
+function decodeHtmlEntities(value: string): string {
+  return value.replace(/&(#x?[0-9a-f]+|[a-z][a-z0-9]+);/gi, (entity, code: string) => {
+    const normalizedCode = code.toLowerCase();
+    if (normalizedCode.startsWith('#x')) {
+      return decodeCodePoint(Number.parseInt(normalizedCode.slice(2), 16), entity);
+    }
+    if (normalizedCode.startsWith('#')) {
+      return decodeCodePoint(Number.parseInt(normalizedCode.slice(1), 10), entity);
+    }
+    return HTML_ENTITY_LOOKUP[normalizedCode] ?? entity;
+  });
+}
+
 function stripInlineMarkdown(value: string): string {
-  return value
+  return decodeHtmlEntities(value
     .replace(/`([^`]+)`/g, '$1')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/[*_~]/g, '')
-    .trim();
+    .trim());
 }
 
 export function slugifyHeading(value: string, counts: Map<string, number>): string {
   const base = stripInlineMarkdown(value)
     .toLowerCase()
-    .replace(/&[a-z0-9#]+;/gi, '')
+    .replace(/[—–]/g, ' ')
     .replace(/[^a-z0-9\s-]/g, '')
     .trim()
     .replace(/\s+/g, '-') || 'section';

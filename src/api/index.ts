@@ -1,4 +1,4 @@
-import {  Router , Request, Response } from 'express';
+import {  Router , Request, Response, NextFunction } from 'express';
 import express from 'express';
 import { Express } from 'express';
 import { existsSync } from 'fs';
@@ -156,8 +156,16 @@ const getValidatedUserIdFromApiKey = async (apiKey: string): Promise<string | nu
   return validation.userId;
 };
 
+const requireConstitutionMember = (req: Request, res: Response, next: NextFunction): void => {
+  if (req.session?.discordRoles?.member_guild === true) {
+    next();
+    return;
+  }
 
-legacyApiRouter.get('/constitution/google-doc/:docId', async (req: Request, res: Response) => {
+  res.status(403).json({ error: 'Member access required' });
+};
+
+legacyApiRouter.get('/constitution/google-doc/:docId', requireConstitutionMember, async (req: Request, res: Response) => {
   const docId = req.params.docId;
   if (!isGoogleDocId(docId)) {
     return res.status(400).json({ error: 'Invalid Google Doc ID' });
