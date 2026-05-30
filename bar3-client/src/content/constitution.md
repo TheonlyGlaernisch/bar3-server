@@ -1,8 +1,8 @@
 # Preamble
 
-We, the members and stewards of Bar 3, establish this constitution as the shared source of law, lore, and civic procedure. It exists to keep play fair, preserve the story of the community, and make future updates clear to every citizen.
+We, the members and stewards of TRF, establish this constitution as the shared source of law, lore, and civic procedure. It exists to keep play fair, preserve the story of the community, and make future updates clear to every citizen.
 
-The markdown file at `src/content/constitution.md` is the source document. Editors should update this file first, then let the constitution page render it into a navigable codex.
+This bundled markdown is the offline fallback for the constitution page. In production, editors should update the configured Google Docs source; the page fetches that document first and only renders this file when the external source is unavailable.
 
 :::lore
 The first draft was sealed in the archive so future senators could amend the law without rebuilding the hall that displays it.
@@ -90,7 +90,7 @@ Each proposal should include:
 4. The requested effective date.
 
 :::amendment version="future-docs"
-Future Google Docs integration should plug into `src/services/constitutionSource.ts`. That loader should return markdown text from the external source while leaving the renderer and `ConstitutionView.vue` unchanged.
+Google Docs is the production source of truth for this constitution. The loader in `src/services/constitutionSource.ts` fetches the configured document through the backend, converts it to markdown, and leaves this file as a safe fallback.
 :::
 
 ## Ratification

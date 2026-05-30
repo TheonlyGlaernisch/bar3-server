@@ -14,7 +14,7 @@
 
     <section class="constitution-hero">
       <div class="constitution-hero__seal">B3</div>
-      <p class="constitution-hero__eyebrow">The Bar 3 Codex</p>
+      <p class="constitution-hero__eyebrow">The TRF Codex</p>
       <h1>Constitution</h1>
       <p class="constitution-hero__lede">
         The living charter for conduct, lore, and amendments. This page is rendered from a standalone markdown source so the law can evolve without rebuilding the presentation layer.
@@ -25,6 +25,35 @@
         </button>
         <a class="constitution-theme-button constitution-theme-button--ghost" href="#preamble">Begin reading</a>
       </div>
+
+      <form class="constitution-search" role="search" @submit.prevent="goToFirstSearchResult">
+        <label class="constitution-search__label" for="constitution-search">Search constitution</label>
+        <div class="constitution-search__control">
+          <input
+            id="constitution-search"
+            v-model="searchQuery"
+            type="search"
+            autocomplete="off"
+            placeholder="Search articles, rules, amendments..."
+          >
+          <button v-if="searchQuery" type="button" @click="searchQuery = ''">Clear</button>
+        </div>
+        <div v-if="searchQuery" class="constitution-search__results" aria-live="polite">
+          <button
+            v-for="result in searchResults"
+            :key="result.id"
+            class="constitution-search__result"
+            type="button"
+            @click="onSearchResultClick(result.id)"
+          >
+            <span class="constitution-search__result-title">{{ result.title }}</span>
+            <span class="constitution-search__result-snippet">{{ result.snippet }}</span>
+          </button>
+          <div v-if="searchResults.length === 0" class="constitution-search__empty">
+            No matching sections found.
+          </div>
+        </div>
+      </form>
     </section>
 
     <div class="constitution-layout">
@@ -92,17 +121,104 @@ const route = useRoute();
 
 const activeSection = ref('');
 const blocks = ref<ConstitutionBlock[]>([]);
+const constitutionMarkdown = ref('');
 const isDarkMode = ref(false);
 const loading = ref(true);
 const mobileTocOpen = ref(false);
+const searchQuery = ref('');
 const toc = ref<TocItem[]>([]);
 const showLoginHomeLink = ref(false);
+
+interface SearchableSection extends TocItem {
+  text: string;
+}
+
+interface SearchResult extends TocItem {
+  snippet: string;
+}
 
 let observer: IntersectionObserver | null = null;
 let mediaQuery: MediaQueryList | null = null;
 let colorSchemeListener: ((event: MediaQueryListEvent) => void) | null = null;
 
 const sectionIds = computed(() => toc.value.map((item) => item.id));
+const searchableSections = computed(() => buildSearchableSections(constitutionMarkdown.value, toc.value));
+const searchResults = computed<SearchResult[]>(() => {
+  const query = normalizeSearchText(searchQuery.value);
+  if (!query) return [];
+
+  return searchableSections.value
+    .filter((section) => normalizeSearchText(`${section.title} ${section.text}`).includes(query))
+    .slice(0, 8)
+    .map((section) => ({
+      id: section.id,
+      level: section.level,
+      title: section.title,
+      snippet: buildSearchSnippet(section, query),
+    }));
+});
+
+function normalizeSearchText(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function stripSearchMarkdown(value: string): string {
+  return value
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[#*_~>:-]/g, ' ')
+    .replace(/&mdash;/gi, '—')
+    .replace(/&ndash;/gi, '–')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildSearchableSections(markdown: string, items: TocItem[]): SearchableSection[] {
+  const sections: SearchableSection[] = [];
+  let current: SearchableSection | null = null;
+  let tocIndex = 0;
+  let containerDepth = 0;
+
+  markdown.split(/\r?\n/).forEach((line) => {
+    const trimmedLine = line.trim();
+    if (/^:::\s*(law|lore|amendment)\b/.test(trimmedLine)) {
+      containerDepth += 1;
+    } else if (containerDepth > 0 && trimmedLine === ':::') {
+      containerDepth -= 1;
+    }
+
+    const headingMatch = containerDepth === 0 ? /^(#{1,4})\s+(.+?)\s*#*\s*$/.exec(line) : null;
+    if (headingMatch) {
+      const item = items[tocIndex];
+      tocIndex += 1;
+      if (!item) return;
+
+      current = { ...item, text: item.title };
+      sections.push(current);
+      return;
+    }
+
+    if (current) {
+      current.text = `${current.text} ${stripSearchMarkdown(line)}`.trim();
+    }
+  });
+
+  return sections;
+}
+
+function buildSearchSnippet(section: SearchableSection, normalizedQuery: string): string {
+  const text = stripSearchMarkdown(section.text);
+  const normalizedText = normalizeSearchText(text);
+  const matchIndex = normalizedText.indexOf(normalizedQuery);
+  if (matchIndex === -1) return text.slice(0, 140);
+
+  const start = Math.max(0, matchIndex - 45);
+  const end = Math.min(text.length, matchIndex + normalizedQuery.length + 95);
+  const prefix = start > 0 ? '…' : '';
+  const suffix = end < text.length ? '…' : '';
+  return `${prefix}${text.slice(start, end).trim()}${suffix}`;
+}
 
 function scrollToSection(id: string) {
   const target = document.getElementById(id);
@@ -115,6 +231,16 @@ function scrollToSection(id: string) {
 function onTocClick(id: string) {
   mobileTocOpen.value = false;
   scrollToSection(id);
+}
+
+function onSearchResultClick(id: string) {
+  mobileTocOpen.value = false;
+  scrollToSection(id);
+}
+
+function goToFirstSearchResult() {
+  const [firstResult] = searchResults.value;
+  if (firstResult) scrollToSection(firstResult.id);
 }
 
 function setupScrollSpy() {
@@ -156,6 +282,7 @@ onMounted(async () => {
     .then((session) => { showLoginHomeLink.value = !session.authenticated; })
     .catch(() => { showLoginHomeLink.value = true; });
   const markdown = await getConstitutionMarkdown();
+  constitutionMarkdown.value = markdown;
   const rendered = renderConstitutionMarkdown(markdown);
   blocks.value = rendered.blocks;
   toc.value = rendered.toc;
@@ -181,7 +308,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .constitution-shell {
-  @apply min-h-screen bg-gradient-to-br from-codex-parchment via-codex-vellum to-amber-100 px-4 py-8 text-codex-ink transition-colors duration-300 md:px-8;
+  @apply min-h-screen w-full overflow-x-hidden bg-gradient-to-br from-codex-parchment via-codex-vellum to-amber-100 px-3 py-8 text-codex-ink transition-colors duration-300 sm:px-4 md:px-8;
 }
 
 .constitution-shell.dark {
@@ -197,7 +324,7 @@ onBeforeUnmount(() => {
 }
 
 .constitution-hero {
-  @apply mx-auto mb-8 max-w-5xl rounded-[2rem] border border-codex-gold/40 bg-white/55 px-6 py-10 text-center shadow-codex backdrop-blur dark:border-amber-300/20 dark:bg-zinc-950/70 md:px-12;
+  @apply mx-auto mb-8 w-full max-w-5xl overflow-hidden rounded-[1.5rem] border border-codex-gold/40 bg-white/55 px-4 py-10 text-center shadow-codex backdrop-blur dark:border-amber-300/20 dark:bg-zinc-950/70 sm:rounded-[2rem] sm:px-6 md:px-12;
 }
 
 .constitution-hero__seal {
@@ -205,11 +332,11 @@ onBeforeUnmount(() => {
 }
 
 .constitution-hero__eyebrow {
-  @apply mb-3 font-interface text-xs font-black uppercase tracking-[0.35em] text-codex-wax dark:text-amber-300;
+  @apply mb-3 break-words font-interface text-xs font-black uppercase tracking-[0.25em] text-codex-wax dark:text-amber-300 sm:tracking-[0.35em];
 }
 
 .constitution-hero h1 {
-  @apply m-0 font-constitution text-5xl font-bold tracking-tight md:text-7xl;
+  @apply m-0 break-words font-constitution text-4xl font-bold tracking-tight sm:text-5xl md:text-7xl;
 }
 
 .constitution-hero__lede {
@@ -218,6 +345,46 @@ onBeforeUnmount(() => {
 
 .constitution-hero__actions {
   @apply mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row;
+}
+
+.constitution-search {
+  @apply mx-auto mt-7 w-full max-w-2xl text-left;
+}
+
+.constitution-search__label {
+  @apply mb-2 block font-interface text-xs font-black uppercase tracking-[0.22em] text-codex-wax dark:text-amber-300;
+}
+
+.constitution-search__control {
+  @apply flex overflow-hidden rounded-2xl border border-codex-gold/50 bg-white/85 shadow-md dark:border-amber-300/25 dark:bg-zinc-950/85;
+}
+
+.constitution-search__control input {
+  @apply min-w-0 flex-1 bg-transparent px-4 py-3 font-interface text-sm text-codex-ink outline-none placeholder:text-stone-500 dark:text-stone-100 dark:placeholder:text-stone-500;
+}
+
+.constitution-search__control button {
+  @apply border-l border-codex-gold/30 px-4 font-interface text-xs font-black uppercase tracking-[0.14em] text-codex-wax transition hover:bg-codex-gold/15 dark:border-amber-300/20 dark:text-amber-200;
+}
+
+.constitution-search__results {
+  @apply mt-3 max-h-80 overflow-auto rounded-2xl border border-codex-gold/40 bg-white/95 p-2 shadow-lg dark:border-amber-300/20 dark:bg-zinc-950/95;
+}
+
+.constitution-search__result {
+  @apply mb-2 block w-full rounded-xl px-3 py-2 text-left transition hover:bg-codex-gold/15 focus:bg-codex-gold/15 focus:outline-none dark:hover:bg-amber-300/10 dark:focus:bg-amber-300/10;
+}
+
+.constitution-search__result-title {
+  @apply block font-interface text-sm font-black text-codex-wax dark:text-amber-200;
+}
+
+.constitution-search__result-snippet {
+  @apply mt-1 block font-interface text-xs leading-5 text-stone-700 dark:text-stone-300;
+}
+
+.constitution-search__empty {
+  @apply px-3 py-4 text-center font-interface text-sm text-stone-600 dark:text-stone-300;
 }
 
 .constitution-theme-button {
@@ -229,7 +396,7 @@ onBeforeUnmount(() => {
 }
 
 .constitution-layout {
-  @apply mx-auto grid max-w-7xl gap-8 lg:grid-cols-[18rem_minmax(0,1fr)];
+  @apply mx-auto grid w-full max-w-7xl min-w-0 gap-8 lg:grid-cols-[18rem_minmax(0,1fr)];
 }
 
 .constitution-sidebar {
@@ -245,7 +412,7 @@ onBeforeUnmount(() => {
 }
 
 .constitution-mobile-toc {
-  @apply lg:hidden;
+  @apply min-w-0 lg:hidden;
 }
 
 .constitution-mobile-toc__button {
@@ -270,7 +437,7 @@ onBeforeUnmount(() => {
 
 .constitution-document {
   counter-reset: article;
-  @apply mx-auto w-full max-w-4xl rounded-[2rem] border border-codex-gold/40 bg-codex-vellum/90 px-5 py-8 shadow-codex dark:border-amber-300/20 dark:bg-zinc-950/80 md:px-10 md:py-12;
+  @apply mx-auto min-w-0 w-full max-w-4xl overflow-hidden rounded-[1.5rem] border border-codex-gold/40 bg-codex-vellum/90 px-4 py-8 shadow-codex dark:border-amber-300/20 dark:bg-zinc-950/80 sm:rounded-[2rem] sm:px-5 md:px-10 md:py-12;
 }
 
 .constitution-loading {
@@ -278,7 +445,7 @@ onBeforeUnmount(() => {
 }
 
 .constitution-prose {
-  @apply font-constitution text-lg leading-9 text-stone-800 dark:text-stone-100;
+  @apply min-w-0 break-words font-constitution text-base leading-8 text-stone-800 dark:text-stone-100 sm:text-lg sm:leading-9;
 }
 
 .constitution-prose :deep(.constitution-heading) {
@@ -286,7 +453,7 @@ onBeforeUnmount(() => {
 }
 
 .constitution-prose :deep(h1.constitution-heading) {
-  @apply text-4xl md:text-5xl;
+  @apply text-3xl sm:text-4xl md:text-5xl;
 }
 
 .constitution-prose :deep(h1.constitution-heading--article) {
@@ -298,12 +465,12 @@ onBeforeUnmount(() => {
   @apply mb-2 block font-interface text-xs font-black uppercase tracking-[0.28em] text-codex-wax dark:text-amber-300;
 }
 
-.constitution-prose :deep(h2.constitution-heading) { @apply text-3xl; }
-.constitution-prose :deep(h3.constitution-heading) { @apply text-2xl; }
-.constitution-prose :deep(h4.constitution-heading) { @apply text-xl; }
+.constitution-prose :deep(h2.constitution-heading) { @apply text-2xl sm:text-3xl; }
+.constitution-prose :deep(h3.constitution-heading) { @apply text-xl sm:text-2xl; }
+.constitution-prose :deep(h4.constitution-heading) { @apply text-lg sm:text-xl; }
 
 .constitution-prose :deep(.constitution-anchor) {
-  @apply absolute -left-5 top-8 font-interface text-codex-gold opacity-0 no-underline transition hover:text-codex-wax;
+  @apply absolute -left-3 top-8 font-interface text-codex-gold opacity-0 no-underline transition hover:text-codex-wax sm:-left-5;
 }
 
 .constitution-prose :deep(.constitution-heading:hover .constitution-anchor) {
@@ -316,7 +483,7 @@ onBeforeUnmount(() => {
 
 .constitution-prose :deep(ul),
 .constitution-prose :deep(ol) {
-  @apply my-5 pl-8;
+  @apply my-5 pl-5 sm:pl-8;
 }
 
 .constitution-prose :deep(li) {
@@ -329,5 +496,12 @@ onBeforeUnmount(() => {
 
 .constitution-prose :deep(hr) {
   @apply my-10 border-0 border-t border-codex-gold/40;
+}
+
+.constitution-prose :deep(a),
+.constitution-prose :deep(code),
+.constitution-prose :deep(pre),
+.constitution-prose :deep(table) {
+  overflow-wrap: anywhere;
 }
 </style>
