@@ -308,7 +308,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .constitution-shell {
-  @apply min-h-screen bg-gradient-to-br from-codex-parchment via-codex-vellum to-amber-100 px-4 py-8 text-codex-ink transition-colors duration-300 md:px-8;
+  @apply min-h-screen w-full overflow-x-hidden bg-gradient-to-br from-codex-parchment via-codex-vellum to-amber-100 px-3 py-8 text-codex-ink transition-colors duration-300 sm:px-4 md:px-8;
 }
 
 .constitution-shell.dark {
@@ -324,7 +324,7 @@ onBeforeUnmount(() => {
 }
 
 .constitution-hero {
-  @apply mx-auto mb-8 max-w-5xl rounded-[2rem] border border-codex-gold/40 bg-white/55 px-6 py-10 text-center shadow-codex backdrop-blur dark:border-amber-300/20 dark:bg-zinc-950/70 md:px-12;
+  @apply mx-auto mb-8 w-full max-w-5xl overflow-hidden rounded-[1.5rem] border border-codex-gold/40 bg-white/55 px-4 py-10 text-center shadow-codex backdrop-blur dark:border-amber-300/20 dark:bg-zinc-950/70 sm:rounded-[2rem] sm:px-6 md:px-12;
 }
 
 .constitution-hero__seal {
@@ -332,11 +332,11 @@ onBeforeUnmount(() => {
 }
 
 .constitution-hero__eyebrow {
-  @apply mb-3 font-interface text-xs font-black uppercase tracking-[0.35em] text-codex-wax dark:text-amber-300;
+  @apply mb-3 break-words font-interface text-xs font-black uppercase tracking-[0.25em] text-codex-wax dark:text-amber-300 sm:tracking-[0.35em];
 }
 
 .constitution-hero h1 {
-  @apply m-0 font-constitution text-5xl font-bold tracking-tight md:text-7xl;
+  @apply m-0 break-words font-constitution text-4xl font-bold tracking-tight sm:text-5xl md:text-7xl;
 }
 
 .constitution-hero__lede {
@@ -348,7 +348,7 @@ onBeforeUnmount(() => {
 }
 
 .constitution-search {
-  @apply mx-auto mt-7 max-w-2xl text-left;
+  @apply mx-auto mt-7 w-full max-w-2xl text-left;
 }
 
 .constitution-search__label {
@@ -396,7 +396,7 @@ onBeforeUnmount(() => {
 }
 
 .constitution-layout {
-  @apply mx-auto grid max-w-7xl gap-8 lg:grid-cols-[18rem_minmax(0,1fr)];
+  @apply mx-auto grid w-full max-w-7xl min-w-0 gap-8 lg:grid-cols-[18rem_minmax(0,1fr)];
 }
 
 .constitution-sidebar {
@@ -412,7 +412,7 @@ onBeforeUnmount(() => {
 }
 
 .constitution-mobile-toc {
-  @apply lg:hidden;
+  @apply min-w-0 lg:hidden;
 }
 
 .constitution-mobile-toc__button {
@@ -437,7 +437,7 @@ onBeforeUnmount(() => {
 
 .constitution-document {
   counter-reset: article;
-  @apply mx-auto w-full max-w-4xl rounded-[2rem] border border-codex-gold/40 bg-codex-vellum/90 px-5 py-8 shadow-codex dark:border-amber-300/20 dark:bg-zinc-950/80 md:px-10 md:py-12;
+  @apply mx-auto min-w-0 w-full max-w-4xl overflow-hidden rounded-[1.5rem] border border-codex-gold/40 bg-codex-vellum/90 px-4 py-8 shadow-codex dark:border-amber-300/20 dark:bg-zinc-950/80 sm:rounded-[2rem] sm:px-5 md:px-10 md:py-12;
 }
 
 .constitution-loading {
@@ -445,7 +445,7 @@ onBeforeUnmount(() => {
 }
 
 .constitution-prose {
-  @apply font-constitution text-lg leading-9 text-stone-800 dark:text-stone-100;
+  @apply min-w-0 break-words font-constitution text-base leading-8 text-stone-800 dark:text-stone-100 sm:text-lg sm:leading-9;
 }
 
 .constitution-prose :deep(.constitution-heading) {
@@ -453,7 +453,7 @@ onBeforeUnmount(() => {
 }
 
 .constitution-prose :deep(h1.constitution-heading) {
-  @apply text-4xl md:text-5xl;
+  @apply text-3xl sm:text-4xl md:text-5xl;
 }
 
 .constitution-prose :deep(h1.constitution-heading--article) {
@@ -465,12 +465,12 @@ onBeforeUnmount(() => {
   @apply mb-2 block font-interface text-xs font-black uppercase tracking-[0.28em] text-codex-wax dark:text-amber-300;
 }
 
-.constitution-prose :deep(h2.constitution-heading) { @apply text-3xl; }
-.constitution-prose :deep(h3.constitution-heading) { @apply text-2xl; }
-.constitution-prose :deep(h4.constitution-heading) { @apply text-xl; }
+.constitution-prose :deep(h2.constitution-heading) { @apply text-2xl sm:text-3xl; }
+.constitution-prose :deep(h3.constitution-heading) { @apply text-xl sm:text-2xl; }
+.constitution-prose :deep(h4.constitution-heading) { @apply text-lg sm:text-xl; }
 
 .constitution-prose :deep(.constitution-anchor) {
-  @apply absolute -left-5 top-8 font-interface text-codex-gold opacity-0 no-underline transition hover:text-codex-wax;
+  @apply absolute -left-3 top-8 font-interface text-codex-gold opacity-0 no-underline transition hover:text-codex-wax sm:-left-5;
 }
 
 .constitution-prose :deep(.constitution-heading:hover .constitution-anchor) {
@@ -483,7 +483,7 @@ onBeforeUnmount(() => {
 
 .constitution-prose :deep(ul),
 .constitution-prose :deep(ol) {
-  @apply my-5 pl-8;
+  @apply my-5 pl-5 sm:pl-8;
 }
 
 .constitution-prose :deep(li) {
@@ -496,5 +496,12 @@ onBeforeUnmount(() => {
 
 .constitution-prose :deep(hr) {
   @apply my-10 border-0 border-t border-codex-gold/40;
+}
+
+.constitution-prose :deep(a),
+.constitution-prose :deep(code),
+.constitution-prose :deep(pre),
+.constitution-prose :deep(table) {
+  overflow-wrap: anywhere;
 }
 </style>
