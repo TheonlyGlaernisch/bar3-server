@@ -1,5 +1,17 @@
 <template>
   <main :class="['constitution-shell', { dark: isDarkMode }]">
+    <a
+      v-if="showLoginHomeLink"
+      class="constitution-login-home"
+      href="/auth/login"
+      aria-label="Back to login"
+      title="Back to login"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+      </svg>
+    </a>
+
     <section class="constitution-hero">
       <div class="constitution-hero__seal">B3</div>
       <p class="constitution-hero__eyebrow">The Bar 3 Codex</p>
@@ -69,6 +81,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
+import { discordAuth } from '@/utilities/discordAuth';
 import AmendmentNote from '@/components/constitution/AmendmentNote.vue';
 import LawBlock from '@/components/constitution/LawBlock.vue';
 import LoreBox from '@/components/constitution/LoreBox.vue';
@@ -83,6 +96,7 @@ const isDarkMode = ref(false);
 const loading = ref(true);
 const mobileTocOpen = ref(false);
 const toc = ref<TocItem[]>([]);
+const showLoginHomeLink = ref(false);
 
 let observer: IntersectionObserver | null = null;
 let mediaQuery: MediaQueryList | null = null;
@@ -138,6 +152,9 @@ function setupColorScheme() {
 
 onMounted(async () => {
   setupColorScheme();
+  discordAuth.getSession()
+    .then((session) => { showLoginHomeLink.value = !session.authenticated; })
+    .catch(() => { showLoginHomeLink.value = true; });
   const markdown = await getConstitutionMarkdown();
   const rendered = renderConstitutionMarkdown(markdown);
   blocks.value = rendered.blocks;
@@ -169,6 +186,14 @@ onBeforeUnmount(() => {
 
 .constitution-shell.dark {
   @apply from-codex-night via-zinc-950 to-codex-steel text-stone-100;
+}
+
+.constitution-login-home {
+  @apply fixed left-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-codex-gold/50 bg-white/80 text-codex-wax shadow-md backdrop-blur transition hover:-translate-y-0.5 hover:bg-codex-wax hover:text-white dark:border-amber-300/30 dark:bg-zinc-950/85 dark:text-amber-200 dark:hover:bg-amber-300 dark:hover:text-codex-ink;
+}
+
+.constitution-login-home svg {
+  @apply h-5 w-5 fill-current;
 }
 
 .constitution-hero {

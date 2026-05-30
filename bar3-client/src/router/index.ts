@@ -29,8 +29,8 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/alliance', name: 'Alliance', component: Alliance, meta: { requiresMemberAccess: true } },
   { path: '/about', name: 'About', component: About },
   { path: '/help', name: 'Help', component: Help },
-  { path: '/constitution', name: 'Constitution', component: ConstitutionView },
-  { path: '/auth/discord/callback', name: 'Discord Callback', component: DiscordCallback },
+  { path: '/constitution', name: 'Constitution', component: ConstitutionView, meta: { public: true } },
+  { path: '/auth/discord/callback', name: 'Discord Callback', component: DiscordCallback, meta: { public: true } },
   { path: '/bot', name: 'Bot Panel', component: BotPanel, meta: { requiresBotAuth: true } },
 ];
 
@@ -40,7 +40,7 @@ const router = createRouter({
 });
 
 router.beforeEach(async (to) => {
-  if (DISCORD_PUBLIC_PATHS.includes(to.path)) {
+  if (to.meta?.public || DISCORD_PUBLIC_PATHS.includes(to.path)) {
     return true;
   }
 

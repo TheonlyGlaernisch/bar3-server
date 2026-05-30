@@ -161,6 +161,8 @@ test('/auth/login returns HTML login page', async () => {
     assert.equal(res.status, 200);
     assert.match(String(res.headers.get('content-type')), /text\/html/);
     assert.match(res.body, /Login with Discord/);
+    assert.match(res.body, /href="\/constitution"/);
+    assert.match(res.body, /Read the Constitution/);
   } finally { server.close(); }
 });
 
