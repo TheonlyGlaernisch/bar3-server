@@ -19,6 +19,7 @@ const PUBLIC_PREFIXES = [
   '/auth/logout',
   '/api/v2/auth/login',
   '/api/v2/auth/logout',
+  '/api/constitution/google-doc',
   '/api/v2/analytics/l',
   '/api/v2/analytics/p',
   '/analytics/v2/l',
