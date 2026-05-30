@@ -147,6 +147,11 @@ export default defineComponent({
           icon: 'mdi-help-circle',
           path: '/help',
         },
+        {
+          title: 'Constitution',
+          icon: 'mdi-book-open-page-variant',
+          path: '/constitution',
+        },
       );
       if (this.isAdmin) {
         base.push({

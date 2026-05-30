@@ -7,6 +7,7 @@ import Analytics from '@/views/Analytics.vue';
 import AccountManager from '@/components/AccountManager.vue';
 import About from '@/views/About.vue';
 import Help from '@/views/Help.vue';
+import ConstitutionView from '@/views/ConstitutionView.vue';
 import DiscordCallback from '@/views/DiscordCallback.vue';
 import BotPanel from '@/views/BotPanel.vue';
 import Nation from '@/views/Nation.vue';
@@ -14,7 +15,7 @@ import Alliance from '@/views/Alliance.vue';
 import { discordAuth } from '@/utilities/discordAuth';
 import { normalizeReturnTo } from '@/utilities/serverUrls';
 
-const DISCORD_PUBLIC_PATHS = ['/auth/discord/callback'];
+const DISCORD_PUBLIC_PATHS = ['/auth/discord/callback', '/constitution'];
 
 const routes: Array<RouteRecordRaw> = [
   { path: '/', redirect: '/dashboard' },
@@ -28,6 +29,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/alliance', name: 'Alliance', component: Alliance, meta: { requiresMemberAccess: true } },
   { path: '/about', name: 'About', component: About },
   { path: '/help', name: 'Help', component: Help },
+  { path: '/constitution', name: 'Constitution', component: ConstitutionView },
   { path: '/auth/discord/callback', name: 'Discord Callback', component: DiscordCallback },
   { path: '/bot', name: 'Bot Panel', component: BotPanel, meta: { requiresBotAuth: true } },
 ];
