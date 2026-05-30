@@ -15,7 +15,7 @@ import Alliance from '@/views/Alliance.vue';
 import { discordAuth } from '@/utilities/discordAuth';
 import { normalizeReturnTo } from '@/utilities/serverUrls';
 
-const DISCORD_PUBLIC_PATHS = ['/auth/discord/callback', '/constitution'];
+const DISCORD_PUBLIC_PATHS = ['/auth/discord/callback'];
 
 const routes: Array<RouteRecordRaw> = [
   { path: '/', redirect: '/dashboard' },
@@ -29,7 +29,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/alliance', name: 'Alliance', component: Alliance, meta: { requiresMemberAccess: true } },
   { path: '/about', name: 'About', component: About },
   { path: '/help', name: 'Help', component: Help },
-  { path: '/constitution', name: 'Constitution', component: ConstitutionView, meta: { public: true } },
+  { path: '/constitution', name: 'Constitution', component: ConstitutionView, meta: { requiresMemberAccess: true } },
   { path: '/auth/discord/callback', name: 'Discord Callback', component: DiscordCallback, meta: { public: true } },
   { path: '/bot', name: 'Bot Panel', component: BotPanel, meta: { requiresBotAuth: true } },
 ];
