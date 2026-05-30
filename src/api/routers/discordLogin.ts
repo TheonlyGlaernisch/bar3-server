@@ -148,6 +148,17 @@ function buildDiscordLoginHtml(errorText: string, returnTo: string): string {
       border-radius: 8px;
       font-weight: 600;
     }
+    .public-link {
+      margin-top: 18px;
+      color: #aeb6df;
+      font-size: 0.9rem;
+    }
+    .public-link a {
+      color: #d7dcff;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .public-link a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -163,6 +174,9 @@ function buildDiscordLoginHtml(errorText: string, returnTo: string): string {
         <h1>Sign in with Discord</h1>
         <p class="sub">Use your Discord account for standard Bar3 authentication.</p>
         <a class="discord-btn" href="${escapeHtml(discordHref)}">Login with Discord</a>
+        <div class="public-link">
+          Looking for the public charter? <a href="/constitution">Read the TRF Constitution</a>.
+        </div>
       </section>
 
       <section class="panel" data-panel="nation">

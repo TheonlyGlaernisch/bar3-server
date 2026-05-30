@@ -14,7 +14,7 @@
 
     <section class="constitution-hero">
       <div class="constitution-hero__seal">B3</div>
-      <p class="constitution-hero__eyebrow">The Bar 3 Codex</p>
+      <p class="constitution-hero__eyebrow">The TRF Codex</p>
       <h1>Constitution</h1>
       <p class="constitution-hero__lede">
         The living charter for conduct, lore, and amendments. This page is rendered from a standalone markdown source so the law can evolve without rebuilding the presentation layer.
