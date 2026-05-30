@@ -319,6 +319,8 @@ const _LOGIN_HTML = `<!DOCTYPE html>
     .btn-discord:hover{background:#4752c4}
     .btn-discord svg{width:22px;height:22px;fill:#fff}
     .error{background:#3d1515;border:1px solid #8b2121;border-radius:8px;padding:12px 16px;margin-bottom:24px;color:#ff8080;font-size:.9rem}
+    .public-link{display:inline-flex;align-items:center;gap:8px;margin-top:22px;color:#aeb7ff;text-decoration:none;font-size:.9rem;font-weight:600;transition:color .2s}
+    .public-link:hover{color:#fff;text-decoration:underline}
   </style>
 </head>
 <body>
@@ -332,6 +334,7 @@ const _LOGIN_HTML = `<!DOCTYPE html>
       </svg>
       Login with Discord
     </a>
+    <a class="public-link" href="{{CONSTITUTION_HREF}}" aria-label="Read the Bar3 Constitution">Read the Constitution</a>
   </div>
 </body>
 </html>`;
@@ -654,9 +657,11 @@ export function createApp(options: CreateAppOptions): Application {
       errorBlock = '<div class="error">Discord OAuth2 is not configured on this server.</div>';
     }
     const discordLoginHref = '/auth/discord';
+    const constitutionHref = CLIENT_APP_URL ? `${CLIENT_APP_URL}/constitution` : '/constitution';
     const html = _LOGIN_HTML
       .replace('{{ERROR_BLOCK}}', errorBlock)
-      .replace('{{DISCORD_LOGIN_HREF}}', discordLoginHref);
+      .replace('{{DISCORD_LOGIN_HREF}}', discordLoginHref)
+      .replace('{{CONSTITUTION_HREF}}', constitutionHref);
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
   });
