@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: bar3-client
+    name: TRF-tech
     env: static
     buildCommand: npm run build
     staticPublishPath: dist
