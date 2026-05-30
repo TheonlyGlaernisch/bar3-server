@@ -1,6 +1,6 @@
 # Preamble
 
-We, the members and stewards of Bar 3, establish this constitution as the shared source of law, lore, and civic procedure. It exists to keep play fair, preserve the story of the community, and make future updates clear to every citizen.
+We, the members and stewards of TRF, establish this constitution as the shared source of law, lore, and civic procedure. It exists to keep play fair, preserve the story of the community, and make future updates clear to every citizen.
 
 The markdown file at `src/content/constitution.md` is the source document. Editors should update this file first, then let the constitution page render it into a navigable codex.
 
