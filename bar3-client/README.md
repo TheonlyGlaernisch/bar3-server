@@ -23,6 +23,17 @@ npm run build
 npm run lint
 ```
 
+
+## Constitution source configuration
+
+The `/constitution` page renders `src/content/constitution.md` by default. To source the page from a Google Doc instead, set this Vue build-time environment variable to the full document URL:
+
+```
+VUE_APP_CONSTITUTION_GOOGLE_DOC_URL=https://docs.google.com/document/d/YOUR_DOC_ID/edit
+```
+
+When the variable is set, the client extracts the document ID, asks the backend to fetch the Google Doc HTML export, converts that HTML to markdown, and renders the result through the existing constitution renderer. If fetching fails, the bundled markdown file remains the fallback.
+
 ## Auth/cookie configuration for Safari/iOS with two domains
 
 If your frontend and backend use different domains, Safari/iOS may block third-party cookies for

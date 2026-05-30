@@ -4,6 +4,7 @@ import router from './router';
 import store from './store';
 import vuetify from './plugins/vuetify';
 import '@mdi/font/css/materialdesignicons.css';
+import './styles/tailwind.css';
 import { ensureGoogleTag } from '@/utilities/googleTag';
 
 ensureGoogleTag();

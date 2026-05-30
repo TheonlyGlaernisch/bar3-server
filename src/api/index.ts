@@ -16,6 +16,7 @@ import { sha256Hex } from '../utilities/cryptoBox';
 import { sanitizeTemplateCss, sanitizeTemplateHtml } from '../utilities/sanitizeTemplateContent';
 import { PwAccount } from '../interfaces/schemas/PwAccountSchema';
 import { MessageTemplate } from '../interfaces/schemas/MessageTemplateSchema';
+import { fetchGoogleDocMarkdown, isGoogleDocId } from '../services/googleDocConstitutionService';
 
 const legacyApiRouter = Router();
 const app = express();
@@ -154,6 +155,22 @@ const getValidatedUserIdFromApiKey = async (apiKey: string): Promise<string | nu
   if (!validation || !validation.isValid) return null;
   return validation.userId;
 };
+
+
+legacyApiRouter.get('/constitution/google-doc/:docId', async (req: Request, res: Response) => {
+  const docId = req.params.docId;
+  if (!isGoogleDocId(docId)) {
+    return res.status(400).json({ error: 'Invalid Google Doc ID' });
+  }
+
+  try {
+    const markdown = await fetchGoogleDocMarkdown(docId);
+    return res.status(200).type('text/markdown').send(markdown);
+  } catch (err: any) {
+    const status = typeof err?.status === 'number' ? err.status : 502;
+    return res.status(status).json({ error: 'Failed to fetch Google Doc constitution' });
+  }
+});
 
 legacyApiRouter.post('/setApiKey', async (req, res) => {
   const apiKey = requireApiKey(req, res);
