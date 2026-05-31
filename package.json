@@ -1,5 +1,5 @@
 {
-  "name": "bar3-server",
+  "name": "trf-tech-server",
   "version": "1.1.1",
   "description": "The local server for Bar 3",
   "main": "./build/src/index.js",
@@ -17,7 +17,7 @@
     "build:bot": "npm --prefix flame_bot_ts run build",
     "build:client": "npm --prefix bar3-client run build",
     "pack": "npm run build && npx pkg . --target node12-win-x86,node12-linux,node12-macos-x64",
-    "postpack": "shx mkdir -p dist && shx mv bar3-server-* dist/",
+    "postpack": "shx mkdir -p dist && shx mv trf-tech-server-* dist/",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "bsnk-dev",

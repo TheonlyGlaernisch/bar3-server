@@ -34,7 +34,7 @@
         </v-btn>
         <v-btn
           variant="outlined"
-          href="https://bar3.bsnk.dev"
+          href="https://TRF-tech.onrender.com"
           target="_blank"
         >
           <v-icon start>
