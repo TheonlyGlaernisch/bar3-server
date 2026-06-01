@@ -31,8 +31,9 @@ async function requestTranslation(
     signal: AbortSignal.timeout(TRANSLATE_TIMEOUT_MS),
   });
   if (!response.ok) return null;
-  const payload = await response.json();
-  const chunks = Array.isArray(payload?.[0]) ? payload[0] : [];
+  const payload: unknown = await response.json();
+  const payloadList = Array.isArray(payload) ? payload : [];
+  const chunks = Array.isArray(payloadList[0]) ? payloadList[0] : [];
   const translatedText = chunks
     .map((chunk: unknown) => {
       if (!Array.isArray(chunk)) return '';
@@ -40,7 +41,7 @@ async function requestTranslation(
     })
     .join('')
     .trim();
-  const detectedLanguage = normalizeLanguageCode(payload?.[2] ?? '');
+  const detectedLanguage = normalizeLanguageCode(payloadList[2] ?? '');
   return {
     translatedText,
     detectedLanguage: detectedLanguage || null,

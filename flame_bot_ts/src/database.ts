@@ -243,11 +243,16 @@ export class Database {
   }
 
   async enableTranslationChannel(guildId: bigint, channelId: string): Promise<void> {
+    const existing = await this.getTranslationChannels(guildId);
+    const normalizedChannelId = String(channelId);
+    const merged = Array.from(new Set([...existing, normalizedChannelId]));
     await this._guildConfig.updateOne(
       { guild_id: guildId.toString() },
       {
-        $setOnInsert: { guild_id: guildId.toString() },
-        $addToSet: { translation_channel_ids: String(channelId) },
+        $set: {
+          guild_id: guildId.toString(),
+          translation_channel_ids: merged,
+        },
       },
       { upsert: true }
     );
