@@ -189,6 +189,24 @@ test('getNationWarLoot requests inactive wars like Locutus', async () => {
   assert.ok(queries.every((query) => query.includes('active: false')), 'wars queries should opt into inactive war fetching');
 });
 
+test('getAllianceDamage requests inactive wars like Locutus', async () => {
+  const client = new PnWClient('test-key');
+  const queries = [];
+  client._query = async (query) => {
+    queries.push(query);
+    return {
+      data: {
+        wars: { data: [], paginatorInfo: { hasMorePages: false } },
+      },
+    };
+  };
+
+  const damage = await client.getAllianceDamage(456, new Date('2026-01-01T00:00:00Z'));
+  assert.equal(damage.size, 0);
+  assert.equal(queries.length, 1);
+  assert.ok(queries[0].includes('active: false'), 'alliance damage war query should opt into inactive war fetching');
+});
+
 test('parseResourceLoot returns zeros when resource not mentioned', () => {
   const [money, gas, mun, alu, stl] = parseResourceLoot('stole 500 money');
   assert.equal(money, 500);

@@ -1444,7 +1444,7 @@ export class PnWClient {
     let page = 1;
     while (true) {
       const query = `query GetAllianceWars($alliance_id: [Int], $page: Int) {
-        wars(alliance_id: $alliance_id, page: $page, first: 100) {
+        wars(alliance_id: $alliance_id, page: $page, first: 100, active: false) {
           data {
             id att_id def_id att_alliance_id def_alliance_id date def_alum_used def_steel_used
             attacker { nation_name num_cities }
