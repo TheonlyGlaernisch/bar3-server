@@ -767,7 +767,16 @@ export class PnWClient {
 
   async getWarDetail(warId: number): Promise<WarDetail | null> {
     if (warId <= 0) return null;
-    const data = await this._query(WAR_DETAIL_QUERY, { id: [warId] });
+    let data: Record<string, unknown>;
+    try {
+      data = await this._query(WAR_DETAIL_QUERY, { id: [warId] });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const hasLegacyAllianceFieldError = msg.includes('Cannot query field "att_alliance" on type "War"')
+        || msg.includes('Cannot query field "def_alliance" on type "War"');
+      if (!hasLegacyAllianceFieldError) throw err;
+      data = await this._query(WAR_DETAIL_QUERY_FALLBACK, { id: [warId] });
+    }
     const wars = (((data['data'] as Record<string, unknown>)?.['wars'] as Record<string, unknown>)?.['data'] as unknown[]) ?? [];
     return wars.length ? parseWarFromDict(wars[0] as Record<string, unknown>) : null;
   }
@@ -2032,6 +2041,20 @@ const WAR_DETAIL_QUERY = `query GetWarDetail($id: [Int]) {
       defender {
         nation_name leader_name num_cities score soldiers tanks aircraft ships missiles nukes wars_won wars_lost
         alliance { name }
+      }
+    }
+  }
+}`;
+
+const WAR_DETAIL_QUERY_FALLBACK = `query GetWarDetailFallback($id: [Int]) {
+  wars(id: $id, first: 1) {
+    data {
+      id date war_type att_id def_id att_alliance_id def_alliance_id
+      attacker {
+        nation_name leader_name num_cities score soldiers tanks aircraft ships missiles nukes wars_won wars_lost
+      }
+      defender {
+        nation_name leader_name num_cities score soldiers tanks aircraft ships missiles nukes wars_won wars_lost
       }
     }
   }
