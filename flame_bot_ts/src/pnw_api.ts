@@ -814,7 +814,7 @@ export class PnWClient {
       let page = 1;
       while (true) {
         const query = `query GetNationLootWars($nationId: [Int], $page: Int) {
-          wars(${role}: $nationId, page: $page, first: 100) {
+          wars(${role}: $nationId, page: $page, first: 100, active: false) {
             data {
               id date end_date att_id def_id
               attacker { nation_name }
