@@ -3,6 +3,8 @@ const TRANSLATE_TIMEOUT_MS = 10_000;
 
 export type SupportedTranslationLanguage = 'en' | 'hr';
 
+const CROATIAN_DETECTION_CODES = new Set(['hr', 'bs', 'sr', 'sl', 'cnr']);
+
 export interface TranslationResult {
   sourceLanguage: SupportedTranslationLanguage;
   targetLanguage: SupportedTranslationLanguage;
@@ -13,6 +15,10 @@ function normalizeLanguageCode(value: unknown): string {
   const raw = String(value ?? '').trim().toLowerCase();
   if (!raw) return '';
   return raw.split('-')[0] || '';
+}
+
+function isCroatianDetectedLanguage(languageCode: string): boolean {
+  return CROATIAN_DETECTION_CODES.has(languageCode);
 }
 
 async function requestTranslation(
@@ -53,7 +59,7 @@ export async function translateBetweenEnglishAndCroatian(text: string): Promise<
   if (!trimmed) return null;
   const toEnglish = await requestTranslation(trimmed, 'auto', 'en');
   if (!toEnglish || !toEnglish.detectedLanguage) return null;
-  if (toEnglish.detectedLanguage === 'hr' && toEnglish.translatedText) {
+  if (isCroatianDetectedLanguage(toEnglish.detectedLanguage) && toEnglish.translatedText) {
     return {
       sourceLanguage: 'hr',
       targetLanguage: 'en',

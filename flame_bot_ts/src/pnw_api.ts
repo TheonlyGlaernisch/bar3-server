@@ -45,6 +45,10 @@ function addLootResources(target: LootResources, source: LootResources): LootRes
   return target;
 }
 
+function hasLootResources(resources: LootResources): boolean {
+  return LOOT_RESOURCE_KEYS.some((key) => Math.abs(resources[key]) > 0.000001);
+}
+
 export function parseLootResources(lootInfo: string): LootResources {
   const result = emptyLootResources();
   for (const key of LOOT_RESOURCE_KEYS) {
@@ -298,6 +302,11 @@ export interface NationWarLootEntry {
   attackerName: string;
   defenderId: number;
   defenderName: string;
+  attackType: string;
+  looterId: number;
+  looterName: string;
+  victimId: number;
+  victimName: string;
   victorId: number;
   victorName: string;
   loserId: number;
@@ -310,6 +319,7 @@ export interface NationLootSummary {
   days: number;
   since: Date;
   warsChecked: number;
+  lootAttacks: number;
   victoryAttacks: number;
   gained: LootResources;
   lost: LootResources;
@@ -775,11 +785,13 @@ export class PnWClient {
   async getNationWarLoot(nationId: number, days: number): Promise<NationLootSummary> {
     const safeDays = Math.max(1, Math.min(365, Math.floor(days)));
     const since = new Date(Date.now() - safeDays * 24 * 60 * 60 * 1000);
+    const warLookupCutoff = new Date(since.getTime() - 6 * 24 * 60 * 60 * 1000);
     const summary: NationLootSummary = {
       nationId,
       days: safeDays,
       since,
       warsChecked: 0,
+      lootAttacks: 0,
       victoryAttacks: 0,
       gained: emptyLootResources(),
       lost: emptyLootResources(),
@@ -804,7 +816,7 @@ export class PnWClient {
         const query = `query GetNationLootWars($nationId: [Int], $page: Int) {
           wars(${role}: $nationId, page: $page, first: 100) {
             data {
-              id date att_id def_id
+              id date end_date att_id def_id
               attacker { nation_name }
               defender { nation_name }
             }
@@ -815,13 +827,17 @@ export class PnWClient {
         const payload = ((data['data'] as Record<string, unknown>)?.['wars'] as Record<string, unknown>) ?? {};
         const wars = (payload['data'] as unknown[]) ?? [];
         const hasMore = Boolean((payload['paginatorInfo'] as Record<string, unknown>)?.['hasMorePages']);
-        let allBeforeSince = wars.length > 0;
+        let allBeforeLookupCutoff = wars.length > 0;
         for (const raw of wars as Array<Record<string, unknown>>) {
           const dateStr = s(raw['date']);
           const warDate = dateStr ? new Date(dateStr) : null;
           if (!warDate || isNaN(warDate.getTime())) continue;
-          if (warDate >= since) allBeforeSince = false;
-          if (warDate < since) continue;
+          if (warDate >= warLookupCutoff) allBeforeLookupCutoff = false;
+          const endDateStr = s(raw['end_date']);
+          const endDate = endDateStr ? new Date(endDateStr) : null;
+          const validEndDate = endDate && !isNaN(endDate.getTime()) ? endDate : null;
+          if (warDate < since && validEndDate !== null && validEndDate < since) continue;
+          if (warDate < since && validEndDate === null && warDate < warLookupCutoff) continue;
           const warId = n(raw['id']);
           if (!warId || warsById.has(warId)) continue;
           const attacker = (raw['attacker'] as Record<string, unknown>) ?? {};
@@ -837,7 +853,7 @@ export class PnWClient {
             defenderName: s(defender['nation_name']) || String(defenderId || '?'),
           });
         }
-        if (!hasMore || allBeforeSince) break;
+        if (!hasMore || allBeforeLookupCutoff) break;
         page += 1;
       }
     };
@@ -855,7 +871,7 @@ export class PnWClient {
       const batch = warIds.slice(batchStart, batchStart + WARATTACKS_BATCH_SIZE);
       let page = 1;
       while (true) {
-        const query = `query GetNationVictoryLoot($war_id: [Int], $page: Int) {
+        const query = `query GetNationAttackLoot($war_id: [Int], $page: Int) {
           warattacks(war_id: $war_id, page: $page, first: 100) {
             data {
               war_id att_id date type victor money_stolen money_looted loot_info
@@ -869,14 +885,15 @@ export class PnWClient {
         const attacks = (payload['data'] as unknown[]) ?? [];
         const hasMore = Boolean((payload['paginatorInfo'] as Record<string, unknown>)?.['hasMorePages']);
         for (const attack of attacks as Array<Record<string, unknown>>) {
-          if (s(attack['type']).toUpperCase() !== 'VICTORY') continue;
+          const attackType = s(attack['type']).toUpperCase();
+          if (!ATTACK_TYPES_WITH_LOOT.has(attackType)) continue;
           const warId = n(attack['war_id']);
           const war = warById.get(warId);
           if (!war) continue;
           const attackDateStr = s(attack['date']);
           const victoryDate = attackDateStr ? new Date(attackDateStr) : war.date;
           const resources = parseLootResources(s(attack['loot_info']));
-          const money = n(attack['money_stolen']) + n(attack['money_looted']);
+          const money = n(attack['money_stolen']) + n(attack['money_looted']) + n(attack['moneystolen']);
           if (money > 0) resources.money = money;
           const gasoline = n(attack['gasoline_looted']);
           const munitions = n(attack['munitions_looted']);
@@ -886,16 +903,20 @@ export class PnWClient {
           if (munitions > 0) resources.munitions = munitions;
           if (aluminum > 0) resources.aluminum = aluminum;
           if (steel > 0) resources.steel = steel;
+          if (!hasLootResources(resources)) continue;
 
-          const victorId = n(attack['victor']) || n(attack['att_id']);
-          const victorIsAttacker = victorId === war.attackerId;
-          const victorName = victorIsAttacker ? war.attackerName : victorId === war.defenderId ? war.defenderName : String(victorId || '?');
-          const loserId = victorIsAttacker ? war.defenderId : war.attackerId;
-          const loserName = victorIsAttacker ? war.defenderName : war.attackerName;
-          summary.victoryAttacks += 1;
+          const attackAttackerId = n(attack['att_id']);
+          const victorId = attackType === 'VICTORY' ? n(attack['victor']) || attackAttackerId : attackAttackerId;
+          const looterId = victorId || attackAttackerId;
+          const looterIsWarAttacker = looterId === war.attackerId;
+          const looterName = looterIsWarAttacker ? war.attackerName : looterId === war.defenderId ? war.defenderName : String(looterId || '?');
+          const victimId = looterIsWarAttacker ? war.defenderId : war.attackerId;
+          const victimName = looterIsWarAttacker ? war.defenderName : war.attackerName;
+          summary.lootAttacks += 1;
+          if (attackType === 'VICTORY') summary.victoryAttacks += 1;
           addLootResources(summary.total, resources);
-          if (victorId === nationId) addLootResources(summary.gained, resources);
-          else if (loserId === nationId) addLootResources(summary.lost, resources);
+          if (looterId === nationId) addLootResources(summary.gained, resources);
+          else if (victimId === nationId) addLootResources(summary.lost, resources);
           summary.entries.push({
             warId,
             warDate: war.date,
@@ -904,10 +925,15 @@ export class PnWClient {
             attackerName: war.attackerName,
             defenderId: war.defenderId,
             defenderName: war.defenderName,
-            victorId,
-            victorName,
-            loserId,
-            loserName,
+            attackType,
+            looterId,
+            looterName,
+            victimId,
+            victimName,
+            victorId: looterId,
+            victorName: looterName,
+            loserId: victimId,
+            loserName: victimName,
             resources,
           });
         }

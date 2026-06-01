@@ -23,7 +23,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
   { name: '/infra <from> <to> [cities] [projects]', summary: 'Calculate infrastructure purchase cost with optional project discounts.', category: 'core' },
   { name: '/city_cost <current> [target] [policies]', summary: 'Calculate city purchase costs using the dynamic formula.', category: 'core' },
   { name: '/revenue [query]', summary: 'Show estimated gross daily revenue for a nation; defaults to your registered nation.', category: 'core' },
-  { name: '/loot <days> <nation>', summary: 'Summarize victory loot from a nation\'s wars opened in the past N days.', category: 'core' },
+  { name: '/loot <days> <nation>', summary: 'Summarize ground and victory loot from a nation\'s wars opened in the past N days.', category: 'core' },
   { name: '/send ...resources', summary: 'Compose Locutus transfer command with full resource payload.', category: 'core' },
   { name: '/request_grant <note> [resources]', summary: 'Submit grant request to configured grant channel.', category: 'gov' },
   { name: '/slots', summary: 'Show open defensive slots for configured alliances.', category: 'alliance' },
