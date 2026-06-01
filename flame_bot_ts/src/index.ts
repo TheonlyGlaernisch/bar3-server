@@ -2911,7 +2911,7 @@ Message: ${cfg.message}`)],
         const urbanPlanning = interaction.options.getBoolean('urban_planning') ?? false;
         const advancedUrbanPlanning = interaction.options.getBoolean('advanced_urban_planning') ?? false;
         if (to <= from) return void interaction.reply({ content: 'Target infra must be greater than current infra.', flags: MessageFlags.Ephemeral });
-        if (from < 0 || to > 100_000) return void interaction.reply({ content: 'Infrastructure values must be between 0 and 100,000.', flags: MessageFlags.Ephemeral });
+        if (from < 0 || to > 20_000) return void interaction.reply({ content: 'Infrastructure values must be between 0 and 20,000.', flags: MessageFlags.Ephemeral });
         if (cities < 1) return void interaction.reply({ content: 'Number of cities must be at least 1.', flags: MessageFlags.Ephemeral });
         const baseCostPerCity = calculateInfraCost(from, to);
         let discount = 0.0;

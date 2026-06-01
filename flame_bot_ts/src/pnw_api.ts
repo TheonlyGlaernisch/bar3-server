@@ -150,6 +150,7 @@ export interface City {
   cityId: number;
   infrastructure: number;
   land: number;
+  foundedDate: string;
   powered: boolean;
   coalPower: number;
   oilPower: number;
@@ -171,6 +172,8 @@ export interface City {
   aluminumRefinery: number;
   steelMill: number;
   munitionsFactory: number;
+  policeStation: number;
+  hospital: number;
 }
 
 export interface GameInfo {
@@ -350,6 +353,7 @@ const NATION_FIELDS = `
 
 const CITY_FIELDS = `
     id
+    date
     infrastructure
     land
     powered
@@ -373,6 +377,8 @@ const CITY_FIELDS = `
     aluminum_refinery
     steel_mill
     munitions_factory
+    police_station
+    hospital
 `;
 
 const ALLIANCE_MEMBER_FIELDS = `
@@ -591,6 +597,7 @@ function parseAllianceDict(raw: Record<string, unknown>): AllianceInfo {
 function parseCityDict(raw: Record<string, unknown>): City {
   return {
     cityId: n(raw['id']),
+    foundedDate: s(raw['date']),
     infrastructure: n(raw['infrastructure']),
     land: n(raw['land']),
     powered: Boolean(raw['powered'] ?? true),
@@ -614,6 +621,8 @@ function parseCityDict(raw: Record<string, unknown>): City {
     aluminumRefinery: n(raw['aluminum_refinery']),
     steelMill: n(raw['steel_mill']),
     munitionsFactory: n(raw['munitions_factory']),
+    policeStation: n(raw['police_station']),
+    hospital: n(raw['hospital']),
   };
 }
 
@@ -1416,9 +1425,19 @@ export class PnWClient {
 // ---------------------------------------------------------------------------
 
 export function calculateInfraCost(buyFrom: number, buyTo: number): number {
+  if (buyFrom < 0) buyFrom = 0;
   if (buyTo <= buyFrom) return 0.0;
-  const diff = buyTo - buyFrom;
-  return 300.0 * diff + 0.075 * (buyTo * buyTo - buyFrom * buyFrom);
+  if (buyTo > 20_000) throw new Error(`Infra cannot exceed 20,000 (${buyTo}).`);
+  const fromCents = Math.round(buyFrom * 100);
+  const toCents = Math.round(buyTo * 100);
+  let totalCents = 0;
+  for (let i = toCents; i >= fromCents; i -= 10_000) {
+    const amount = Math.min(10_000, i - fromCents);
+    const costCents = getInfraCostCents(i - amount);
+    totalCents += costCents * amount;
+  }
+  totalCents = Math.floor((totalCents + 50) / 100);
+  return totalCents * 0.01;
 }
 
 const CITY_COST_DEFAULT_AVERAGE = 43.6;
@@ -1457,9 +1476,16 @@ export function calculateCityCost(
 // ---------------------------------------------------------------------------
 
 const TURNS_PER_DAY = 12;
-const COMMERCE_INCOME = 726.17;
 const NORTHERN_CONTINENTS = new Set(['NA', 'EU', 'AS']);
 const SOUTHERN_CONTINENTS = new Set(['SA', 'AF', 'AU']);
+const CITY_MIN_POPULATION = 10;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function getInfraCostCents(infraCents: number): number {
+  return Math.round(100 * (
+    300.0 + Math.pow(Math.max((infraCents - 1000) * 0.01, 20.0), 2.2) * 0.0014084507042253522
+  ));
+}
 
 function normalizeContinent(raw: string): string {
   const mapping: Record<string, string> = {
@@ -1581,6 +1607,35 @@ function improvementUpkeep(city: City): number {
   return total;
 }
 
+function cityAgeDays(city: City): number {
+  const foundedAt = Date.parse(city.foundedDate);
+  if (!Number.isFinite(foundedAt)) return 1.0;
+  return Math.max(1.0, (Date.now() - foundedAt) / DAY_MS);
+}
+
+function cityDiseaseRate(city: City, hasCrc: boolean): number {
+  const hospitalModifier = city.hospital * (hasCrc ? 3.5 : 2.5);
+  return Math.max(
+    0.0,
+    ((0.01 * Math.pow((city.infrastructure * 100.0) / (city.land + 0.001), 2.0) - 25.0) * 0.01)
+      + (city.infrastructure * 0.001)
+      - hospitalModifier
+  );
+}
+
+function cityCrimeRate(city: City, commerce: number, hasSptp: boolean): number {
+  const policeModifier = city.policeStation * (hasSptp ? 3.5 : 2.5);
+  return Math.max(0.0, ((Math.pow(103.0 - commerce, 2.0) + (city.infrastructure * 100.0)) * 0.000009) - policeModifier);
+}
+
+function cityPopulation(city: City, commerce: number, hasCrc: boolean, hasSptp: boolean): number {
+  const basePopulation = city.infrastructure * 100.0;
+  const diseaseDeaths = cityDiseaseRate(city, hasCrc) * 0.01 * basePopulation;
+  const crimeDeaths = Math.max(cityCrimeRate(city, commerce, hasSptp) * 0.1 * basePopulation - 25.0, 0.0);
+  const ageBonus = 1.0 + Math.log(cityAgeDays(city)) / 15.0;
+  return Math.max(CITY_MIN_POPULATION, Math.round((basePopulation - diseaseDeaths - crimeDeaths) * ageBonus));
+}
+
 export function computeNationRevenue(
   nation: Nation,
   cities: City[],
@@ -1596,6 +1651,7 @@ export function computeNationRevenue(
   const hasEgr = pb.has('EGR');
   const hasAs = pb.has('AS');
   const hasSptp = pb.has('SPTP');
+  const hasCrc = pb.has('CRC');
 
   const continent = normalizeContinent(nation.continent || 'NA');
   const contRad = GameInfo.radiationFor(gameInfo, continent);
@@ -1613,7 +1669,9 @@ export function computeNationRevenue(
   for (const city of cities) {
     const commerce = cityCommerceRate(city, hasItc, hasSptp);
     totalCommerce += commerce;
-    money += (city.infrastructure / 100.0) * (commerce / 100.0) * COMMERCE_INCOME * TURNS_PER_DAY;
+    const population = cityPopulation(city, commerce, hasCrc, hasSptp);
+    const newPlayerBonus = 1.0 + Math.max(1.0 - (cities.length - 1) * 0.05, 0.0);
+    money += ((((commerce * 0.02) * 0.725) + 0.725) * population * newPlayerBonus) * TURNS_PER_DAY;
     foodProduction += foodProdPerCity(
       city.farm, city.land, hasMi, gameInfo.gameMonth, continent, contRad, gameInfo.globalRadiation
     );

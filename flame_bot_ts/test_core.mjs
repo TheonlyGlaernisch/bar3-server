@@ -4,6 +4,8 @@ import {
   TradePrice,
   calculateCityCost,
   calculateInfraCost,
+  computeNationRevenue,
+  GameInfo,
   parseNationCreateDetail,
   parseResourceLoot,
   secsUntilTurnWindow,
@@ -25,6 +27,34 @@ test('calculateInfraCost increases with larger buy ranges', () => {
   const big = calculateInfraCost(100, 120);
   assert.ok(small > 0);
   assert.ok(big > small);
+});
+
+test('computeNationRevenue money uses Locutus-style population inputs', () => {
+  const nation = {
+    projectsBuilt: ['CRC'],
+    continent: 'NA',
+    offensiveWars: 0,
+    defensiveWars: 0,
+    population: 100000,
+    soldiers: 0,
+    color: '',
+  };
+  const cityBase = {
+    cityId: 1,
+    foundedDate: '2020-01-01',
+    infrastructure: 1500,
+    land: 2000,
+    powered: true,
+    coalPower: 0, oilPower: 0, nuclearPower: 0, windPower: 0,
+    coalMine: 0, oilWell: 0, uraniumMine: 0, ironMine: 0, bauxiteMine: 0, leadMine: 0,
+    farm: 0, supermarket: 4, bank: 4, shoppingMall: 2, stadium: 1, subway: 1,
+    gasrefinery: 0, aluminumRefinery: 0, steelMill: 0, munitionsFactory: 0,
+    policeStation: 0,
+    hospital: 0,
+  };
+  const noHospitals = computeNationRevenue(nation, [cityBase], GameInfo.create()).money;
+  const withHospitals = computeNationRevenue(nation, [{ ...cityBase, hospital: 5 }], GameInfo.create()).money;
+  assert.ok(withHospitals > noHospitals);
 });
 
 test('calculateCityCost applies policy/project discounts', () => {
