@@ -17,7 +17,7 @@
       <p class="constitution-hero__eyebrow">The TRF Codex</p>
       <h1>Constitution</h1>
       <p class="constitution-hero__lede">
-        The living charter for conduct, lore, and amendment.
+        The living charter for conduct, lore, and amendments.
       </p>
       <div class="constitution-hero__actions">
         <button class="constitution-theme-button" type="button" @click="isDarkMode = !isDarkMode">
