@@ -198,6 +198,97 @@ test('parseResourceLoot returns zeros when resource not mentioned', () => {
   assert.equal(stl, 0);
 });
 
+
+test('getNationWarLoot queries supported war fields and includes ground attack loot', async () => {
+  const { PnWClient } = await import('./build/src/pnw_api.js');
+  const client = new PnWClient('test-key');
+  const queries = [];
+  client._query = async (query, variables) => {
+    queries.push({ query, variables });
+    if (query.includes('GetNationLootWars')) {
+      assert.equal('daysAgo' in variables, false);
+      assert.doesNotMatch(query, /active:/);
+      assert.doesNotMatch(query, /days_ago:/);
+      assert.match(query, /id date end_date att_id def_id/);
+      const isAttackerRole = query.includes('wars(attid:');
+      return {
+        data: {
+          wars: {
+            data: isAttackerRole ? [{
+              id: 123,
+              date: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+              end_date: new Date().toISOString(),
+              att_id: 1,
+              def_id: 2,
+              attacker: { nation_name: 'Raider' },
+              defender: { nation_name: 'Target' },
+            }] : [],
+            paginatorInfo: { hasMorePages: false },
+          },
+        },
+      };
+    }
+    if (query.includes('GetNationAttackLoot')) {
+      assert.deepEqual(variables.war_id, [123]);
+      return {
+        data: {
+          warattacks: {
+            data: [
+              {
+                war_id: 123,
+                att_id: 1,
+                date: new Date().toISOString(),
+                type: 'GROUND',
+                victor: 1,
+                money_stolen: 100,
+                money_looted: 0,
+                gasoline_looted: 5,
+                munitions_looted: 6,
+                aluminum_looted: 7,
+                steel_looted: 8,
+                loot_info: '',
+              },
+              {
+                war_id: 123,
+                att_id: 1,
+                date: new Date(Date.now() + 1000).toISOString(),
+                type: 'VICTORY',
+                victor: 1,
+                money_stolen: 0,
+                money_looted: 200,
+                gasoline_looted: 0,
+                munitions_looted: 0,
+                aluminum_looted: 0,
+                steel_looted: 0,
+                loot_info: 'won the war and looted 10 food, 20 coal.',
+              },
+            ],
+            paginatorInfo: { hasMorePages: false },
+          },
+        },
+      };
+    }
+    throw new Error(`Unexpected query: ${query}`);
+  };
+
+  const summary = await client.getNationWarLoot(1, 7);
+  assert.equal(summary.warsChecked, 1);
+  assert.equal(summary.lootAttacks, 2);
+  assert.equal(summary.victoryAttacks, 1);
+  assert.equal(summary.gained.money, 300);
+  assert.equal(summary.gained.gasoline, 5);
+  assert.equal(summary.gained.munitions, 6);
+  assert.equal(summary.gained.aluminum, 7);
+  assert.equal(summary.gained.steel, 8);
+  assert.equal(summary.gained.food, 10);
+  assert.equal(summary.gained.coal, 20);
+  assert.equal(summary.entries[0].attackType, 'VICTORY');
+  assert.equal(summary.entries[1].attackType, 'GROUND');
+  assert.equal(summary.entries[1].looterName, 'Raider');
+  assert.equal(summary.entries[1].victimName, 'Target');
+  assert.equal(queries.filter(({ query }) => query.includes('GetNationLootWars')).length, 2);
+});
+
 test('PnWClient.discordMatches is case-insensitive and handles legacy hash tags', () => {
   assert.ok(PnWClient.discordMatches('alice', 'alice'));
   assert.ok(PnWClient.discordMatches('ALICE', 'alice'));
@@ -240,28 +331,37 @@ test('translateBetweenEnglishAndCroatian translates English to Croatian', async 
   }
 });
 
-test('translateBetweenEnglishAndCroatian translates Croatian detected as Bosnian to English', async () => {
+test('translateBetweenEnglishAndCroatian translates Croatian detected as related languages to English', async () => {
   const { translateBetweenEnglishAndCroatian } = await import('./build/src/translation.js');
-  const originalFetch = globalThis.fetch;
-  const requests = [];
-  globalThis.fetch = async (url) => {
-    requests.push(String(url));
-    const parsed = new URL(String(url));
-    assert.equal(parsed.searchParams.get('q'), 'Dobro jutro');
-    assert.equal(parsed.searchParams.get('sl'), 'auto');
-    assert.equal(parsed.searchParams.get('tl'), 'en');
-    return {
-      ok: true,
-      async json() {
-        return [[["Good morning", "Dobro jutro"]], null, 'bs'];
-      },
+  const detectionCases = [
+    { detectedLanguage: 'bs', label: 'Bosnian' },
+    { detectedLanguage: 'sr', label: 'Serbian' },
+    { detectedLanguage: 'sl', label: 'Slovenian' },
+    { detectedLanguage: 'cnr', label: 'Montenegrin' },
+  ];
+
+  for (const { detectedLanguage, label } of detectionCases) {
+    const originalFetch = globalThis.fetch;
+    const requests = [];
+    globalThis.fetch = async (url) => {
+      requests.push(String(url));
+      const parsed = new URL(String(url));
+      assert.equal(parsed.searchParams.get('q'), 'Dobro jutro');
+      assert.equal(parsed.searchParams.get('sl'), 'auto');
+      assert.equal(parsed.searchParams.get('tl'), 'en');
+      return {
+        ok: true,
+        async json() {
+          return [[["Good morning", "Dobro jutro"]], null, detectedLanguage];
+        },
+      };
     };
-  };
-  try {
-    const result = await translateBetweenEnglishAndCroatian('Dobro jutro');
-    assert.deepEqual(result, { sourceLanguage: 'hr', targetLanguage: 'en', text: 'Good morning' });
-    assert.equal(requests.length, 1);
-  } finally {
-    globalThis.fetch = originalFetch;
+    try {
+      const result = await translateBetweenEnglishAndCroatian('Dobro jutro');
+      assert.deepEqual(result, { sourceLanguage: 'hr', targetLanguage: 'en', text: 'Good morning' }, label);
+      assert.equal(requests.length, 1, label);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   }
 });

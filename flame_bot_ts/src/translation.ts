@@ -3,7 +3,7 @@ const TRANSLATE_TIMEOUT_MS = 10_000;
 
 export type SupportedTranslationLanguage = 'en' | 'hr';
 
-const CROATIAN_DETECTION_CODES = new Set(['hr', 'bs', 'sr']);
+const CROATIAN_DETECTION_CODES = new Set(['hr', 'bs', 'sr', 'sl', 'cnr']);
 
 export interface TranslationResult {
   sourceLanguage: SupportedTranslationLanguage;
