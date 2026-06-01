@@ -171,6 +171,24 @@ test('parseResourceLoot returns zeros for empty string', () => {
   assert.equal(stl, 0);
 });
 
+test('getNationWarLoot requests inactive wars like Locutus', async () => {
+  const client = new PnWClient('test-key');
+  const queries = [];
+  client._query = async (query) => {
+    queries.push(query);
+    return {
+      data: {
+        wars: { data: [], paginatorInfo: { hasMorePages: false } },
+      },
+    };
+  };
+
+  const summary = await client.getNationWarLoot(123, 7);
+  assert.equal(summary.warsChecked, 0);
+  assert.equal(queries.length, 2);
+  assert.ok(queries.every((query) => query.includes('active: false')), 'wars queries should opt into inactive war fetching');
+});
+
 test('parseResourceLoot returns zeros when resource not mentioned', () => {
   const [money, gas, mun, alu, stl] = parseResourceLoot('stole 500 money');
   assert.equal(money, 500);
