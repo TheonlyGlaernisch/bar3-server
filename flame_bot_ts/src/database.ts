@@ -23,6 +23,7 @@ export interface GuildConfigDoc {
   gov_panel_message_id?: string | null;
   alliance_verified_at?: string | null;
   counter_request_channel_id?: string | null;
+  translation_channel_ids?: string[];
 }
 
 export interface GuildDoc {
@@ -230,6 +231,26 @@ export class Database {
     return docs
       .map((d) => ({ guildId: String(d.guild_id), channelId: String(d.counter_request_channel_id) }))
       .filter((x) => /^\d+$/.test(x.guildId) && /^\d+$/.test(x.channelId));
+  }
+
+  async getTranslationChannels(guildId: bigint): Promise<string[]> {
+    const doc = await this._guildConfig.findOne(
+      { guild_id: guildId.toString() },
+      { projection: { _id: 0, translation_channel_ids: 1 } }
+    );
+    const ids = Array.isArray(doc?.translation_channel_ids) ? doc.translation_channel_ids : [];
+    return ids.map((id) => String(id));
+  }
+
+  async enableTranslationChannel(guildId: bigint, channelId: string): Promise<void> {
+    await this._guildConfig.updateOne(
+      { guild_id: guildId.toString() },
+      {
+        $setOnInsert: { guild_id: guildId.toString() },
+        $addToSet: { translation_channel_ids: String(channelId) },
+      },
+      { upsert: true }
+    );
   }
 
   // Welcome message config helpers ----------------------------------------

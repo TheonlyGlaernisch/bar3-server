@@ -283,6 +283,20 @@ test('setWelcomeConfig partial update preserves other fields', async () => {
   assert.equal(cfg.message, 'Hi');
 });
 
+test('getTranslationChannels returns empty list for unconfigured guild', async () => {
+  const db = await makeDb();
+  assert.deepEqual(await db.getTranslationChannels(BigInt(450)), []);
+});
+
+test('enableTranslationChannel stores unique channel IDs per guild', async () => {
+  const db = await makeDb();
+  await db.enableTranslationChannel(BigInt(451), '111');
+  await db.enableTranslationChannel(BigInt(451), '111');
+  await db.enableTranslationChannel(BigInt(451), '222');
+  const channels = await db.getTranslationChannels(BigInt(451));
+  assert.deepEqual(channels.sort(), ['111', '222']);
+});
+
 // ---------------------------------------------------------------------------
 // Guild config — alliance ID
 // ---------------------------------------------------------------------------
