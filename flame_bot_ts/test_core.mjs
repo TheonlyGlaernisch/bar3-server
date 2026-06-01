@@ -187,3 +187,63 @@ test('PnWClient.discordMatches is case-insensitive and handles legacy hash tags'
   assert.ok(!PnWClient.discordMatches('alice', 'bob'));
   assert.ok(!PnWClient.discordMatches('', 'alice'));
 });
+
+test('translateBetweenEnglishAndCroatian translates English to Croatian', async () => {
+  const { translateBetweenEnglishAndCroatian } = await import('./build/src/translation.js');
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    const parsed = new URL(String(url));
+    assert.equal(parsed.searchParams.get('q'), 'Good morning');
+    if (parsed.searchParams.get('tl') === 'en') {
+      return {
+        ok: true,
+        async json() {
+          return [[["Good morning", "Good morning"]], null, 'en'];
+        },
+      };
+    }
+    return {
+      ok: true,
+      async json() {
+        return [[["Dobro jutro", "Good morning"]], null, 'en'];
+      },
+    };
+  };
+  try {
+    const result = await translateBetweenEnglishAndCroatian('Good morning');
+    assert.deepEqual(result, { sourceLanguage: 'en', targetLanguage: 'hr', text: 'Dobro jutro' });
+    assert.equal(requests.length, 2);
+    assert.ok(requests[1].includes('sl=en'));
+    assert.ok(requests[1].includes('tl=hr'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('translateBetweenEnglishAndCroatian translates Croatian detected as Bosnian to English', async () => {
+  const { translateBetweenEnglishAndCroatian } = await import('./build/src/translation.js');
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    const parsed = new URL(String(url));
+    assert.equal(parsed.searchParams.get('q'), 'Dobro jutro');
+    assert.equal(parsed.searchParams.get('sl'), 'auto');
+    assert.equal(parsed.searchParams.get('tl'), 'en');
+    return {
+      ok: true,
+      async json() {
+        return [[["Good morning", "Dobro jutro"]], null, 'bs'];
+      },
+    };
+  };
+  try {
+    const result = await translateBetweenEnglishAndCroatian('Dobro jutro');
+    assert.deepEqual(result, { sourceLanguage: 'hr', targetLanguage: 'en', text: 'Good morning' });
+    assert.equal(requests.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
