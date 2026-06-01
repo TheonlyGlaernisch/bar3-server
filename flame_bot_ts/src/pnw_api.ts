@@ -7,31 +7,59 @@ import WebSocket from 'ws';
 // Loot-info parsing helpers
 // ---------------------------------------------------------------------------
 
-const LOOT_MONEY_RE = /([\d,]+(?:\.\d+)?)\s+money/i;
-const LOOT_GAS_RE = /([\d,]+(?:\.\d+)?)\s+gasoline/i;
-const LOOT_MUN_RE = /([\d,]+(?:\.\d+)?)\s+munitions/i;
-const LOOT_ALU_RE = /([\d,]+(?:\.\d+)?)\s+aluminum/i;
-const LOOT_STL_RE = /([\d,]+(?:\.\d+)?)\s+steel/i;
+export type LootResourceKey =
+  | 'money' | 'food' | 'coal' | 'oil' | 'uranium' | 'iron' | 'bauxite' | 'lead'
+  | 'gasoline' | 'munitions' | 'steel' | 'aluminum';
+
+export type LootResources = Record<LootResourceKey, number>;
+
+export const LOOT_RESOURCE_KEYS: LootResourceKey[] = [
+  'money', 'food', 'coal', 'oil', 'uranium', 'iron', 'bauxite', 'lead',
+  'gasoline', 'munitions', 'steel', 'aluminum',
+];
+
+const LOOT_RESOURCE_RE: Record<LootResourceKey, RegExp> = {
+  money: /([\d,]+(?:\.\d+)?)\s+money/i,
+  food: /([\d,]+(?:\.\d+)?)\s+food/i,
+  coal: /([\d,]+(?:\.\d+)?)\s+coal/i,
+  oil: /([\d,]+(?:\.\d+)?)\s+oil/i,
+  uranium: /([\d,]+(?:\.\d+)?)\s+uranium/i,
+  iron: /([\d,]+(?:\.\d+)?)\s+iron/i,
+  bauxite: /([\d,]+(?:\.\d+)?)\s+bauxite/i,
+  lead: /([\d,]+(?:\.\d+)?)\s+lead/i,
+  gasoline: /([\d,]+(?:\.\d+)?)\s+gasoline/i,
+  munitions: /([\d,]+(?:\.\d+)?)\s+munitions/i,
+  steel: /([\d,]+(?:\.\d+)?)\s+steel/i,
+  aluminum: /([\d,]+(?:\.\d+)?)\s+aluminum/i,
+};
 
 const ATTACK_TYPES_WITH_LOOT = new Set(['GROUND', 'VICTORY']);
 const WARATTACKS_BATCH_SIZE = 50;
 
-export function parseResourceLoot(lootInfo: string): [number, number, number, number, number] {
-  const extract = (re: RegExp): number => {
-    const m = re.exec(lootInfo);
+function emptyLootResources(): LootResources {
+  return Object.fromEntries(LOOT_RESOURCE_KEYS.map((key) => [key, 0.0])) as LootResources;
+}
+
+function addLootResources(target: LootResources, source: LootResources): LootResources {
+  for (const key of LOOT_RESOURCE_KEYS) target[key] += source[key];
+  return target;
+}
+
+export function parseLootResources(lootInfo: string): LootResources {
+  const result = emptyLootResources();
+  for (const key of LOOT_RESOURCE_KEYS) {
+    const m = LOOT_RESOURCE_RE[key].exec(lootInfo);
     if (m && m[1]) {
       const v = parseFloat(m[1].replace(/,/g, ''));
-      return isNaN(v) ? 0.0 : v;
+      result[key] = isNaN(v) ? 0.0 : v;
     }
-    return 0.0;
-  };
-  return [
-    extract(LOOT_MONEY_RE),
-    extract(LOOT_GAS_RE),
-    extract(LOOT_MUN_RE),
-    extract(LOOT_ALU_RE),
-    extract(LOOT_STL_RE),
-  ];
+  }
+  return result;
+}
+
+export function parseResourceLoot(lootInfo: string): [number, number, number, number, number] {
+  const parsed = parseLootResources(lootInfo);
+  return [parsed.money, parsed.gasoline, parsed.munitions, parsed.aluminum, parsed.steel];
 }
 
 export const PNW_GRAPHQL_URL = 'https://api.politicsandwar.com/graphql';
@@ -260,6 +288,33 @@ export interface WarDetail {
   defenderNukes: number;
   defenderWarsWon: number;
   defenderWarsLost: number;
+}
+
+export interface NationWarLootEntry {
+  warId: number;
+  warDate: Date;
+  victoryDate: Date;
+  attackerId: number;
+  attackerName: string;
+  defenderId: number;
+  defenderName: string;
+  victorId: number;
+  victorName: string;
+  loserId: number;
+  loserName: string;
+  resources: LootResources;
+}
+
+export interface NationLootSummary {
+  nationId: number;
+  days: number;
+  since: Date;
+  warsChecked: number;
+  victoryAttacks: number;
+  gained: LootResources;
+  lost: LootResources;
+  total: LootResources;
+  entries: NationWarLootEntry[];
 }
 
 export interface NationCreateDetail {
@@ -715,6 +770,154 @@ export class PnWClient {
     const data = await this._query(WAR_DETAIL_QUERY, { id: [warId] });
     const wars = (((data['data'] as Record<string, unknown>)?.['wars'] as Record<string, unknown>)?.['data'] as unknown[]) ?? [];
     return wars.length ? parseWarFromDict(wars[0] as Record<string, unknown>) : null;
+  }
+
+  async getNationWarLoot(nationId: number, days: number): Promise<NationLootSummary> {
+    const safeDays = Math.max(1, Math.min(365, Math.floor(days)));
+    const since = new Date(Date.now() - safeDays * 24 * 60 * 60 * 1000);
+    const summary: NationLootSummary = {
+      nationId,
+      days: safeDays,
+      since,
+      warsChecked: 0,
+      victoryAttacks: 0,
+      gained: emptyLootResources(),
+      lost: emptyLootResources(),
+      total: emptyLootResources(),
+      entries: [],
+    };
+    if (this._restUrl !== null || nationId <= 0) return summary;
+
+    type LootWar = {
+      warId: number;
+      date: Date;
+      attackerId: number;
+      attackerName: string;
+      defenderId: number;
+      defenderName: string;
+    };
+
+    const warsById = new Map<number, LootWar>();
+    const fetchRole = async (role: 'attid' | 'defid'): Promise<void> => {
+      let page = 1;
+      while (true) {
+        const query = `query GetNationLootWars($nationId: [Int], $page: Int) {
+          wars(${role}: $nationId, page: $page, first: 100) {
+            data {
+              id date att_id def_id
+              attacker { nation_name }
+              defender { nation_name }
+            }
+            paginatorInfo { hasMorePages }
+          }
+        }`;
+        const data = await this._query(query, { nationId: [nationId], page });
+        const payload = ((data['data'] as Record<string, unknown>)?.['wars'] as Record<string, unknown>) ?? {};
+        const wars = (payload['data'] as unknown[]) ?? [];
+        const hasMore = Boolean((payload['paginatorInfo'] as Record<string, unknown>)?.['hasMorePages']);
+        let allBeforeSince = wars.length > 0;
+        for (const raw of wars as Array<Record<string, unknown>>) {
+          const dateStr = s(raw['date']);
+          const warDate = dateStr ? new Date(dateStr) : null;
+          if (!warDate || isNaN(warDate.getTime())) continue;
+          if (warDate >= since) allBeforeSince = false;
+          if (warDate < since) continue;
+          const warId = n(raw['id']);
+          if (!warId || warsById.has(warId)) continue;
+          const attacker = (raw['attacker'] as Record<string, unknown>) ?? {};
+          const defender = (raw['defender'] as Record<string, unknown>) ?? {};
+          const attackerId = n(raw['att_id']);
+          const defenderId = n(raw['def_id']);
+          warsById.set(warId, {
+            warId,
+            date: warDate,
+            attackerId,
+            attackerName: s(attacker['nation_name']) || String(attackerId || '?'),
+            defenderId,
+            defenderName: s(defender['nation_name']) || String(defenderId || '?'),
+          });
+        }
+        if (!hasMore || allBeforeSince) break;
+        page += 1;
+      }
+    };
+
+    await fetchRole('attid');
+    await fetchRole('defid');
+
+    const wars = Array.from(warsById.values());
+    summary.warsChecked = wars.length;
+    if (!wars.length) return summary;
+
+    const warIds = wars.map((war) => war.warId);
+    const warById = new Map(wars.map((war) => [war.warId, war]));
+    for (let batchStart = 0; batchStart < warIds.length; batchStart += WARATTACKS_BATCH_SIZE) {
+      const batch = warIds.slice(batchStart, batchStart + WARATTACKS_BATCH_SIZE);
+      let page = 1;
+      while (true) {
+        const query = `query GetNationVictoryLoot($war_id: [Int], $page: Int) {
+          warattacks(war_id: $war_id, page: $page, first: 100) {
+            data {
+              war_id att_id date type victor money_stolen money_looted loot_info
+              gasoline_looted munitions_looted aluminum_looted steel_looted
+            }
+            paginatorInfo { hasMorePages }
+          }
+        }`;
+        const data = await this._query(query, { war_id: batch, page });
+        const payload = ((data['data'] as Record<string, unknown>)?.['warattacks'] as Record<string, unknown>) ?? {};
+        const attacks = (payload['data'] as unknown[]) ?? [];
+        const hasMore = Boolean((payload['paginatorInfo'] as Record<string, unknown>)?.['hasMorePages']);
+        for (const attack of attacks as Array<Record<string, unknown>>) {
+          if (s(attack['type']).toUpperCase() !== 'VICTORY') continue;
+          const warId = n(attack['war_id']);
+          const war = warById.get(warId);
+          if (!war) continue;
+          const attackDateStr = s(attack['date']);
+          const victoryDate = attackDateStr ? new Date(attackDateStr) : war.date;
+          const resources = parseLootResources(s(attack['loot_info']));
+          const money = n(attack['money_stolen']) + n(attack['money_looted']);
+          if (money > 0) resources.money = money;
+          const gasoline = n(attack['gasoline_looted']);
+          const munitions = n(attack['munitions_looted']);
+          const aluminum = n(attack['aluminum_looted']);
+          const steel = n(attack['steel_looted']);
+          if (gasoline > 0) resources.gasoline = gasoline;
+          if (munitions > 0) resources.munitions = munitions;
+          if (aluminum > 0) resources.aluminum = aluminum;
+          if (steel > 0) resources.steel = steel;
+
+          const victorId = n(attack['victor']) || n(attack['att_id']);
+          const victorIsAttacker = victorId === war.attackerId;
+          const victorName = victorIsAttacker ? war.attackerName : victorId === war.defenderId ? war.defenderName : String(victorId || '?');
+          const loserId = victorIsAttacker ? war.defenderId : war.attackerId;
+          const loserName = victorIsAttacker ? war.defenderName : war.attackerName;
+          summary.victoryAttacks += 1;
+          addLootResources(summary.total, resources);
+          if (victorId === nationId) addLootResources(summary.gained, resources);
+          else if (loserId === nationId) addLootResources(summary.lost, resources);
+          summary.entries.push({
+            warId,
+            warDate: war.date,
+            victoryDate: isNaN(victoryDate.getTime()) ? war.date : victoryDate,
+            attackerId: war.attackerId,
+            attackerName: war.attackerName,
+            defenderId: war.defenderId,
+            defenderName: war.defenderName,
+            victorId,
+            victorName,
+            loserId,
+            loserName,
+            resources,
+          });
+        }
+        if (!hasMore) break;
+        page += 1;
+      }
+    }
+
+    summary.entries.sort((a, b) => b.victoryDate.getTime() - a.victoryDate.getTime());
+    return summary;
   }
 
   async getNationByName(name: string): Promise<Nation | null> {
@@ -1424,9 +1627,29 @@ export class PnWClient {
 // Standalone utility functions
 // ---------------------------------------------------------------------------
 
-export function calculateInfraCost(buyFrom: number, buyTo: number): number {
+export interface InfraCostOptions {
+  advancedEngineeringCorps?: boolean;
+  centerForCivilEngineering?: boolean;
+  urbanization?: boolean;
+  governmentSupportAgency?: boolean;
+  bureauOfDomesticAffairs?: boolean;
+}
+
+function infraCostDiscountFactor(opts: InfraCostOptions = {}): number {
+  let factor = 1.0;
+  if (opts.advancedEngineeringCorps) factor -= 0.05;
+  if (opts.centerForCivilEngineering) factor -= 0.05;
+  if (opts.urbanization) {
+    factor -= 0.05;
+    if (opts.governmentSupportAgency) factor -= 0.025;
+    if (opts.bureauOfDomesticAffairs) factor -= 0.0125;
+  }
+  return factor;
+}
+
+export function calculateInfraCost(buyFrom: number, buyTo: number, opts: InfraCostOptions = {}): number {
   if (buyFrom < 0) buyFrom = 0;
-  if (buyTo <= buyFrom) return 0.0;
+  if (buyTo <= buyFrom) return (buyFrom - buyTo) * -150.0;
   if (buyTo > 20_000) throw new Error(`Infra cannot exceed 20,000 (${buyTo}).`);
   const fromCents = Math.round(buyFrom * 100);
   const toCents = Math.round(buyTo * 100);
@@ -1437,7 +1660,7 @@ export function calculateInfraCost(buyFrom: number, buyTo: number): number {
     totalCents += costCents * amount;
   }
   totalCents = Math.floor((totalCents + 50) / 100);
-  return totalCents * 0.01;
+  return totalCents * 0.01 * (buyTo > buyFrom ? infraCostDiscountFactor(opts) : 1.0);
 }
 
 const CITY_COST_DEFAULT_AVERAGE = 43.6;
@@ -1482,6 +1705,7 @@ const CITY_MIN_POPULATION = 10;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function getInfraCostCents(infraCents: number): number {
+  // Locutus prices an infra cent at max(infra - 10, 20), rounded to cents.
   return Math.round(100 * (
     300.0 + Math.pow(Math.max((infraCents - 1000) * 0.01, 20.0), 2.2) * 0.0014084507042253522
   ));
@@ -1628,6 +1852,23 @@ function cityCrimeRate(city: City, commerce: number, hasSptp: boolean): number {
   return Math.max(0.0, ((Math.pow(103.0 - commerce, 2.0) + (city.infrastructure * 100.0)) * 0.000009) - policeModifier);
 }
 
+function hasDomesticPolicy(nation: Nation, policy: string): boolean {
+  const normalize = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return normalize(nation.domesticPolicy || '') === normalize(policy);
+}
+
+function nationGrossModifier(nation: Nation, noFood = false): number {
+  const pb = new Set(nation.projectsBuilt);
+  let modifier = 1.0;
+  if (hasDomesticPolicy(nation, 'OPEN_MARKETS')) {
+    modifier += 0.01;
+    if (pb.has('GSA')) modifier += 0.005;
+    if (pb.has('BDA')) modifier += 0.0025;
+  }
+  if (noFood) modifier -= 0.33;
+  return modifier;
+}
+
 function cityPopulation(city: City, commerce: number, hasCrc: boolean, hasSptp: boolean): number {
   const basePopulation = city.infrastructure * 100.0;
   const diseaseDeaths = cityDiseaseRate(city, hasCrc) * 0.01 * basePopulation;
@@ -1660,6 +1901,7 @@ export function computeNationRevenue(
   const munMultiplier = hasAs ? 1.2 : 1.0;
   const steelMultiplier = hasIw ? 1.36 : 1.0;
   const aluminumMultiplier = hasBw ? 1.36 : 1.0;
+  const grossModifier = nationGrossModifier(nation);
 
   let money = 0, foodProduction = 0, foodConsumption = 0;
   let coal = 0, oil = 0, uranium = 0, iron = 0, bauxite = 0, lead = 0;
@@ -1671,7 +1913,7 @@ export function computeNationRevenue(
     totalCommerce += commerce;
     const population = cityPopulation(city, commerce, hasCrc, hasSptp);
     const newPlayerBonus = 1.0 + Math.max(1.0 - (cities.length - 1) * 0.05, 0.0);
-    money += ((((commerce * 0.02) * 0.725) + 0.725) * population * newPlayerBonus) * TURNS_PER_DAY;
+    money += (((commerce * 0.02) * 0.725) + 0.725) * population * newPlayerBonus * grossModifier;
     foodProduction += foodProdPerCity(
       city.farm, city.land, hasMi, gameInfo.gameMonth, continent, contRad, gameInfo.globalRadiation
     );
@@ -1706,7 +1948,7 @@ export function computeNationRevenue(
 
   const colorKey = (nation.color || '').toLowerCase();
   const colorTurnBonus = gameInfo.colorBonuses[colorKey] ?? 0;
-  money += colorTurnBonus * TURNS_PER_DAY;
+  money += colorTurnBonus * TURNS_PER_DAY * grossModifier;
 
   const avgCommerce = cities.length > 0 ? totalCommerce / cities.length : 0;
 
