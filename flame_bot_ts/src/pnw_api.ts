@@ -1603,37 +1603,37 @@ function improvementUpkeep(city: City): number {
       const count = city[key] as number;
       if (count) total += count * dailyCost;
     }
-
-    function cityAgeDays(city: City): number {
-      const foundedAt = Date.parse(city.foundedDate);
-      if (!Number.isFinite(foundedAt)) return 1.0;
-      return Math.max(1.0, (Date.now() - foundedAt) / DAY_MS);
-    }
-
-    function cityDiseaseRate(city: City, hasCrc: boolean): number {
-      const hospitalModifier = city.hospital * (hasCrc ? 3.5 : 2.5);
-      return Math.max(
-        0.0,
-        ((0.01 * Math.pow((city.infrastructure * 100.0) / (city.land + 0.001), 2.0) - 25.0) * 0.01)
-          + (city.infrastructure * 0.001)
-          - hospitalModifier
-      );
-    }
-
-    function cityCrimeRate(city: City, commerce: number, hasSptp: boolean): number {
-      const policeModifier = city.policeStation * (hasSptp ? 3.5 : 2.5);
-      return Math.max(0.0, ((Math.pow(103.0 - commerce, 2.0) + (city.infrastructure * 100.0)) * 0.000009) - policeModifier);
-    }
-
-    function cityPopulation(city: City, commerce: number, hasCrc: boolean, hasSptp: boolean): number {
-      const basePopulation = city.infrastructure * 100.0;
-      const diseaseDeaths = cityDiseaseRate(city, hasCrc) * 0.01 * basePopulation;
-      const crimeDeaths = Math.max(cityCrimeRate(city, commerce, hasSptp) * 0.1 * basePopulation - 25.0, 0.0);
-      const ageBonus = 1.0 + Math.log(cityAgeDays(city)) / 15.0;
-      return Math.max(CITY_MIN_POPULATION, Math.round((basePopulation - diseaseDeaths - crimeDeaths) * ageBonus));
-    }
   }
   return total;
+}
+
+function cityAgeDays(city: City): number {
+  const foundedAt = Date.parse(city.foundedDate);
+  if (!Number.isFinite(foundedAt)) return 1.0;
+  return Math.max(1.0, (Date.now() - foundedAt) / DAY_MS);
+}
+
+function cityDiseaseRate(city: City, hasCrc: boolean): number {
+  const hospitalModifier = city.hospital * (hasCrc ? 3.5 : 2.5);
+  return Math.max(
+    0.0,
+    ((0.01 * Math.pow((city.infrastructure * 100.0) / (city.land + 0.001), 2.0) - 25.0) * 0.01)
+      + (city.infrastructure * 0.001)
+      - hospitalModifier
+  );
+}
+
+function cityCrimeRate(city: City, commerce: number, hasSptp: boolean): number {
+  const policeModifier = city.policeStation * (hasSptp ? 3.5 : 2.5);
+  return Math.max(0.0, ((Math.pow(103.0 - commerce, 2.0) + (city.infrastructure * 100.0)) * 0.000009) - policeModifier);
+}
+
+function cityPopulation(city: City, commerce: number, hasCrc: boolean, hasSptp: boolean): number {
+  const basePopulation = city.infrastructure * 100.0;
+  const diseaseDeaths = cityDiseaseRate(city, hasCrc) * 0.01 * basePopulation;
+  const crimeDeaths = Math.max(cityCrimeRate(city, commerce, hasSptp) * 0.1 * basePopulation - 25.0, 0.0);
+  const ageBonus = 1.0 + Math.log(cityAgeDays(city)) / 15.0;
+  return Math.max(CITY_MIN_POPULATION, Math.round((basePopulation - diseaseDeaths - crimeDeaths) * ageBonus));
 }
 
 export function computeNationRevenue(
