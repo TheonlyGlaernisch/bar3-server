@@ -1689,7 +1689,7 @@ async function main(): Promise<void> {
       .addBooleanOption(o => o.setName('manifest_destiny').setDescription('Is the nation\'s domestic policy Manifest Destiny? (−5% cost)'))
       .addBooleanOption(o => o.setName('government_support_agency').setDescription('Does the nation have Government Support Agency? (additional −2.5%)')),
     new SlashCommandBuilder().setName('revenue').setDescription('Show estimated gross daily revenue for a nation (or your own if omitted)').addStringOption(o => o.setName('query').setDescription('Optional: a nation ID, @mention, nation name, or Discord username')),
-    new SlashCommandBuilder().setName('loot').setDescription("Summarize victory loot from a nation's wars in the last N days")
+    new SlashCommandBuilder().setName('loot').setDescription("Summarize ground and victory loot from a nation's wars in the last N days")
       .addIntegerOption(o => o.setName('days').setDescription('Days to search back (1-365)').setRequired(true).setMinValue(1).setMaxValue(365))
       .addStringOption(o => o.setName('nation').setDescription('Nation ID, @mention, nation name, or Discord username').setRequired(true)),
     new SlashCommandBuilder().setName('war_range_targets').setDescription('Show nations in your war range with open defensive slots')
@@ -3075,29 +3075,30 @@ Message: ${cfg.message}`)],
           loot = await pnw.getNationWarLoot(nation.nationId, days);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Could not fetch victory loot from the Politics and War API: ${msg}`).setColor(0xE74C3C)] });
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Could not fetch war loot from the Politics and War API: ${msg}`).setColor(0xE74C3C)] });
         }
 
         const embed = new EmbedBuilder()
-          .setTitle(`🏴‍☠️ Victory Loot — ${nation.nationName}`)
+          .setTitle(`🏴‍☠️ War Loot — ${nation.nationName}`)
           .setURL(nationUrl(nation.nationId))
           .setColor(0xF39C12)
           .setDescription(`Wars opened since <t:${Math.floor(loot.since.getTime() / 1000)}:d> (${loot.days} day${loot.days === 1 ? '' : 's'}).`);
         embed.addFields(
           { name: 'Wars Checked', value: loot.warsChecked.toLocaleString(), inline: true },
+          { name: 'Loot Attacks', value: loot.lootAttacks.toLocaleString(), inline: true },
           { name: 'Victory Attacks', value: loot.victoryAttacks.toLocaleString(), inline: true },
-          { name: '\u200b', value: '\u200b', inline: true },
-          { name: 'All Victory Loot', value: formatLootResourceLines(loot.total), inline: false },
+          { name: 'All Loot', value: formatLootResourceLines(loot.total), inline: false },
           { name: 'Loot Won by Nation', value: formatLootResourceLines(loot.gained), inline: true },
           { name: 'Loot Taken by Opponents', value: formatLootResourceLines(loot.lost), inline: true },
         );
         const recent = loot.entries.slice(0, 10).map((entry) => {
-          const perspective = entry.victorId === nation.nationId ? 'won' : entry.loserId === nation.nationId ? 'lost' : 'other';
+          const perspective = entry.looterId === nation.nationId ? 'won' : entry.victimId === nation.nationId ? 'lost' : 'other';
           const marker = perspective === 'won' ? '✅' : perspective === 'lost' ? '❌' : '•';
-          return `${marker} [#${entry.warId}](${warUrl(entry.warId)}) ${entry.victorName} beat ${entry.loserName}: ${compactLootSummary(entry.resources)}`;
+          const action = entry.attackType === 'VICTORY' ? 'victory looted' : 'ground looted';
+          return `${marker} [#${entry.warId}](${warUrl(entry.warId)}) ${entry.looterName} ${action} ${entry.victimName}: ${compactLootSummary(entry.resources)}`;
         });
-        embed.addFields({ name: 'Recent Victory Attacks', value: recent.length ? recent.join('\n').slice(0, 1024) : '*None found.*', inline: false });
-        embed.setFooter({ text: 'Loot is summed from VICTORY attacks in wars involving this nation; raw resources depend on loot_info availability.' });
+        embed.addFields({ name: 'Recent Loot Attacks', value: recent.length ? recent.join('\n').slice(0, 1024) : '*None found.*', inline: false });
+        embed.setFooter({ text: 'Loot is summed from GROUND and VICTORY attacks in wars involving this nation; raw resources depend on API loot fields and loot_info availability.' });
         return void interaction.followUp({ embeds: [embed] });
       }
       if (commandName === 'revenue') {
