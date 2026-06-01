@@ -16,6 +16,7 @@ import {
   TextChannel,
   PermissionFlagsBits,
   MessageFlags,
+  Message,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -65,6 +66,7 @@ import {
   computeNationRevenue,
 } from './pnw_api';
 import { renderCommandHelpSections } from './commandDocs';
+import { translateBetweenEnglishAndCroatian } from './translation';
 
 let primaryGuild: Guild | null = null;
 
@@ -156,6 +158,7 @@ function resolveCanonicalCommandNameFromInteraction(i: ChatInputCommandInteracti
     if (group === 'recruiter' && sub === 'remove') return 'setup_recruiter_remove';
     if (group === 'recruiter' && sub === 'list') return 'setup_recruiter_list';
   }
+  if (i.commandName === 'translation' && sub === 'enable') return 'translation_enable';
   if (i.commandName === 'set') {
     const field = i.options.getString('field');
     if (field === 'alliance_id') return 'admin_alliance_set';
@@ -1537,11 +1540,11 @@ async function main(): Promise<void> {
   const pnw = new PnWClient(effectivePnwApiKey);
   const pnwTest = new PnWClient(PNW_TEST_API_KEY, { restUrl: PNW_TEST_REST_URL });
 
-  const intents = [GatewayIntentBits.Guilds];
+  const intents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent];
   if (DISCORD_ENABLE_GUILD_MEMBERS_INTENT) intents.push(GatewayIntentBits.GuildMembers);
   const client = new Client({ intents });
   logInfo(
-    `[startup] Discord intents: Guilds${DISCORD_ENABLE_GUILD_MEMBERS_INTENT ? ', GuildMembers' : ''}`
+    `[startup] Discord intents: Guilds, GuildMessages, MessageContent${DISCORD_ENABLE_GUILD_MEMBERS_INTENT ? ', GuildMembers' : ''}`
   );
   if (!DISCORD_ENABLE_GUILD_MEMBERS_INTENT) {
     logInfo(
@@ -1614,6 +1617,7 @@ async function main(): Promise<void> {
     new SlashCommandBuilder().setName('setup_recruiter_add').setDescription('Add recruiter subscription channel').addChannelOption(o => o.setName('channel').setDescription('Text channel').setRequired(true)),
     new SlashCommandBuilder().setName('setup_recruiter_remove').setDescription('Remove recruiter subscription channel').addChannelOption(o => o.setName('channel').setDescription('Text channel').setRequired(true)),
     new SlashCommandBuilder().setName('setup_recruiter_list').setDescription('List recruiter subscription channels'),
+    new SlashCommandBuilder().setName('translation_enable').setDescription('Enable channel translation (English ↔ Croatian)').addChannelOption(o => o.setName('channel').setDescription('Channel to enable translation for').setRequired(true)),
     new SlashCommandBuilder().setName('admin_api_key_set').setDescription('Set runtime PnW API key').addStringOption(o => o.setName('api_key').setDescription('PnW API key').setRequired(true)),
     new SlashCommandBuilder().setName('help').setDescription('Show bot command help'),
     new SlashCommandBuilder().setName('infra').setDescription('Calculate infra purchase cost')
@@ -1666,6 +1670,9 @@ async function main(): Promise<void> {
         .addSubcommand(sc => sc.setName('remove').setDescription('Remove recruiter subscription channel')
           .addChannelOption(o => o.setName('channel').setDescription('Text channel').setRequired(true)))
         .addSubcommand(sc => sc.setName('list').setDescription('List recruiter subscription channels'))),
+    new SlashCommandBuilder().setName('translation').setDescription('Translation configuration commands')
+      .addSubcommand(sc => sc.setName('enable').setDescription('Enable channel translation (English ↔ Croatian)')
+        .addChannelOption(o => o.setName('channel').setDescription('Channel to enable translation for').setRequired(true))),
     new SlashCommandBuilder().setName('chanel_set').setDescription('Set, clear, or show configured channels')
       .addStringOption(o => o.setName('type').setDescription('Which channel config to manage').setRequired(true)
         .addChoices({ name: 'counter', value: 'counter' }, { name: 'grant', value: 'grant' }, { name: 'welcome', value: 'welcome' }))
@@ -1930,6 +1937,27 @@ async function main(): Promise<void> {
     }
   });
 
+  client.on('messageCreate', async (message: Message) => {
+    try {
+      if (!message.inGuild() || !message.guildId) return;
+      if (message.author.bot) return;
+      const content = message.content?.trim() || '';
+      if (!content) return;
+      const enabledChannelIds = await db.getTranslationChannels(BigInt(message.guildId));
+      if (!enabledChannelIds.includes(message.channelId)) return;
+      const translation = await translateBetweenEnglishAndCroatian(content);
+      if (!translation) return;
+      const translatedText = translation.text.trim();
+      if (!translatedText) return;
+      await message.reply({
+        content: translatedText.slice(0, 1990),
+        allowedMentions: { repliedUser: false },
+      });
+    } catch (err) {
+      logWarn('Translation handling failed:', err);
+    }
+  });
+
   client.on('interactionCreate', async (interaction: Interaction) => {
 
     if (interaction.isButton() && interaction.customId === 'verify_alliance_send_open_modal') {
@@ -2108,6 +2136,13 @@ async function main(): Promise<void> {
         const subs = await db.getWarAlertSubscriptions(BigInt(interaction.guildId));
         const lines = subs.map((row) => `• <#${row.channel_id}> cities ${row.min_cities ?? 'any'}-${row.max_cities ?? 'any'}`);
         return void interaction.reply({ content: lines.length ? lines.join('\n') : 'No war alert subscriptions configured.', flags: MessageFlags.Ephemeral });
+      }
+      if (commandName === 'translation_enable') {
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!hasAdminCommandAccess(interaction)) return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        const channel = interaction.options.getChannel('channel', true);
+        await db.enableTranslationChannel(BigInt(interaction.guildId), channel.id);
+        return void interaction.reply({ content: `Translation enabled for <#${channel.id}>.` });
       }
 
       if (commandName === 'send') {

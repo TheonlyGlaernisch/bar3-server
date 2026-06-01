@@ -49,6 +49,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
   { name: '/setup_recruiter_add <channel>', summary: 'Add recruiter subscription channel.', category: 'setup' },
   { name: '/setup_recruiter_remove <channel>', summary: 'Remove recruiter subscription channel.', category: 'setup' },
   { name: '/setup_recruiter_list', summary: 'List recruiter subscription channels.', category: 'setup' },
+  { name: '/translation enable <channel>', summary: 'Enable English↔Croatian translation replies in a channel.', category: 'setup' },
   { name: '/admin_alliance_set <id>', summary: 'Set this guild primary alliance ID.', category: 'admin' },
   { name: '/admin_alliance_show', summary: 'Show this guild primary alliance ID.', category: 'admin' },
   { name: '/admin_api_key_set <api_key>', summary: 'Persist and apply runtime PnW API key.', category: 'admin' },
