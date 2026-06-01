@@ -6,6 +6,7 @@ import {
   calculateInfraCost,
   computeNationRevenue,
   GameInfo,
+  parseLootResources,
   parseNationCreateDetail,
   parseResourceLoot,
   secsUntilTurnWindow,
@@ -22,11 +23,21 @@ test('TradePrice helpers calculate expected value totals', () => {
   assert.equal(unitValue, expected);
 });
 
-test('calculateInfraCost increases with larger buy ranges', () => {
+test('calculateInfraCost matches Locutus cent-rounded formula and discounts', () => {
   const small = calculateInfraCost(100, 110);
   const big = calculateInfraCost(100, 120);
-  assert.ok(small > 0);
-  assert.ok(big > small);
+  assert.equal(small, 3280.6);
+  assert.equal(big, 6561.2);
+  assert.equal(calculateInfraCost(1000, 1500), 4337302);
+  assert.equal(calculateInfraCost(1500, 1000), -75000);
+  const discounted = calculateInfraCost(1000, 1500, {
+    urbanization: true,
+    governmentSupportAgency: true,
+    bureauOfDomesticAffairs: true,
+    centerForCivilEngineering: true,
+    advancedEngineeringCorps: true,
+  });
+  assert.ok(Math.abs(discounted - (4337302 * 0.8125)) < 0.001);
 });
 
 test('computeNationRevenue money uses Locutus-style population inputs', () => {
@@ -38,6 +49,7 @@ test('computeNationRevenue money uses Locutus-style population inputs', () => {
     population: 100000,
     soldiers: 0,
     color: '',
+    domesticPolicy: '',
   };
   const cityBase = {
     cityId: 1,
@@ -55,6 +67,36 @@ test('computeNationRevenue money uses Locutus-style population inputs', () => {
   const noHospitals = computeNationRevenue(nation, [cityBase], GameInfo.create()).money;
   const withHospitals = computeNationRevenue(nation, [{ ...cityBase, hospital: 5 }], GameInfo.create()).money;
   assert.ok(withHospitals > noHospitals);
+});
+
+
+test('computeNationRevenue money is daily Locutus income, not per-turn income multiplied twice', () => {
+  const nation = {
+    projectsBuilt: [],
+    continent: 'NA',
+    offensiveWars: 0,
+    defensiveWars: 0,
+    population: 100000,
+    soldiers: 0,
+    color: '',
+    domesticPolicy: '',
+  };
+  const city = {
+    cityId: 1,
+    foundedDate: 'bad-date',
+    infrastructure: 100,
+    land: 100000,
+    powered: true,
+    coalPower: 0, oilPower: 0, nuclearPower: 0, windPower: 0,
+    coalMine: 0, oilWell: 0, uraniumMine: 0, ironMine: 0, bauxiteMine: 0, leadMine: 0,
+    farm: 0, supermarket: 0, bank: 0, shoppingMall: 0, stadium: 0, subway: 0,
+    gasrefinery: 0, aluminumRefinery: 0, steelMill: 0, munitionsFactory: 0,
+    policeStation: 0,
+    hospital: 0,
+  };
+  // With invalid city age, Locutus-style ageDays clamps to 1; population rounds to
+  // 9,840 and the one-city new-player bonus doubles base commerce income.
+  assert.equal(computeNationRevenue(nation, [city], GameInfo.create()).money, 14268);
 });
 
 test('calculateCityCost applies policy/project discounts', () => {
@@ -91,6 +133,23 @@ test('secsUntilTurnWindow always returns non-negative bounded value', () => {
   const secs = secsUntilTurnWindow();
   assert.ok(secs >= 0);
   assert.ok(secs <= 2 * 60 * 60);
+});
+
+
+test('parseLootResources extracts full victory resource payloads', () => {
+  const loot = parseLootResources('won the war and looted 1,234 money, 50 food, 2 coal, 3 oil, 4 uranium, 5 iron, 6 bauxite, 7 lead, 8 gasoline, 9 munitions, 10 steel, 11 aluminum.');
+  assert.equal(loot.money, 1234);
+  assert.equal(loot.food, 50);
+  assert.equal(loot.coal, 2);
+  assert.equal(loot.oil, 3);
+  assert.equal(loot.uranium, 4);
+  assert.equal(loot.iron, 5);
+  assert.equal(loot.bauxite, 6);
+  assert.equal(loot.lead, 7);
+  assert.equal(loot.gasoline, 8);
+  assert.equal(loot.munitions, 9);
+  assert.equal(loot.steel, 10);
+  assert.equal(loot.aluminum, 11);
 });
 
 test('parseResourceLoot extracts all five resource amounts', () => {

@@ -64,6 +64,8 @@ import {
   calculateInfraCost,
   calculateCityCost,
   computeNationRevenue,
+  LOOT_RESOURCE_KEYS,
+  LootResources,
 } from './pnw_api';
 import { renderCommandHelpSections } from './commandDocs';
 import { translateBetweenEnglishAndCroatian } from './translation';
@@ -999,6 +1001,58 @@ async function resolveMentionedNationViaApi(
   return null;
 }
 
+async function resolveNationQuery(
+  i: ChatInputCommandInteraction,
+  db: Database,
+  pnw: PnWClient,
+  query: string,
+): Promise<Nation | null> {
+  const trimmed = query.trim();
+  const mentionMatch = /^<@!?(\d+)>$/.exec(trimmed);
+  if (mentionMatch) {
+    const targetId = mentionMatch[1]!;
+    const row = await db.getByDiscordId(BigInt(targetId));
+    if (row) {
+      const nation = await pnw.getNation(row.nation_id);
+      if (nation) return nation;
+    }
+    return resolveMentionedNationViaApi(i, pnw, targetId);
+  }
+  if (/^\d+$/.test(trimmed)) {
+    const parsed = parseInt(trimmed, 10);
+    return parsed > 0 ? pnw.getNation(parsed) : null;
+  }
+  let nation: Nation | null = null;
+  try { nation = await pnw.getNationByName(trimmed); } catch { nation = null; }
+  if (nation) return nation;
+  const row = await db.getByDiscordUsername(trimmed);
+  return row ? pnw.getNation(row.nation_id) : null;
+}
+
+function formatLootAmount(value: number, key: string): string {
+  if (key === 'money') return `$${Math.round(value).toLocaleString()}`;
+  return Number.isInteger(value) ? value.toLocaleString() : value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+
+function formatLootResourceLines(resources: LootResources): string {
+  const labels: Record<string, string> = {
+    money: '💵 Money', food: '🌾 Food', coal: '⛏️ Coal', oil: '🛢️ Oil', uranium: '☢️ Uranium',
+    iron: '🔩 Iron', bauxite: '🪨 Bauxite', lead: '🔦 Lead', gasoline: '⛽ Gasoline',
+    munitions: '💣 Munitions', steel: '🔧 Steel', aluminum: '🪟 Aluminum',
+  };
+  const lines = LOOT_RESOURCE_KEYS
+    .filter((key) => Math.abs(resources[key]) > 0.000001)
+    .map((key) => `${labels[key] ?? key}: **${formatLootAmount(resources[key], key)}**`);
+  return lines.length ? lines.join('\n') : '*No loot found.*';
+}
+
+function compactLootSummary(resources: LootResources): string {
+  const parts = LOOT_RESOURCE_KEYS
+    .filter((key) => Math.abs(resources[key]) > 0.000001)
+    .map((key) => `${key === 'money' ? '$' : ''}${formatLootAmount(resources[key], key).replace(/^\$/, '')} ${key}`);
+  return parts.length ? parts.join(', ') : 'no loot';
+}
+
 async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: PnWClient, pnwTest: PnWClient, useTest = false): Promise<void> {
   await i.deferReply();
   const query = i.options.getString('query', true).trim();
@@ -1624,14 +1678,20 @@ async function main(): Promise<void> {
       .addNumberOption(o => o.setName('from').setDescription('Current infra level per city').setRequired(true))
       .addNumberOption(o => o.setName('to').setDescription('Target infra level per city').setRequired(true))
       .addIntegerOption(o => o.setName('cities').setDescription('Number of cities (default: 1)').setMinValue(1))
-      .addBooleanOption(o => o.setName('urban_planning').setDescription('Urban Planning project? (−5% cost)'))
-      .addBooleanOption(o => o.setName('advanced_urban_planning').setDescription('Advanced Urban Planning? (−10% cost, stacks with UP)')),
+      .addBooleanOption(o => o.setName('urbanization').setDescription('Urbanization project? (−5% cost)'))
+      .addBooleanOption(o => o.setName('center_for_civil_engineering').setDescription('Center for Civil Engineering? (−5% cost)'))
+      .addBooleanOption(o => o.setName('advanced_engineering_corps').setDescription('Advanced Engineering Corps? (−5% cost)'))
+      .addBooleanOption(o => o.setName('government_support_agency').setDescription('GSA with Urbanization? (additional −2.5%)'))
+      .addBooleanOption(o => o.setName('bureau_domestic_affairs').setDescription('BDA with Urbanization? (additional −1.25%)')),
     new SlashCommandBuilder().setName('city_cost').setDescription('Calculate city purchase cost using the live dynamic formula')
       .addIntegerOption(o => o.setName('current').setDescription('Current number of cities').setRequired(true).setMinValue(0))
       .addIntegerOption(o => o.setName('target').setDescription('Target number of cities (defaults to current + 1)').setMinValue(1))
       .addBooleanOption(o => o.setName('manifest_destiny').setDescription('Is the nation\'s domestic policy Manifest Destiny? (−5% cost)'))
       .addBooleanOption(o => o.setName('government_support_agency').setDescription('Does the nation have Government Support Agency? (additional −2.5%)')),
     new SlashCommandBuilder().setName('revenue').setDescription('Show estimated gross daily revenue for a nation (or your own if omitted)').addStringOption(o => o.setName('query').setDescription('Optional: a nation ID, @mention, nation name, or Discord username')),
+    new SlashCommandBuilder().setName('loot').setDescription("Summarize victory loot from a nation's wars in the last N days")
+      .addIntegerOption(o => o.setName('days').setDescription('Days to search back (1-365)').setRequired(true).setMinValue(1).setMaxValue(365))
+      .addStringOption(o => o.setName('nation').setDescription('Nation ID, @mention, nation name, or Discord username').setRequired(true)),
     new SlashCommandBuilder().setName('war_range_targets').setDescription('Show nations in your war range with open defensive slots')
       .addUserOption(o => o.setName('user').setDescription('Discord user to look up (defaults to yourself)')),
     new SlashCommandBuilder().setName('spy_target_find').setDescription('Find spy targets in given alliances by city count')
@@ -2908,17 +2968,32 @@ Message: ${cfg.message}`)],
         const from = interaction.options.getNumber('from', true);
         const to = interaction.options.getNumber('to', true);
         const cities = interaction.options.getInteger('cities') ?? 1;
-        const urbanPlanning = interaction.options.getBoolean('urban_planning') ?? false;
-        const advancedUrbanPlanning = interaction.options.getBoolean('advanced_urban_planning') ?? false;
+        const urbanization = interaction.options.getBoolean('urbanization') ?? false;
+        const centerForCivilEngineering = interaction.options.getBoolean('center_for_civil_engineering') ?? false;
+        const advancedEngineeringCorps = interaction.options.getBoolean('advanced_engineering_corps') ?? false;
+        const governmentSupportAgency = interaction.options.getBoolean('government_support_agency') ?? false;
+        const bureauOfDomesticAffairs = interaction.options.getBoolean('bureau_domestic_affairs') ?? false;
         if (to <= from) return void interaction.reply({ content: 'Target infra must be greater than current infra.', flags: MessageFlags.Ephemeral });
         if (from < 0 || to > 20_000) return void interaction.reply({ content: 'Infrastructure values must be between 0 and 20,000.', flags: MessageFlags.Ephemeral });
         if (cities < 1) return void interaction.reply({ content: 'Number of cities must be at least 1.', flags: MessageFlags.Ephemeral });
         const baseCostPerCity = calculateInfraCost(from, to);
         let discount = 0.0;
         const discountParts: string[] = [];
-        if (urbanPlanning) { discount += 0.05; discountParts.push('Urban Planning (−5%)'); }
-        if (advancedUrbanPlanning) { discount += 0.10; discountParts.push('Advanced Urban Planning (−10%)'); }
-        const discountedCostPerCity = baseCostPerCity * (1.0 - discount);
+        if (urbanization) {
+          discount += 0.05;
+          discountParts.push('Urbanization (−5%)');
+          if (governmentSupportAgency) { discount += 0.025; discountParts.push('Government Support Agency (−2.5%)'); }
+          if (bureauOfDomesticAffairs) { discount += 0.0125; discountParts.push('Bureau of Domestic Affairs (−1.25%)'); }
+        }
+        if (centerForCivilEngineering) { discount += 0.05; discountParts.push('Center for Civil Engineering (−5%)'); }
+        if (advancedEngineeringCorps) { discount += 0.05; discountParts.push('Advanced Engineering Corps (−5%)'); }
+        const discountedCostPerCity = calculateInfraCost(from, to, {
+          urbanization,
+          centerForCivilEngineering,
+          advancedEngineeringCorps,
+          governmentSupportAgency,
+          bureauOfDomesticAffairs,
+        });
         const total = discountedCostPerCity * cities;
         const embed = new EmbedBuilder().setTitle('🏗️ Infrastructure Cost Calculator').setColor(0x3498DB);
         embed.addFields(
@@ -2983,6 +3058,46 @@ Message: ${cfg.message}`)],
         }
         embed.addFields({ name: 'Discounts', value: discountNotes.length ? discountNotes.join('\n') : 'None', inline: true });
         embed.setFooter({ text: `City average used: ${cityAvg.toFixed(2)}  ·  Formula: Locutus dynamic` });
+        return void interaction.followUp({ embeds: [embed] });
+      }
+      if (commandName === 'loot') {
+        await interaction.deferReply();
+        const days = interaction.options.getInteger('days', true);
+        const rawNation = interaction.options.getString('nation', true).trim();
+        const nation = await resolveNationQuery(interaction, db, pnw, rawNation);
+        if (!nation) {
+          const safeNation = rawNation.replace(/`/g, 'ʼ');
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`ℹ️ No nation found for \`${safeNation}\`.`).setColor(0x3498DB)] });
+        }
+
+        let loot;
+        try {
+          loot = await pnw.getNationWarLoot(nation.nationId, days);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return void interaction.followUp({ embeds: [new EmbedBuilder().setDescription(`❌ Could not fetch victory loot from the Politics and War API: ${msg}`).setColor(0xE74C3C)] });
+        }
+
+        const embed = new EmbedBuilder()
+          .setTitle(`🏴‍☠️ Victory Loot — ${nation.nationName}`)
+          .setURL(nationUrl(nation.nationId))
+          .setColor(0xF39C12)
+          .setDescription(`Wars opened since <t:${Math.floor(loot.since.getTime() / 1000)}:d> (${loot.days} day${loot.days === 1 ? '' : 's'}).`);
+        embed.addFields(
+          { name: 'Wars Checked', value: loot.warsChecked.toLocaleString(), inline: true },
+          { name: 'Victory Attacks', value: loot.victoryAttacks.toLocaleString(), inline: true },
+          { name: '\u200b', value: '\u200b', inline: true },
+          { name: 'All Victory Loot', value: formatLootResourceLines(loot.total), inline: false },
+          { name: 'Loot Won by Nation', value: formatLootResourceLines(loot.gained), inline: true },
+          { name: 'Loot Taken by Opponents', value: formatLootResourceLines(loot.lost), inline: true },
+        );
+        const recent = loot.entries.slice(0, 10).map((entry) => {
+          const perspective = entry.victorId === nation.nationId ? 'won' : entry.loserId === nation.nationId ? 'lost' : 'other';
+          const marker = perspective === 'won' ? '✅' : perspective === 'lost' ? '❌' : '•';
+          return `${marker} [#${entry.warId}](${warUrl(entry.warId)}) ${entry.victorName} beat ${entry.loserName}: ${compactLootSummary(entry.resources)}`;
+        });
+        embed.addFields({ name: 'Recent Victory Attacks', value: recent.length ? recent.join('\n').slice(0, 1024) : '*None found.*', inline: false });
+        embed.setFooter({ text: 'Loot is summed from VICTORY attacks in wars involving this nation; raw resources depend on loot_info availability.' });
         return void interaction.followUp({ embeds: [embed] });
       }
       if (commandName === 'revenue') {
