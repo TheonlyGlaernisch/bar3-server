@@ -67,12 +67,12 @@
     "forceConsistentCasingInFileNames": true  /* Disallow inconsistently-cased references to the same file. */
   },
   "include": [
-    "src/**/*.ts"
+    "server/**/*.ts"
   ],
   "exclude": [
     "build",
     "node_modules",
     "flame_bot",
-    "flame_bot_ts"
+    "discord-bot"
   ]
 }
