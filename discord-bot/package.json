@@ -1,11 +1,11 @@
 {
-  "name": "flame_bot_ts",
+  "name": "discord-bot",
   "version": "1.0.0",
   "description": "flame_bot \u2013 Discord bot and bar3 HTTP API (TypeScript port)",
-  "main": "./build/src/index.js",
+  "main": "./build/server/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node ./build/src/index.js",
+    "start": "node ./build/server/index.js",
     "dev": "tsc --watch",
     "test": "npm run build && node --test ./test_api.mjs ./test_core.mjs ./test_db.mjs"
   },
