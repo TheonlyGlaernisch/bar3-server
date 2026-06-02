@@ -21,4 +21,4 @@ else
   echo "[run-both] discord-bot/build/src/index.js not found; starting root server only."
 fi
 
-exec node ./build/src/index.js
+exec node ./build/server/index.js
