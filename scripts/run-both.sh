@@ -3,9 +3,9 @@ set -euo pipefail
 
 BOT_PID=""
 
-if [[ -f flame_bot_ts/build/src/index.js ]]; then
-  echo "[run-both] Starting TypeScript bot (flame_bot_ts/build/src/index.js)..."
-  node flame_bot_ts/build/src/index.js &
+if [[ -f discord-bot/build/src/index.js ]]; then
+  echo "[run-both] Starting TypeScript bot (discord-bot/build/src/index.js)..."
+  node discord-bot/build/src/index.js &
   BOT_PID=$!
   sleep 1
   if ! kill -0 "$BOT_PID" 2>/dev/null; then
@@ -18,7 +18,7 @@ if [[ -f flame_bot_ts/build/src/index.js ]]; then
   }
   trap cleanup EXIT INT TERM
 else
-  echo "[run-both] flame_bot_ts/build/src/index.js not found; starting root server only."
+  echo "[run-both] discord-bot/build/src/index.js not found; starting root server only."
 fi
 
 exec node ./build/src/index.js
