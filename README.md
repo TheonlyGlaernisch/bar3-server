@@ -41,7 +41,7 @@ Change the location of the files stored by Bar 3
 # Active bot in this repo
 
 `flame_bot/` (Python) is legacy and is not present in this repository snapshot.  
-The active bot is `flame_bot_ts/` (TypeScript).
+The active bot is `discord-bot/` (TypeScript).
 
 Use these repo-root commands for the entire project:
 
