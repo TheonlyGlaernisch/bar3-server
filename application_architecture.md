@@ -1,3 +1,4 @@
+
 # Architecture Overview
 
 This document outlines the core functionality, architecture, and API endpoints of the application.
@@ -18,86 +19,95 @@ This document outlines the core functionality, architecture, and API endpoints o
 ### 3. Queuing & Processing
 - `QueuedNation` interface tracks nations awaiting processing with timestamp.
 - `searchLoop` and `clearQueue` jobs manage background processing:
-  - `searchLoop`: Continuously searches for nations to process.
-  - `clearQueue`: Clears outdated or stale entries from the queue.
+  - `searchLoop`: Starts a PnW WebSocket subscription to receive nation-create events in real time.
+  - `clearQueue`: Periodically sends queued nations and removes stale entries.
 
 ### 4. Analytics System
-- Tracks message views and link clicks via `/analytics` endpoints.
+- Tracks message views and link clicks via `/analytics/v2` endpoints.
 - Supports:
-  - Public link tracking: `/l/:shortId` redirects with click logging.
-  - Message view tracking: `/p/:messageId` returns a 1x1 transparent GIF with view logging.
-  - Authenticated analytics dashboard: `/me` returns recent link clicks and message views.
+  - Public link tracking: `/analytics/v2/l/:shortId` redirects with click logging.
+  - Message view tracking: `/analytics/v2/p/:messageId` returns a 1x1 transparent GIF with view logging.
+  - Authenticated analytics dashboard: `/analytics/v2/me` returns recent link clicks and message views.
 
 ### 5. Account & Authentication
 - `AccountService` manages account lifecycle and API key handling.
 - `/account` endpoint returns account details (API key, creation date) after API key authentication.
 - Legacy API key creation is disabled via `/api-key/create` (returns 410).
+- v2 session-based authentication is available via `/api/v2/auth/login` and `/api/v2/auth/logout`.
+- Discord OAuth2 authentication is handled via `/auth/discord` and `/auth/discord/callback`, delegating role checks to the flame_bot HTTP API.
 
-### 6. Discord Bot Integration
-- **Discord Bot Core**: Built using the `discord.js` library, handles real-time interactions with Discord servers.
-- **Bot Commands**:
-  - `/send-message`: Sends a message to a specified Discord channel. Accepts message content, embeds, and attachments.
-  - `/status`: Returns the current status of the bot (online, processing, idle).
-  - `/config`: Allows users to configure bot behavior (e.g., message frequency, notification channels).
-  - `/analytics`: Returns recent message delivery statistics (e.g., messages sent, failures, success rate).
+### 6. Discord Bot (flame_bot)
+
+The Discord bot is a **separate Node.js process** (`discord-bot/`) that runs independently from the main server. The two services communicate only via HTTP.
+
+- **Bot Core**: Built using `discord.js` v14, connects to Discord via the gateway and handles slash commands and button interactions.
+- **Actual Bot Commands** (selected examples):
+  - `/register <nation_id>`: Links a Discord account to a PnW nation after verifying the in-game Discord field.
+  - `/unregister`: Removes a nation registration.
+  - `/whois <query>`: Looks up a nation by ID, name, or @mention.
+  - `/alliance_info <query>`, `/alliance_members <query>`, `/alliance_lots_of_info <query>`: Alliance lookup commands.
+  - `/slots`: Shows open defensive war slots for configured alliances.
+  - `/war_range_targets`, `/spy_target_find`, `/missile_targets_find`: Combat targeting tools.
+  - `/damage_leaderboard`: 7-day ranked damage output for the primary alliance.
+  - `/revenue`, `/infra`, `/city_cost`: Economic calculators.
+  - `/request_grant`: Submits a grant request to a configured channel.
+  - `/counter`: Records counter-war requests.
+  - `/help`: Lists all commands by category.
 - **Event Listeners**:
-  - `messageCreate`: Listens for new messages in configured channels. Triggers message processing if the message contains a valid command.
-  - `interactionCreate`: Handles slash command interactions (e.g., `/send-message`, `/status`).
-  - `ready`: Fires when the bot is fully initialized and ready to receive events.
-- **Permissions & Roles**:
-  - Bot requires `Send Messages`, `Embed Links`, `Attach Files`, and `Manage Messages` permissions in target channels.
-  - Only users with `Administrator` or `Manage Messages` roles can use configuration commands.
-- **Message Delivery Pipeline**:
-  - Messages are queued via `QueuedNation` and processed by `searchLoop`.
-  - When a message is ready, the bot uses `Discord.js`'s `channel.send()` method to deliver it.
-  - Delivery status (success/failure) is logged in the `Message` model and reflected in analytics.
+  - `interactionCreate`: Handles slash commands and button/modal interactions.
+  - `messageCreate`: Handles per-channel translation (English ↔ Croatian).
+  - `guildMemberAdd`: Sends configurable welcome messages.
+  - `ready`: Syncs slash commands and persists guild metadata on startup.
+- **bar3 HTTP API**: When `API_KEY` is set, the bot exposes an HTTP API on `API_PORT` (default 8080) used by the main server to check Discord roles after OAuth login (`GET /api/roles/:discord_id`).
 
 ### 7. API Endpoints Summary
 
 | Endpoint | Method | Description |
-|--------|--------|-----------|
-| `GET /l/:shortId` | Public | Redirects to target URL after logging a click. Validates redirect URL. |
-| `GET /p/:messageId` | Public | Returns a 1x1 transparent GIF to log message views. Accepts optional `a` query param for account ID. |
-| `GET /me` | Authenticated | Returns recent analytics: link click history and message view history. Requires valid session. |
+|---|---|---|
+| `GET /analytics/v2/l/:shortId` | Public | Redirects to target URL after logging a click. Validates redirect URL. |
+| `GET /analytics/v2/p/:messageId` | Public | Returns a 1x1 transparent GIF to log message views. Accepts optional `a` query param for account ID. |
+| `GET /analytics/v2/me` | Authenticated | Returns recent analytics: link click history and message view history. Requires valid PwAccount session. |
 | `GET /account` | Authenticated | Returns account details (API key, creation time) after API key validation. |
-| `POST /api-key/create` | Public | Disabled. Returns 410 Gone. Legacy key creation is no longer supported. |
-| `POST /discord/webhook` | Public | Accepts incoming webhook data from Discord. Used to trigger message processing or status updates. |
-| `GET /discord/status` | Public | Returns the current status of the Discord bot (e.g., online, offline, processing). |
+| `POST /api-key/create` | Public | Disabled. Returns 410 Gone. |
+| `GET /auth/discord` | Public | Redirects browser to Discord OAuth2 authorization. |
+| `GET /auth/discord/callback` | Public | Handles OAuth2 callback; checks roles via flame_bot and issues a session. |
+| `GET /auth/session` | Public | Returns current Discord session state for the SPA. |
+| `POST /api/v2/auth/login` | Public | Logs in with a PnW API key and creates a server-side session. |
+| `GET /api/bot/servers` | Admin | Proxies to flame_bot; returns guilds the bot is in. |
+| `GET /api/bot/commands/usage` | Admin | Proxies to flame_bot; returns ranked slash command usage counts. |
+| `POST /api/bot/send` | Admin | Proxies to flame_bot; sends a message to all configured welcome channels. |
+| `GET /api/member/nation` | Member | Proxies to flame_bot; returns nation/war context for the authenticated member. |
 
 ### 8. Background Jobs
-- `searchLoop`: Runs continuously to discover and process new nations.
-- `clearQueue`: Runs periodically to clean up expired or stale queue entries.
-- `discordHeartbeat`: Runs every 30 seconds to ping the bot’s status endpoint and ensure it remains active.
+- `searchLoop`: Starts a PnW WebSocket subscription (`PnWNationSubscriptionClient`) to receive nation-create events.
+- `clearQueue`: Runs periodically to send queued nations and remove stale entries.
+- `startAutomationLoop`: Starts a second PnW WebSocket subscription for the v2 multi-user automation system, dispatching new nations to all accounts with automation enabled.
 
 ### 9. Security & Validation
 - All public redirects are validated using `isSafeRedirectUrl` to prevent open redirect vulnerabilities.
-- API key authentication is enforced via `authenticateApiKey` middleware.
-- Analytics data is stored securely with account-scoped access.
-- Discord bot commands are restricted to authorized users via role-based access control (RBAC).
-- Incoming webhook payloads are validated using a secret token to prevent unauthorized access.
+- API key authentication is enforced via `authenticateApiKey` and `requirePwSession` middleware.
+- Discord OAuth2 uses PKCE and session regeneration to prevent fixation attacks.
+- Analytics data is stored with account-scoped access.
+- Discord bot commands enforce role-based access (`hasGovAccess`, `hasMemberAccess`, `hasAdminCommandAccess`).
+- Same-origin enforcement is applied to all unsafe HTTP methods via `isTrustedOrigin`.
 
 ### 10. Data Flow
-1. Nation data is fetched via API calls (handled by `NationAPICall`).
-2. Nations are queued and processed by `searchLoop`.
-3. Messages are sent with tracking links and view pixels.
+1. Nation-create events arrive via the PnW WebSocket subscription.
+2. Nations are queued by `messages.addNationToQueue()` and sent by `clearQueue`.
+3. Messages are sent to PnW with optional tracking links and view pixels injected by `injectTrackingIntoHtml`.
 4. Analytics data is collected and stored in MongoDB via `TrackingLink` and `MessageView` models.
-5. Users can retrieve analytics via `/me` endpoint.
-6. Discord bot receives commands via slash commands or direct messages.
-7. Messages are delivered to Discord channels using `Discord.js` methods.
-8. Delivery status is logged and reflected in the analytics system.
+5. Users retrieve analytics via `/analytics/v2/me`.
+6. Discord users authenticate via `/auth/discord`; the main server asks flame_bot for role data.
+7. The flame_bot independently handles guild interactions: war alerts, counter requests, welcome messages, and grant requests.
 
 ### 11. Extensibility
-- The modular design allows for:
-  - Easy addition of new tracking types.
-  - Support for multiple message types or delivery methods.
-  - Future integration with external analytics platforms.
-  - Support for additional messaging platforms (e.g., Slack, Telegram) via plugin architecture.
-  - Custom bot commands and event handlers can be added via configuration.
+- The modular design allows for easy addition of new tracking types, message delivery methods, and analytics integrations.
+- The bot's guild configuration (alliances, channels, roles) is stored per-guild in MongoDB and modifiable via slash commands without redeployment.
 
-### 12. Overlapping Features
-- **Analytics System & Discord Bot Integration**: Both systems track message delivery status. The Discord bot logs delivery success/failure and forwards this data to the central analytics system via `/analytics` endpoints.
-- **Queuing System & Discord Bot Integration**: The `searchLoop` job processes nations and triggers message delivery, which is then handled by the Discord bot. The `QueuedNation` model is shared between both systems.
-- **Authentication & Discord Integration**: Both systems use API key authentication. The Discord bot validates the API key before processing any message, ensuring only authorized users can send messages.
+### 12. Two-Service Architecture
+The application runs as two independent services:
 
-This architecture supports scalable, secure, and maintainable message delivery with comprehensive analytics and background processing. The integration with Discord enhances real-time communication and user interaction, while maintaining consistency with the existing data model and security practices.
-```
+- **Main server** (`server/`): Handles the bar3 web UI, PnW message sending, analytics, v2 templates/automation, and Discord OAuth login.
+- **flame_bot** (`discord-bot/`): Handles all Discord gateway interactions, PnW nation/alliance lookups, war alerts, and exposes the role-check HTTP API consumed by the main server.
+
+The two services share a MongoDB Atlas cluster (`TRF` database for bot data, default database for server data) but share no code or in-process state.
