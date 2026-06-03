@@ -1,4 +1,4 @@
-# Application Architecture Overview
+# Architecture Overview
 
 This document outlines the core functionality, architecture, and API endpoints of the application.
 
@@ -95,8 +95,8 @@ This document outlines the core functionality, architecture, and API endpoints o
   - Custom bot commands and event handlers can be added via configuration.
 
 ### 12. Overlapping Features
-- **Analytics System & Discord Bot**: Both systems track message delivery status. The Discord bot logs delivery success/failure and forwards this data to the central analytics system via `/analytics` endpoints.
-- **Queuing System & Discord Bot**: The `searchLoop` job processes nations and triggers message delivery, which is then handled by the Discord bot. The `QueuedNation` model is shared between both systems.
+- **Analytics System & Discord Bot Integration**: Both systems track message delivery status. The Discord bot logs delivery success/failure and forwards this data to the central analytics system via `/analytics` endpoints.
+- **Queuing System & Discord Bot Integration**: The `searchLoop` job processes nations and triggers message delivery, which is then handled by the Discord bot. The `QueuedNation` model is shared between both systems.
 - **Authentication & Discord Integration**: Both systems use API key authentication. The Discord bot validates the API key before processing any message, ensuring only authorized users can send messages.
 
 This architecture supports scalable, secure, and maintainable message delivery with comprehensive analytics and background processing. The integration with Discord enhances real-time communication and user interaction, while maintaining consistency with the existing data model and security practices.
