@@ -33,7 +33,26 @@ This document outlines the core functionality, architecture, and API endpoints o
 - `/account` endpoint returns account details (API key, creation date) after API key authentication.
 - Legacy API key creation is disabled via `/api-key/create` (returns 410).
 
-### 6. API Endpoints Summary
+### 6. Discord Bot Integration
+- **Discord Bot Core**: Built using the `discord.js` library, handles real-time interactions with Discord servers.
+- **Bot Commands**:
+  - `/send-message`: Sends a message to a specified Discord channel. Accepts message content, embeds, and attachments.
+  - `/status`: Returns the current status of the bot (online, processing, idle).
+  - `/config`: Allows users to configure bot behavior (e.g., message frequency, notification channels).
+  - `/analytics`: Returns recent message delivery statistics (e.g., messages sent, failures, success rate).
+- **Event Listeners**:
+  - `messageCreate`: Listens for new messages in configured channels. Triggers message processing if the message contains a valid command.
+  - `interactionCreate`: Handles slash command interactions (e.g., `/send-message`, `/status`).
+  - `ready`: Fires when the bot is fully initialized and ready to receive events.
+- **Permissions & Roles**:
+  - Bot requires `Send Messages`, `Embed Links`, `Attach Files`, and `Manage Messages` permissions in target channels.
+  - Only users with `Administrator` or `Manage Messages` roles can use configuration commands.
+- **Message Delivery Pipeline**:
+  - Messages are queued via `QueuedNation` and processed by `searchLoop`.
+  - When a message is ready, the bot uses `Discord.js`'s `channel.send()` method to deliver it.
+  - Delivery status (success/failure) is logged in the `Message` model and reflected in analytics.
+
+### 7. API Endpoints Summary
 
 | Endpoint | Method | Description |
 |--------|--------|-----------|
@@ -42,27 +61,43 @@ This document outlines the core functionality, architecture, and API endpoints o
 | `GET /me` | Authenticated | Returns recent analytics: link click history and message view history. Requires valid session. |
 | `GET /account` | Authenticated | Returns account details (API key, creation time) after API key validation. |
 | `POST /api-key/create` | Public | Disabled. Returns 410 Gone. Legacy key creation is no longer supported. |
+| `POST /discord/webhook` | Public | Accepts incoming webhook data from Discord. Used to trigger message processing or status updates. |
+| `GET /discord/status` | Public | Returns the current status of the Discord bot (e.g., online, offline, processing). |
 
-### 7. Background Jobs
+### 8. Background Jobs
 - `searchLoop`: Runs continuously to discover and process new nations.
 - `clearQueue`: Runs periodically to clean up expired or stale queue entries.
+- `discordHeartbeat`: Runs every 30 seconds to ping the bot’s status endpoint and ensure it remains active.
 
-### 8. Security & Validation
+### 9. Security & Validation
 - All public redirects are validated using `isSafeRedirectUrl` to prevent open redirect vulnerabilities.
 - API key authentication is enforced via `authenticateApiKey` middleware.
 - Analytics data is stored securely with account-scoped access.
+- Discord bot commands are restricted to authorized users via role-based access control (RBAC).
+- Incoming webhook payloads are validated using a secret token to prevent unauthorized access.
 
-### 9. Data Flow
+### 10. Data Flow
 1. Nation data is fetched via API calls (handled by `NationAPICall`).
 2. Nations are queued and processed by `searchLoop`.
 3. Messages are sent with tracking links and view pixels.
 4. Analytics data is collected and stored in MongoDB via `TrackingLink` and `MessageView` models.
 5. Users can retrieve analytics via `/me` endpoint.
+6. Discord bot receives commands via slash commands or direct messages.
+7. Messages are delivered to Discord channels using `Discord.js` methods.
+8. Delivery status is logged and reflected in the analytics system.
 
-### 10. Extensibility
+### 11. Extensibility
 - The modular design allows for:
   - Easy addition of new tracking types.
   - Support for multiple message types or delivery methods.
   - Future integration with external analytics platforms.
+  - Support for additional messaging platforms (e.g., Slack, Telegram) via plugin architecture.
+  - Custom bot commands and event handlers can be added via configuration.
 
-This architecture supports scalable, secure, and maintainable message delivery with comprehensive analytics and background processing.
+### 12. Overlapping Features
+- **Analytics System & Discord Bot**: Both systems track message delivery status. The Discord bot logs delivery success/failure and forwards this data to the central analytics system via `/analytics` endpoints.
+- **Queuing System & Discord Bot**: The `searchLoop` job processes nations and triggers message delivery, which is then handled by the Discord bot. The `QueuedNation` model is shared between both systems.
+- **Authentication & Discord Integration**: Both systems use API key authentication. The Discord bot validates the API key before processing any message, ensuring only authorized users can send messages.
+
+This architecture supports scalable, secure, and maintainable message delivery with comprehensive analytics and background processing. The integration with Discord enhances real-time communication and user interaction, while maintaining consistency with the existing data model and security practices.
+```
