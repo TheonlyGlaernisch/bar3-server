@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import chalk from 'chalk';
 import CampaignAnalyticsModel from '../models/campaignAnalytics';
+import { ChatMessage } from '../interfaces/schemas/ChatMessageSchema';
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://glaernischgaming_db_user:64WKiJPOcvufLvWP@glaernisch.0o1fjdx.mongodb.net/?appName=Glaernisch';
 mongoose.set('strictQuery', true);
@@ -12,6 +13,7 @@ export async function connectMongoDB(): Promise<void> {
     } as any);
 
     await CampaignAnalyticsModel.syncIndexes();
+    await ChatMessage.syncIndexes();
     await CampaignAnalyticsModel.updateMany(
       {createdAt: {$exists: false}},
       {$set: {createdAt: new Date()}}

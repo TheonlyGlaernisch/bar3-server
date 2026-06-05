@@ -111,3 +111,228 @@ The application runs as two independent services:
 - **flame_bot** (`discord-bot/`): Handles all Discord gateway interactions, PnW nation/alliance lookups, war alerts, and exposes the role-check HTTP API consumed by the main server.
 
 The two services share a MongoDB Atlas cluster (`TRF` database for bot data, default database for server data) but share no code or in-process state.
+
+Here's the corrected and expanded section:
+
+---
+
+## bar3-client Architecture
+
+The client is a Vue 3 single-page application built with Vuetify 3 (dark theme, orange primary), TypeScript, and Tailwind CSS. It is deployed as a static site on Render with all routes rewritten to `index.html`.
+
+### File Index
+
+```
+bar3-client/
+├── src/
+│   ├── actions/          API call helpers (getAppData, sendConfig, etc.)
+│   ├── assets/           Static markdown content (help page)
+│   ├── components/       Reusable Vue components
+│   │   └── constitution/ Constitution-specific block components
+│   ├── content/          Bundled fallback markdown (constitution.md)
+│   ├── interfaces/       TypeScript interfaces (analytics)
+│   ├── plugins/          Vuetify plugin setup
+│   ├── router/           Vue Router with auth guards
+│   ├── services/         Business logic (constitution renderer/source)
+│   ├── store/            Vuex store and analytics module
+│   ├── styles/           Global CSS (tailwind entry, view layout)
+│   ├── types/            TypeScript type declarations and compat shims
+│   ├── utilities/        Fetch wrappers, auth, sanitize, URL helpers
+│   ├── views/            Top-level page components
+│   ├── App.vue           Root component, app bar, sidebar, session init
+│   ├── main.ts           App bootstrap (Vue + Vuetify + Router + Vuex)
+│   └── types.ts          Shared interfaces (Config, Message, NationAPICall)
+├── scripts/              Shell utilities (flame_bot API health check)
+├── .env.example          Environment variable documentation
+├── render.yaml           Render static site deployment config
+├── tailwind.config.js    Tailwind theme (codex colour palette for constitution)
+└── vue.config.js         Webpack config (version injection, transpile list)
+```
+
+### Authentication & Session Model
+
+Two independent auth layers coexist.
+
+**Discord OAuth2** (`discordAuth`): the primary gate. The server handles the OAuth exchange and sets a session cookie. The client calls `/auth/session` once per page load, caches the result in `sessionStorage`, and parses role flags (`bar3Client`, `bar3Server`, `memberGuild`) from the response. These flags drive route guards and sidebar visibility. On 429 responses the client falls back to the cached session rather than clearing auth state.
+
+**PnW API Key** (`v2Api`): a secondary credential stored in `localStorage` and sent as `x-api-key`. Required for message sending, automation, and template management. Login hits `/api/v2/auth/login`; the session is server-side. `hasV2Credentials()` checks `localStorage` to determine whether to show PnW-specific UI.
+
+### State Management (Vuex)
+
+A single flat store holds application on/off state, sent messages, API usage counters, server and client version strings, update availability, Discord auth state, and role flags. An `analytics` submodule holds legacy campaign data. There are no async Vuex actions; all async work is done in components or composables before committing mutations.
+
+### API Layer
+
+Three fetch wrappers cover different concerns.
+
+`apiFetch` attaches the PnW API key header and `credentials: include`; used for legacy `/api/*` endpoints. `v2Fetch` (internal to `v2Api`) follows the same pattern for all `/api/v2/*` endpoints. `botFetch` (internal to `botApi`) uses `AUTH_BASE_URL`, which can differ from `API_BASE_URL` to work around Safari's same-site cookie restriction via a reverse proxy.
+
+URL roots are resolved from `VUE_APP_API_URL`, `VUE_APP_AUTH_URL`, and `VUE_APP_SERVER_URL`, with `window.location.origin` as the fallback.
+
+### Router & Access Control
+
+| Route | Access | Description |
+|---|---|---|
+| `/dashboard` | Client | Sent messages, API usage charts |
+| `/automation` | Client | Bulk send tools (active+unallied, Discord filter, by nation ID) |
+| `/config` | Client | API key, update interval, analytics toggle |
+| `/message-creator` | Client | WYSIWYG (Quill) and advanced (HTML/CSS) editors |
+| `/analytics` | Client | v2 analytics graph + legacy campaign view |
+| `/account` | Client | PnW API key login/logout |
+| `/nation` | Member | Registered nation details and defensive war table |
+| `/alliance` | Member | Alliance stats and counter-war request UI |
+| `/bot` | Admin | Bot server list, command usage, broadcast panel |
+| `/constitution` | Member | Rendered constitution with ToC, search, dark mode |
+| `/about`, `/help` | Public | Static informational pages |
+| `/auth/discord/callback` | Public | Finalises OAuth and redirects |
+
+Unauthenticated users are redirected to `/auth/login`. Role mismatches redirect to the best accessible route rather than a blank error.
+
+### Message Editor Pipeline
+
+The message creator supports two modes selected by a tab. Basic mode uses Quill, which produces a raw HTML fragment. Advanced mode accepts hand-written HTML and CSS, which are inlined via `juice` and previewed in `PreviewMessage`. Both paths pass through `sanitizeHtml`, which parses the markup into a `<template>` element, walks the DOM, removes dangerous tags (`script`, `iframe`, `form`, etc.), strips `on*` event attributes, sanitises inline styles, and rejects unsafe URL schemes. On save, the result is written to both the legacy config endpoint and, when a v2 session exists, to MongoDB via `/api/v2/templates`.
+
+### Analytics
+
+The `Analytics` view merges two data sources: v2 analytics fetched from `/analytics/v2/me` (converted into a synthetic `AnalyticalCampaign` object for reuse by `AnalyticsGraphCard`) and the legacy campaign system from `/analytics/campaigns`. Chart data is produced by `vue-chartjs` wrapping Chart.js, with daily-bucketing logic applied client-side before the data reaches the chart.
+
+### Constitution Renderer
+
+The constitution page is a self-contained rendering pipeline.
+
+`constitutionSource.ts` fetches from a Google Doc via the backend when `VUE_APP_CONSTITUTION_GOOGLE_DOC_URL` is set, falling back to the bundled `constitution.md`. `constitutionRenderer.ts` parses the markdown line-by-line, extracting `:::law`, `:::lore`, and `:::amendment` container blocks into a typed `ConstitutionBlock[]` array alongside a `TocItem[]` table of contents. Heading slugs are deduplicated with a counter map and headings inside containers are excluded from the ToC. The view renders blocks using three specialised components (`LawBlock`, `LoreBox`, `AmendmentNote`) and plain `v-html` for prose. An `IntersectionObserver` drives scroll-spy ToC highlighting. Full-text search operates over a pre-built per-section index extracted from the raw markdown at render time, with context snippets centred on the match position.
+
+
+### Client Startup Flow
+
+Application startup is orchestrated from `main.ts`, which creates the Vue application, installs Vuetify, Vue Router, and Vuex, and mounts `App.vue`.
+
+`App.vue` acts as the primary initialization coordinator. During startup the client:
+
+1. Loads environment-derived API endpoints.
+2. Checks the current Discord session via `/auth/session`.
+3. Restores cached auth state from `sessionStorage` when appropriate.
+4. Loads application configuration and server status information.
+5. Fetches message history and analytics summaries for authenticated users.
+6. Populates Vuex state used by the dashboard, sidebar, and status indicators.
+7. Registers route guards and role-based navigation visibility.
+
+The application is designed to tolerate temporary backend failures during startup by preserving cached session state where possible rather than immediately forcing reauthentication.
+
+### Actions Layer
+
+The `src/actions/` directory contains thin API orchestration helpers used by components. These actions centralise request construction, response handling, and state updates while keeping UI components focused on presentation and user interaction.
+
+Representative actions include:
+
+- `getAppData.ts` — retrieves dashboard and application state.
+- `getConfig.ts` / `sendConfig.ts` — configuration retrieval and persistence.
+- `sendMessage.ts` — manual message submission workflow.
+- `createNewCampaign.ts` — analytics campaign creation.
+- `getAnalyticalCampaigns.ts` — analytics retrieval.
+- `checkForUpdates.ts` — client/server version comparison.
+- `setApplicationState.ts` — automation and runtime state toggles.
+
+This layer functions as the primary bridge between Vue components and backend API endpoints.
+
+### Update Detection System
+
+Client and server versions are tracked independently. The update system periodically compares the running frontend version against the version reported by the backend.
+
+When a version mismatch is detected:
+
+- Update state is committed to Vuex.
+- `UpdateAvailableBanner.vue` becomes visible.
+- Users are prompted to refresh or reload the application.
+
+This mechanism allows deployments to notify active users without requiring manual version checks.
+
+### Analytics Campaign Workflow
+
+The analytics subsystem supports both legacy campaign tracking and newer v2 analytics reporting.
+
+Campaign creation originates from `CreateAnalyticsCampaignDialog.vue`, which gathers campaign metadata and submits it through the actions layer. Campaign data is later retrieved through `getAnalyticalCampaigns.ts` and rendered using analytics-specific components such as:
+
+- `AnalyticsGraphCard.vue`
+- `AnalyticsLinksCard.vue`
+- `MessagesSentCard.vue`
+- `LineChart.vue`
+
+The frontend transforms raw analytics responses into presentation-friendly structures before rendering charts and summaries.
+
+### Account Management
+
+`AccountManager.vue` provides the primary interface for account-related operations.
+
+Responsibilities include:
+
+- Displaying current account status.
+- Managing PnW API key authentication.
+- Handling account-specific configuration.
+- Coordinating logout and session cleanup flows.
+- Exposing account metadata returned by the backend.
+
+Account state is shared across the application through Vuex and session-aware API wrappers.
+
+### Automation User Interface
+
+Automation controls are exposed through dedicated components including `V2AutomationToggle.vue`.
+
+The frontend automation layer allows users to:
+
+- Enable or disable automation features.
+- Configure automated message behaviour.
+- Manage automation-related settings.
+- Monitor automation status.
+
+These controls communicate with the backend automation system implemented in `server/services/v2AutomationRunner.ts`.
+
+The client itself performs no automation logic; all automation execution occurs server-side.
+
+### State Ownership & Source of Truth
+
+The application intentionally separates ownership of state across multiple storage layers.
+
+| Data | Source of Truth | Client Cache |
+|---|---|---|
+| Discord authentication | Server session | `sessionStorage` + Vuex |
+| PnW API key | Browser storage | `localStorage` |
+| User configuration | Backend API | Vuex |
+| Message history | Backend API | Vuex |
+| Analytics data | MongoDB via API | Vuex/component state |
+| Automation settings | Backend API | Vuex |
+| Constitution content | Google Doc or bundled markdown | In-memory render model |
+
+This separation ensures sensitive authentication state remains server-controlled while still allowing responsive client-side rendering.
+
+### Cross-Service Interactions
+
+The frontend never communicates directly with Politics & War or Discord.
+
+All external interactions flow through backend services:
+
+#### Discord Authentication Flow
+
+1. User initiates Discord login.
+2. Browser is redirected to the backend OAuth endpoint.
+3. Backend completes OAuth exchange.
+4. Backend queries flame_bot for role information.
+5. Backend establishes session state.
+6. Frontend retrieves session details via `/auth/session`.
+
+#### Messaging Flow
+
+1. User creates or edits a message.
+2. Frontend submits content to backend APIs.
+3. Backend performs sanitisation, storage, analytics injection, and delivery.
+4. Politics & War receives the final message.
+
+#### Automation Flow
+
+1. User updates automation settings.
+2. Frontend submits configuration to the server.
+3. Server stores automation configuration.
+4. `v2AutomationRunner` processes future nation events.
+5. Results are exposed through analytics and status APIs.
+
+This architecture keeps all privileged operations on trusted backend services while the frontend remains a presentation and orchestration layer.

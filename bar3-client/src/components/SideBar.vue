@@ -134,6 +134,11 @@ export default defineComponent({
             icon: 'mdi-shield-account',
             path: '/alliance',
           },
+          {
+            title: 'Chat',
+            icon: 'mdi-chat',
+            path: '/chat',
+          },
         );
       }
       base.push(
@@ -173,3 +178,4 @@ export default defineComponent({
   },
 });
 </script>
+

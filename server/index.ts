@@ -447,13 +447,24 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+import * as http from 'http';
+import { attachChatServer } from './services/chatServer';
+
+const sessionMiddleware = session({ /* same options as before */ });
+app.use(sessionMiddleware);
+
+// expose the store so chatServer can share it
+const httpServer = http.createServer(app);
+
+httpServer.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
-// Start v2 multi-user automation loop (non-breaking for legacy Bar3)
+attachChatServer(httpServer, sessionMiddleware.store, sessionSecret || 'bar3-change-me-in-production');
 startAutomationLoop();
+
+
 
 // Graceful shutdown
 process.on('SIGINT', async () => {

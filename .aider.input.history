@@ -1,0 +1,763 @@
+
+# 2026-06-03 07:51:49.355783
++y
+
+# 2026-06-03 07:52:32.805027
++d
+
+# 2026-06-03 07:52:38.948708
++/model settings
+
+# 2026-06-03 07:52:47.827772
++/settings
+
+# 2026-06-03 07:53:17.574010
++/add bar3-client/src/App.vue
+
+# 2026-06-03 07:55:12.932238
++/add server
+
+# 2026-06-03 07:55:32.045322
++check for all endpoints
+
+# 2026-06-03 07:56:33.208984
++dd
+
+# 2026-06-03 07:56:35.570550
++d
+
+# 2026-06-03 07:56:37.920275
++openai/qwen3-30b-a3b-2507
+
+# 2026-06-03 07:56:43.550557
++/model
+
+# 2026-06-03 07:56:57.315503
++/help
+
+# 2026-06-03 07:57:38.349348
++/model openai/qwen3-30b-a3b-2507
+
+# 2026-06-03 07:58:07.122759
++find all endpoints and list them here
+
+# 2026-06-03 08:01:48.114218
++List every Express route defined in this repository.
++
++For each route:
++- HTTP method
++- path
++- router file
++- handler function
++- service function called
++
++Output as a table.
++
++Do not list imports. Only list actual registered routes.
+
+# 2026-06-03 08:30:02.786464
++how many lines are in all these files?
+
+# 2026-06-03 09:37:23.032638
++/add bar3-client
+
+# 2026-06-03 09:37:35.709755
++/add discord-bot
+
+# 2026-06-03 09:37:45.434857
++/add package.json
+
+# 2026-06-03 09:37:49.289025
++Find the backend entry point.
++
++Look for:
++- express()
++- app.listen()
++- createServer()
++- server.listen()
++
++Show the file and explain the startup flow.
+
+# 2026-06-03 09:43:22.074042
++/add server
+
+# 2026-06-03 09:44:38.015549
++Read only these files:
++
++- server/index.ts
++- server/api/index.ts
++
++Explain:
++1. Which file starts the application
++2. Which file creates the Express app
++3. Which routers are registered
++4. Which port the server listens on
+
+# 2026-06-03 09:45:50.110732
++/add server
+
+# 2026-06-03 09:46:03.742382
++/remove server
+
+# 2026-06-03 09:46:11.570597
++/help
+
+# 2026-06-03 09:46:22.842269
++/reset
+
+# 2026-06-03 09:46:32.768160
++/add server
+
+# 2026-06-03 09:46:47.198231
++Read only these files:
++
++- server/index.ts
++- server/api/index.ts
++
++Explain:
++1. Which file starts the application
++2. Which file creates the Express app
++3. Which routers are registered
++4. Which port the server listens on
+
+# 2026-06-03 10:00:54.194698
++save those in an md file for future use by agents
+
+# 2026-06-03 10:02:48.156629
++y
+
+# 2026-06-03 10:04:34.823835
++/add discord-bot
+
+# 2026-06-03 10:04:42.448161
++/add bar3-client
+
+# 2026-06-03 10:04:59.658773
++Document the full request flow for:
++1. Vue frontend → backend API → services → external APIs
++2. Discord bot → backend API (or direct services)
++3. Authentication flow (all variants)
++
++Show step-by-step call chains.
+
+# 2026-06-03 10:08:28.552288
++/clear context
+
+# 2026-06-03 10:08:35.589966
++/clear
+
+# 2026-06-03 10:08:49.330682
++/add server
+
+# 2026-06-03 10:09:04.043136
++/reset
+
+# 2026-06-03 10:09:13.222551
++/add server
+
+# 2026-06-03 10:10:03.967023
++/add application_
+
+# 2026-06-03 10:10:10.386959
++n
+
+# 2026-06-03 10:10:17.531189
++/add application_architecture.md
+
+# 2026-06-03 10:10:47.840197
++make a summary of all server functions/functionality/api endpoints and paste into application_architecture.md
+
+# 2026-06-03 10:17:55.275891
++/add discord-bot
+
+# 2026-06-03 10:18:34.083310
++ok, now continue adding all discord-bot functions and endpoints to application_architecture.md
+
+# 2026-06-03 10:19:41.047091
++/add application_architecture.md
+
+# 2026-06-03 10:19:47.664483
++/clear
+
+# 2026-06-03 10:19:54.007523
++/reset
+
+# 2026-06-03 10:20:08.290249
++/add discord_bot
+
+# 2026-06-03 10:20:13.937825
++n
+
+# 2026-06-03 10:20:19.846264
++/add discord-bot
+
+# 2026-06-03 10:20:27.806381
++/add application_architecture.md
+
+# 2026-06-03 10:20:54.350194
++ok, now continue adding all discord-bot functions and endpoints to application_architecture.md. keep all previous content, but if some things overlap, you can highlight that
+
+# 2026-06-03 10:33:49.871442
++y
+
+# 2026-06-03 10:35:11.833376
++show entire application_architecture.md
+
+# 2026-06-03 10:43:52.689679
++n
+
+# 2026-06-03 10:45:08.804320
++Hallucinated/inaccurate parts:
++The document describes /send-message, /status, /config, and /analytics as Discord slash commands. The actual commands (from commandDocs.ts and index.ts) are completely different — /register, /whois, /slots, /war_range_targets, etc. None of those four exist.
++The "Discord Heartbeat" background job (discordHeartbeat running every 30 seconds) doesn't exist in the code at all.
++The analytics endpoints described (/analytics) are real, but the document misattributes them — they live under /analytics/v2/l/:shortId and /analytics/v2/p/:messageId, not /l/:shortId and /p/:messageId as top-level routes (though the v1 analytics router also exists separately).
++The document says the QueuedNation model is "shared between both systems" (queuing and Discord bot). In reality the Discord bot (discord-bot/) is a completely separate Node process with its own codebase and has no shared models with the server.
++The data flow description in section 10 mixes up the two separate systems as if they're one integrated application, when they're actually two independent services that communicate only via HTTP.
+
+# 2026-06-03 10:54:15.689972
++y
+
+# 2026-06-03 11:00:31.782493
++d
+
+# 2026-06-03 11:00:39.433000
++/add application_architecture.md
+
+# 2026-06-03 11:00:47.575353
++/add discord-bot
+
+# 2026-06-03 11:00:59.413150
++/add server
+
+# 2026-06-03 11:01:51.126536
++ok, modify application_architecture.md
+
+# 2026-06-03 11:03:31.477023
++/model qwen/qwen3-30b-a3b-2507:2
+
+# 2026-06-03 11:03:59.270007
++ok, modify application_architecture.md considering Hallucinated/inaccurate parts:
++The document describes /send-message, /status, /config, and /analytics as Discord slash commands. The actual commands (from commandDocs.ts and index.ts) are completely different — /register, /whois, /slots, /war_range_targets, etc. None of those four exist.
++The "Discord Heartbeat" background job (discordHeartbeat running every 30 seconds) doesn't exist in the code at all.
++The analytics endpoints described (/analytics) are real, but the document misattributes them — they live under /analytics/v2/l/:shortId and /analytics/v2/p/:messageId, not /l/:shortId and /p/:messageId as top-level routes (though the v1 analytics router also exists separately).
++The document says the QueuedNation model is "shared between both systems" (queuing and Discord bot). In reality the Discord bot (discord-bot/) is a completely separate Node process with its own codebase and has no shared models with the server.
++The data flow description in section 10 mixes up the two separate systems as if they're one integrated application, when they're actually two independent services that communicate only via HTTP.
+
+# 2026-06-03 11:04:23.267756
++n
+
+# 2026-06-03 12:13:53.609250
++y
+
+# 2026-06-03 12:14:11.140147
++d
+
+# 2026-06-03 12:14:26.932290
++/add application_architecture.md
+
+# 2026-06-03 12:14:34.008180
++/add discord-bot
+
+# 2026-06-03 12:14:42.652177
++/add server
+
+# 2026-06-03 12:14:56.524864
++ok, modify application_architecture.md considering Hallucinated/inaccurate parts:
++The document describes /send-message, /status, /config, and /analytics as Discord slash commands. The actual commands (from commandDocs.ts and index.ts) are completely different — /register, /whois, /slots, /war_range_targets, etc. None of those four exist.
++The "Discord Heartbeat" background job (discordHeartbeat running every 30 seconds) doesn't exist in the code at all.
++The analytics endpoints described (/analytics) are real, but the document misattributes them — they live under /analytics/v2/l/:shortId and /analytics/v2/p/:messageId, not /l/:shortId and /p/:messageId as top-level routes (though the v1 analytics router also exists separately).
++The document says the QueuedNation model is "shared between both systems" (queuing and Discord bot). In reality the Discord bot (discord-bot/) is a completely separate Node process with its own codebase and has no shared models with the server.
++The data flow description in section 10 mixes up the two separate systems as if they're one integrated application, when they're actually two independent services that communicate only via HTTP.
+
+# 2026-06-03 12:20:38.396735
++y
+
+# 2026-06-03 12:26:23.701520
++now summarise all functions and express endpoints in server and paste summary in application_architecture.md
+
+# 2026-06-03 12:30:48.602321
++/add application_architecture.md
+
+# 2026-06-03 12:31:07.962344
++can you check application_architecture.md
+
+# 2026-06-03 12:45:14.370022
++/clear
+
+# 2026-06-03 12:45:17.491138
++/reset
+
+# 2026-06-03 12:45:22.496478
++/add server
+
+# 2026-06-03 12:45:35.231739
++/add application_architecture.md
+
+# 2026-06-03 12:45:57.291549
++can you reset application_architecture.md
+
+# 2026-06-03 14:11:31.310389
++y
+
+# 2026-06-03 14:11:36.754336
++d
+
+# 2026-06-03 14:11:53.532938
++/add application_architecture.md
+
+# 2026-06-03 14:12:13.489886
++read it, and create a summary in here
+
+# 2026-06-03 14:12:47.380341
++set OPENAI_API_KEY=lm-studio && python -m aider --model openai/qwen3-30b-a3b-2507 --openai-api-base http://localhost:1234/v1
+
+# 2026-06-03 14:12:52.342562
++n
+
+# 2026-06-03 14:17:29.787020
++y
+
+# 2026-06-03 14:17:33.190855
++d
+
+# 2026-06-03 14:17:38.478500
++add application_architecture.md
+
+# 2026-06-03 14:17:41.718576
++d
+
+# 2026-06-03 14:19:10.828745
++n
+
+# 2026-06-03 14:19:48.807441
++revert your recent changes to application_architecture.md 
+
+# 2026-06-03 14:25:44.155808
++n
+
+# 2026-06-03 14:26:44.725045
++you wanted to do same changes. replace application_architecture.md with:
++
++# Architecture Overview
++
++This document outlines the core functionality, architecture, and API endpoints of the application.
++
++## Core Components
++
++### 1. Configuration System
++- Manages application settings via `Config` class.
++- Stores API key, message subject, HTML content, analytics settings, update intervals, and queue timing.
++- Supports versioning (`configVersion`) and configurable editor state.
++
++### 2. Message & Nation Data Model
++- `Message` interface defines message metadata: sent time, nation details, success status, and error messages.
++- `NationAPICall` namespace contains interfaces for API responses:
++  - `Nation`: Full nation data including leader, cities, military units, alliances, and timestamps.
++  - `ApiRequest`, `ApiKeyDetails`, `ApiDetails`: API metadata for rate limiting and versioning.
++
++### 3. Queuing & Processing
++- `QueuedNation` interface tracks nations awaiting processing with timestamp.
++- `searchLoop` and `clearQueue` jobs manage background processing:
++  - `searchLoop`: Starts a PnW WebSocket subscription to receive nation-create events in real time.
++  - `clearQueue`: Periodically sends queued nations and removes stale entries.
++
++### 4. Analytics System
++- Tracks message views and link clicks via `/analytics/v2` endpoints.
++- Supports:
++  - Public link tracking: `/analytics/v2/l/:shortId` redirects with click logging.
++  - Message view tracking: `/analytics/v2/p/:messageId` returns a 1x1 transparent GIF with view logging.
++  - Authenticated analytics dashboard: `/analytics/v2/me` returns recent link clicks and message views.
++
++### 5. Account & Authentication
++- `AccountService` manages account lifecycle and API key handling.
++- `/account` endpoint returns account details (API key, creation date) after API key authentication.
++- Legacy API key creation is disabled via `/api-key/create` (returns 410).
++- v2 session-based authentication is available via `/api/v2/auth/login` and `/api/v2/auth/logout`.
++- Discord OAuth2 authentication is handled via `/auth/discord` and `/auth/discord/callback`, delegating role checks to the flame_bot HTTP API.
++
++### 6. Discord Bot (flame_bot)
++
++The Discord bot is a **separate Node.js process** (`discord-bot/`) that runs independently from the main server. The two services communicate only via HTTP.
++
++- **Bot Core**: Built using `discord.js` v14, connects to Discord via the gateway and handles slash commands and button interactions.
++- **Actual Bot Commands** (selected examples):
++  - `/register <nation_id>`: Links a Discord account to a PnW nation after verifying the in-game Discord field.
++  - `/unregister`: Removes a nation registration.
++  - `/whois <query>`: Looks up a nation by ID, name, or @mention.
++  - `/alliance_info <query>`, `/alliance_members <query>`, `/alliance_lots_of_info <query>`: Alliance lookup commands.
++  - `/slots`: Shows open defensive war slots for configured alliances.
++  - `/war_range_targets`, `/spy_target_find`, `/missile_targets_find`: Combat targeting tools.
++  - `/damage_leaderboard`: 7-day ranked damage output for the primary alliance.
++  - `/revenue`, `/infra`, `/city_cost`: Economic calculators.
++  - `/request_grant`: Submits a grant request to a configured channel.
++  - `/counter`: Records counter-war requests.
++  - `/help`: Lists all commands by category.
++- **Event Listeners**:
++  - `interactionCreate`: Handles slash commands and button/modal interactions.
++  - `messageCreate`: Handles per-channel translation (English ↔ Croatian).
++  - `guildMemberAdd`: Sends configurable welcome messages.
++  - `ready`: Syncs slash commands and persists guild metadata on startup.
++- **bar3 HTTP API**: When `API_KEY` is set, the bot exposes an HTTP API on `API_PORT` (default 8080) used by the main server to check Discord roles after OAuth login (`GET /api/roles/:discord_id`).
++
++### 7. API Endpoints Summary
++
++| Endpoint | Method | Description |
++|---|---|---|
++| `GET /analytics/v2/l/:shortId` | Public | Redirects to target URL after logging a click. Validates redirect URL. |
++| `GET /analytics/v2/p/:messageId` | Public | Returns a 1x1 transparent GIF to log message views. Accepts optional `a` query param for account ID. |
++| `GET /analytics/v2/me` | Authenticated | Returns recent analytics: link click history and message view history. Requires valid PwAccount session. |
++| `GET /account` | Authenticated | Returns account details (API key, creation time) after API key validation. |
++| `POST /api-key/create` | Public | Disabled. Returns 410 Gone. |
++| `GET /auth/discord` | Public | Redirects browser to Discord OAuth2 authorization. |
++| `GET /auth/discord/callback` | Public | Handles OAuth2 callback; checks roles via flame_bot and issues a session. |
++| `GET /auth/session` | Public | Returns current Discord session state for the SPA. |
++| `POST /api/v2/auth/login` | Public | Logs in with a PnW API key and creates a server-side session. |
++| `GET /api/bot/servers` | Admin | Proxies to flame_bot; returns guilds the bot is in. |
++| `GET /api/bot/commands/usage` | Admin | Proxies to flame_bot; returns ranked slash command usage counts. |
++| `POST /api/bot/send` | Admin | Proxies to flame_bot; sends a message to all configured welcome channels. |
++| `GET /api/member/nation` | Member | Proxies to flame_bot; returns nation/war context for the authenticated member. |
++
++### 8. Background Jobs
++- `searchLoop`: Starts a PnW WebSocket subscription (`PnWNationSubscriptionClient`) to receive nation-create events.
++- `clearQueue`: Runs periodically to send queued nations and remove stale entries.
++- `startAutomationLoop`: Starts a second PnW WebSocket subscription for the v2 multi-user automation system, dispatching new nations to all accounts with automation enabled.
++
++### 9. Security & Validation
++- All public redirects are validated using `isSafeRedirectUrl` to prevent open redirect vulnerabilities.
++- API key authentication is enforced via `authenticateApiKey` and `requirePwSession` middleware.
++- Discord OAuth2 uses PKCE and session regeneration to prevent fixation attacks.
++- Analytics data is stored with account-scoped access.
++- Discord bot commands enforce role-based access (`hasGovAccess`, `hasMemberAccess`, `hasAdminCommandAccess`).
++- Same-origin enforcement is applied to all unsafe HTTP methods via `isTrustedOrigin`.
++
++### 10. Data Flow
++1. Nation-create events arrive via the PnW WebSocket subscription.
++2. Nations are queued by `messages.addNationToQueue()` and sent by `clearQueue`.
++3. Messages are sent to PnW with optional tracking links and view pixels injected by `injectTrackingIntoHtml`.
++4. Analytics data is collected and stored in MongoDB via `TrackingLink` and `MessageView` models.
++5. Users retrieve analytics via `/analytics/v2/me`.
++6. Discord users authenticate via `/auth/discord`; the main server asks flame_bot for role data.
++7. The flame_bot independently handles guild interactions: war alerts, counter requests, welcome messages, and grant requests.
++
++### 11. Extensibility
++- The modular design allows for easy addition of new tracking types, message delivery methods, and analytics integrations.
++- The bot's guild configuration (alliances, channels, roles) is stored per-guild in MongoDB and modifiable via slash commands without redeployment.
++
++### 12. Two-Service Architecture
++The application runs as two independent services:
++
++- **Main server** (`server/`): Handles the bar3 web UI, PnW message sending, analytics, v2 templates/automation, and Discord OAuth login.
++- **flame_bot** (`discord-bot/`): Handles all Discord gateway interactions, PnW nation/alliance lookups, war alerts, and exposes the role-check HTTP API consumed by the main server.
++
++The two services share a MongoDB Atlas cluster (`TRF` database for bot data, default database for server data) but share no code or in-process state.
+
+# 2026-06-03 14:34:03.948454
++y
+
+# 2026-06-03 14:43:24.474703
++/add server
+
+# 2026-06-03 14:44:23.036460
++read server files, then read application_architecture.md and tell me whether there are any wrong things in application_architecture.md make a table with issue and yuor proposal for correcting
+
+# 2026-06-03 14:48:39.062829
++isnt it added in context? i see it here above the chat
+
+# 2026-06-03 14:51:28.748955
++its not in server files. application_architecture.md
+
+# 2026-06-03 14:53:46.334441
++how can i add it to context without pasting the content?
+
+# 2026-06-03 15:04:16.850098
++/remove
+
+# 2026-06-03 15:04:23.036201
++/clear
+
+# 2026-06-03 15:04:26.150339
++/reset
+
+# 2026-06-03 15:04:31.841972
++/add server
+
+# 2026-06-03 15:04:46.856068
++/add application_architecture.md
+
+# 2026-06-03 15:05:40.919779
++check server files, and then check application_architecture.md. compare them, and then tell me whether any changes are needed in application_architecture. make a table with change and why
+
+# 2026-06-03 15:09:04.118670
++/add discord-bot
+
+# 2026-06-03 15:09:34.185962
++now check discord-bot, and do the same as previous prompt, but check discord-bot instead of server 
+
+# 2026-06-03 15:13:36.816990
++do you think you could understand structure of discord-bot just by reading application_architecture.md?
+
+# 2026-06-03 15:18:13.832789
++/clear
+
+# 2026-06-03 15:18:18.639745
++/reset
+
+# 2026-06-03 15:18:34.706511
++/add bar3-client
+
+# 2026-06-03 15:18:49.698112
++/add application_architecture.md
+
+# 2026-06-03 15:19:20.803408
++append information about bar3-client to the existing one in application_architecture.md
+
+# 2026-06-03 15:22:51.519900
++append information about bar3-client to the existing one in application_architecture.md. do not delete any existing lines
+
+# 2026-06-03 15:34:35.595651
++what did i say about changing existing text?
+
+# 2026-06-03 15:45:12.405116
++/undo
+
+# 2026-06-03 15:50:29.892560
++Read all currently loaded bar3-client files and application_architecture.md.
++
++application_architecture.md currently documents the server and discord-bot only.
++
++Your task is to add documentation for the bar3-client frontend in the same style as the existing document.
++
++Requirements:
++- Read application_architecture.md first and imitate its structure, tone, formatting, and level of detail.
++- Preserve all existing content exactly.
++- Do not rewrite, reorganize, summarize, or remove any existing sections.
++- Add new sections describing the client architecture, frontend entry points, routing, state management, API communication, major components, views, services, and utilities.
++- Place the new sections where they fit naturally in the existing document, or append them at the end.
++- Use only information found in the loaded files.
++- Do not infer behavior that is not present in the code.
++- If something is unclear, write "unknown" rather than guessing.
++- This project uses the Politics and War API. Do not assume NationStates or any other game API.
++
++Before editing, show a brief outline of the sections you intend to add and the files they are based on.
+
+# 2026-06-03 15:59:17.745889
++/undo
+
+# 2026-06-03 18:15:47.308592
++n
+
+# 2026-06-03 18:15:52.696394
++d
+
+# 2026-06-03 18:15:59.393939
++hello
+
+# 2026-06-03 18:16:27.405894
++/add bar3-client
+
+# 2026-06-03 18:16:40.405716
++/add application_architecture.md
+
+# 2026-06-03 18:17:37.020235
++Read the provided files.
++Do not modify any files.
++Do not propose edits yet.
++
++Output:
++- bullet summary
++- architecture understanding
++- unknowns / missing info
+
+# 2026-06-03 18:33:56.789215
++ok. append this to application_architecture.md. only append, not rewriting:""Here's the architecture section for the client:""
++
++## bar3-client Architecture
++
++The client is a Vue 3 single-page application built with Vuetify 3 (dark theme, orange primary), TypeScript, and Tailwind CSS. It is deployed as a static site (Render) with all routes rewritten to `index.html`.
++
++### Authentication & Session Model
++
++Two independent auth layers coexist:
++
++- **Discord OAuth2** (`discordAuth`): The primary gate. The server handles the OAuth exchange and sets a session cookie. The client checks `/auth/session` once per page load and caches the result in `sessionStorage`. Role flags (`bar3Client`, `bar3Server`, `memberGuild`) drive route guards and sidebar visibility.
++- **PnW API Key** (`v2Api`): A secondary credential stored in `localStorage` and sent as `x-api-key`. Required for message sending, automation, and template management. Login hits `/api/v2/auth/login`; the resulting session is server-side.
++
++The router guards redirect unauthenticated users to `/auth/login` and enforce per-route role requirements (`requiresClientAccess`, `requiresMemberAccess`, `requiresBotAuth`).
++
++### State Management (Vuex)
++
++A single flat store holds: application on/off toggle, sent messages, API usage details, server/client versions, update availability, Discord auth state, and role flags. An `analytics` submodule holds legacy campaign data. There are no async Vuex actions; all async work is done in components or composables before committing mutations.
++
++### API Communication
++
++Three fetch wrappers handle different concerns:
++
++- `apiFetch` — attaches the PnW API key header and `credentials: include`; used by legacy v1 endpoints.
++- `v2Fetch` (internal to `v2Api`) — same pattern, used for all `/api/v2/*` endpoints.
++- `botFetch` (internal to `botApi`) — uses `AUTH_BASE_URL` which can differ from `API_BASE_URL` to support Safari's same-site cookie restriction via a reverse proxy.
++
++URL roots are resolved from env vars (`VUE_APP_API_URL`, `VUE_APP_AUTH_URL`, `VUE_APP_SERVER_URL`) with `window.location.origin` as the fallback.
++
++### Views & Routing
++
++| Route | Access | Description |
++|---|---|---|
++| `/dashboard` | Client | Sent messages, API usage charts, refresh button |
++| `/automation` | Client | Bulk send tools (active+unallied, Discord filter, by nation ID) |
++| `/config` | Client | API key, update interval, analytics toggle |
++| `/message-creator` | Client | WYSIWYG (Quill) and advanced (HTML/CSS + juice inlining) editors |
++| `/analytics` | Client | v2 analytics graph + legacy campaign view |
++| `/account` | Client | PnW API key login/logout |
++| `/nation` | Member | Registered nation details and defensive war table |
++| `/alliance` | Member | Alliance stats and counter-war request UI |
++| `/bot` | Admin | Bot server list, command usage, send-message panel |
++| `/constitution` | Member | Rendered constitution with ToC, search, dark mode |
++| `/about`, `/help` | Public | Static informational pages |
++| `/auth/discord/callback` | Public | Finalises OAuth and redirects |
++
++### Message Editor Pipeline
++
++The message creator supports two modes selected by a tab:
++
++- **Basic**: Quill editor → raw HTML fragment.
++- **Advanced**: Hand-written HTML + CSS → inlined via `juice` → preview via `PreviewMessage`.
++
++Both paths pass output through `sanitizeHtml`, which uses a `<template>` element to parse and walk the DOM, blocking dangerous tags (`script`, `iframe`, `form`, etc.), stripping `on*` event attributes, sanitising `style` values, and rejecting unsafe URL schemes. The inlined HTML is saved to both the legacy config endpoint and, if a v2 session exists, to MongoDB via `/api/v2/templates`.
++
++### Analytics
++
++The `Analytics` view merges two data sources: v2 analytics fetched from `/analytics/v2/me` (transformed into a synthetic `AnalyticalCampaign` object for reuse by `AnalyticsGraphCard`) and the legacy campaign system (`/analytics/campaigns`). Charts are rendered by `vue-chartjs` wrapping Chart.js, with custom daily-bucketing logic applied client-side.
++
++### Constitution Renderer
++
++The constitution page is a self-contained rendering pipeline:
++
++1. `constitutionSource.ts` fetches from a configured Google Doc via the backend, falling back to the bundled `constitution.md`.
++2. `constitutionRenderer.ts` parses the markdown line-by-line, extracting `:::law`, `:::lore`, and `:::amendment` container blocks into a typed `ConstitutionBlock[]` array.
++3. A table of contents is built by scanning headings outside containers; slugs are deduplicated with a counter map.
++4. The view renders blocks using three specialised components (`LawBlock`, `LoreBox`, `AmendmentNote`) and plain `v-html` for prose. An `IntersectionObserver` drives scroll-spy ToC highlighting. Full-text search operates over a pre-built index of section text extracted at render time.""
+
+# 2026-06-03 18:41:22.334876
++take the architecture section, and append it to application_architecture.md
+
+# 2026-06-03 18:43:42.952502
++i said append. why do you keep rewriting the entire document?
+
+# 2026-06-03 19:02:14.456579
++/undo
+
+# 2026-06-03 19:04:23.019486
++You are applying a pre-written documentation block to an existing file.
++
++CRITICAL RULES:
++- Do NOT rewrite, modify, or reformat any existing content in the file.
++- Do NOT reorder sections.
++- Do NOT “improve” or “clean up” the document.
++- Treat the existing file as IMMUTABLE.
++
++ONLY allowed action:
++- Append the provided markdown block to the END of application_architecture.md.
++
++BEFORE applying:
++1. Confirm you will ONLY append.
++2. Confirm you will NOT change any existing lines.
++3. If anything is unclear, stop and ask.
++
++Then apply the text exactly as given below.
++
++----- APPEND BLOCK START -----
++
++---
++
++## bar3-client Architecture
++
++The client is a Vue 3 single-page application built with Vuetify 3 (dark theme, orange primary), TypeScript, and Tailwind CSS. It is deployed as a static site (Render) with all routes rewritten to `index.html`.
++
++### Authentication & Session Model
++
++Two independent auth layers coexist:
++
++- **Discord OAuth2** (`discordAuth`): The primary gate. The server handles the OAuth exchange and sets a session cookie. The client checks `/auth/session` once per page load and caches the result in `sessionStorage`. Role flags (`bar3Client`, `bar3Server`, `memberGuild`) drive route guards and sidebar visibility.
++- **PnW API Key** (`v2Api`): A secondary credential stored in `localStorage` and sent as `x-api-key`. Required for message sending, automation, and template management. Login hits `/api/v2/auth/login`; the resulting session is server-side.
++
++The router guards redirect unauthenticated users to `/auth/login` and enforce per-route role requirements (`requiresClientAccess`, `requiresMemberAccess`, `requiresBotAuth`).
++
++### State Management (Vuex)
++
++A single flat store holds: application on/off toggle, sent messages, API usage details, server/client versions, update availability, Discord auth state, and role flags. An `analytics` submodule holds legacy campaign data. There are no async Vuex actions; all async work is done in components or composables before committing mutations.
++
++### API Communication
++
++Three fetch wrappers handle different concerns:
++
++- `apiFetch` — attaches the PnW API key header and `credentials: include`; used by legacy v1 endpoints.
++- `v2Fetch` (internal to `v2Api`) — same pattern, used for all `/api/v2/*` endpoints.
++- `botFetch` (internal to `botApi`) — uses `AUTH_BASE_URL` which can differ from `API_BASE_URL` to support Safari's same-site cookie restriction via a reverse proxy.
++
++URL roots are resolved from env vars (`VUE_APP_API_URL`, `VUE_APP_AUTH_URL`, `VUE_APP_SERVER_URL`) with `window.location.origin` as the fallback.
++
++### Views & Routing
++
++| Route | Access | Description |
++|---|---|---|
++| `/dashboard` | Client | Sent messages, API usage charts, refresh button |
++| `/automation` | Client | Bulk send tools (active+unallied, Discord filter, by nation ID) |
++| `/config` | Client | API key, update interval, analytics toggle |
++| `/message-creator` | Client | WYSIWYG (Quill) and advanced (HTML/CSS + juice inlining) editors |
++| `/analytics` | Client | v2 analytics graph + legacy campaign view |
++| `/account` | Client | PnW API key login/logout |
++| `/nation` | Member | Registered nation details and defensive war table |
++| `/alliance` | Member | Alliance stats and counter-war request UI |
++| `/bot` | Admin | Bot server list, command usage, send-message panel |
++| `/constitution` | Member | Rendered constitution with ToC, search, dark mode |
++| `/about`, `/help` | Public | Static informational pages |
++| `/auth/discord/callback` | Public | Finalises OAuth and redirects |
++
++### Message Editor Pipeline
++
++The message creator supports two modes selected by a tab:
++
++- **Basic**: Quill editor → raw HTML fragment.
++- **Advanced**: Hand-written HTML + CSS → inlined via `juice` → preview via `PreviewMessage`.
++
++Both paths pass output through `sanitizeHtml`, which uses a `<template>` element to parse and walk the DOM, blocking dangerous tags (`script`, `iframe`, `form`, etc.), stripping `on*` event attributes, sanitising `style` values, and rejecting unsafe URL schemes. The inlined HTML is saved to both the legacy config endpoint and, if a v2 session exists, to MongoDB via `/api/v2/templates`.
++
++### Analytics
++
++The `Analytics` view merges two data sources: v2 analytics fetched from `/analytics/v2/me` (transformed into a synthetic `AnalyticalCampaign` object for reuse by `AnalyticsGraphCard`) and the legacy campaign system (`/analytics/campaigns`). Charts are rendered by `vue-chartjs` wrapping Chart.js, with custom daily-bucketing logic applied client-side.
++
++### Constitution Renderer
++
++The constitution page is a self-contained rendering pipeline:
++
++1. `constitutionSource.ts` fetches from a configured Google Doc via the backend, falling back to the bundled `constitution.md`.
++2. `constitutionRenderer.ts` parses the markdown line-by-line, extracting `:::law`, `:::lore`, and `:::amendment` container blocks into a typed `ConstitutionBlock[]` array.
++3. A table of contents is built by scanning headings outside containers; slugs are deduplicated with a counter map.
++4. The view renders blocks using three specialised components (`LawBlock`, `LoreBox`, `AmendmentNote`) and plain `v-html` for prose. An `IntersectionObserver` drives scroll-spy ToC highlighting. Full-text search operates over a pre-built index of section text extracted at render time.
++----- APPEND BLOCK END -----
+
+# 2026-06-03 19:07:28.233999
++/status
+
+# 2026-06-03 19:15:58.826438
++y
+
+# 2026-06-03 19:16:02.935328
++d
+
+# 2026-06-03 19:16:09.097428
++/add server
+
+# 2026-06-03 19:16:16.735463
++/add bar3-client
+
+# 2026-06-03 19:16:37.347777
++can you tell me first 10 lines of server\api\index.ts
+
+# 2026-06-03 19:36:10.729841
++/add server
+
+# 2026-06-03 19:37:28.538885
++List every file currently available in your context.
++Do not use the repo map.
++Only list files whose contents you can actually read right now.
