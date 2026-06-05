@@ -57,5 +57,9 @@
       "./public/**/*",
       "./package.json"
     ]
+  },
+  "devDependencies": {
+    "@types/cookie": "^0.6.0",
+    "@types/ws": "^8.18.1"
   }
 }

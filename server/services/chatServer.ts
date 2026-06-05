@@ -3,6 +3,7 @@
  */
 import * as http from 'http';
 import * as ws from 'ws';
+import { SessionData } from 'express-session';
 import { SessionStore } from '../interfaces/chatServer';
 import mongoose from 'mongoose';
 import cookie from 'cookie';
@@ -92,7 +93,7 @@ function parseSessionData(
   req: http.IncomingMessage,
   store: SessionStore,
   secret: string
-): Promise<Record<string, unknown> | null> {
+): Promise<SessionData | null> {
   return new Promise((resolve) => {
     const cookies = cookie.parse(req.headers.cookie || '');
     const rawSid = cookies['connect.sid'];
@@ -106,7 +107,7 @@ function parseSessionData(
 
     store.get(unsigned, (err, session) => {
       if (err || !session) return resolve(null);
-      resolve(session as Record<string, unknown>);
+      resolve(session);
     });
   });
 }
