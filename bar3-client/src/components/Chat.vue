@@ -4,7 +4,7 @@
       <div class="chat-header">
         <div>
           <h2>Alliance Chat</h2>
-          <p class="chat-subtitle">Real-time member chat for registered nations in the tracked alliance.</p>
+          <p class="chat-subtitle">provided by TRF or something</p>
         </div>
         <div class="connection-pill" :class="connectionClass">
           {{ connectionLabel }}
