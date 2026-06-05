@@ -3,10 +3,14 @@
  */
 import * as http from 'http';
 import * as ws from 'ws';
+import { SessionData } from 'express-session';
 import { SessionStore } from '../interfaces/chatServer';
 import mongoose from 'mongoose';
+import superagent from 'superagent';
 import cookie from 'cookie';
+import signature from 'cookie-signature';
 import { ChatMessage } from '../interfaces/schemas/ChatMessageSchema';
+import { PnwNativeAccount } from '../interfaces/schemas/PnwNativeAccountSchema';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,6 +36,29 @@ const MAX_MSG_LEN = 500;
 const RATE_WINDOW_MS = 1000;
 const RATE_MAX = 2;
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+const NATION_ALLIANCE_CACHE_MS = 5 * 60 * 1000;
+
+type RegistrationDoc = {
+  nation_id?: number | string;
+  discord_username?: string;
+};
+
+type RegisteredNation = {
+  nationId: number;
+  username: string;
+};
+
+type NationAllianceInfo = {
+  allianceId: number | null;
+  nationName?: string;
+};
+
+type NationAllianceCacheEntry = {
+  expiresAt: number;
+  info: NationAllianceInfo | null;
+};
+
+const nationAllianceCache = new Map<number, NationAllianceCacheEntry>();
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -61,52 +88,188 @@ function isImageContent(text: string): boolean {
   );
 }
 
-async function resolveNationName(discordUserId: string): Promise<string> {
-  if (!discordUserId) return 'Guest';
+function parsePositiveInteger(value: unknown): number | null {
+  const parsed = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && value.trim()
+      ? Number(value)
+      : NaN;
+  if (!Number.isFinite(parsed)) return null;
+  const normalized = Math.trunc(parsed);
+  return normalized > 0 ? normalized : null;
+}
+
+function getTrackedAllianceId(): number | null {
+  return parsePositiveInteger(process.env.COUNTER_TRACKED_ALLIANCE_ID);
+}
+
+function getPnwGraphqlApiKey(): string {
+  return (process.env.PNW_API_KEY || process.env.PW_SCAN_API_KEY || '').trim();
+}
+
+function isChatUpgradePath(req: http.IncomingMessage): boolean {
   try {
-    const db = mongoose.connection.useDb('TRF', { useCache: true });
-    const col = db.collection('registrations');
-
-    let doc: Record<string, unknown> | null = null;
-
-    if (discordUserId.startsWith('pnw:')) {
-      const nationId = Number(discordUserId.slice(4));
-      if (Number.isFinite(nationId) && nationId > 0) {
-        doc = await col.findOne({ nation_id: nationId });
-      }
-    } else {
-      doc = await col.findOne({ discord_id: discordUserId });
-    }
-
-    if (doc?.discord_username && typeof doc.discord_username === 'string') {
-      return doc.discord_username;
-    }
-    if (doc?.nation_id) return `Nation#${doc.nation_id}`;
+    return new URL(req.url || '/', 'http://localhost').pathname === '/api/chat/ws';
   } catch {
-    // degrade gracefully
+    return false;
   }
-  return 'Guest';
+}
+
+function writeUpgradeError(socket: import('net').Socket, status: number, message: string): void {
+  socket.write(`HTTP/1.1 ${status} ${message}\r\n\r\n`);
+  socket.destroy();
+}
+
+function getSignedSessionId(rawSid: string, secret: string): string | null {
+  if (!rawSid.startsWith('s:')) return null;
+
+  const unsigned = signature.unsign(rawSid.slice(2), secret);
+  return unsigned === false || !unsigned ? null : unsigned;
+}
+
+async function resolveRegisteredNation(session: SessionData): Promise<RegisteredNation | null> {
+  const nativeNationId = parsePositiveInteger(session.pnwNativeNationId);
+  if (session.pnwNativeAuthenticated === true && nativeNationId) {
+    const account = await PnwNativeAccount.findOne({ nationId: nativeNationId })
+      .select({ username: 1, nationId: 1 })
+      .lean()
+      .exec();
+    if (!account) return null;
+    return {
+      nationId: nativeNationId,
+      username: typeof account.username === 'string' && account.username.trim()
+        ? account.username
+        : session.pnwNativeUsername || `Nation#${nativeNationId}`,
+    };
+  }
+
+  const discordUserId = typeof session.discordUserId === 'string' ? session.discordUserId.trim() : '';
+  const nativeSessionMatch = /^pnw:(\d+)$/.exec(discordUserId);
+  if (session.pnwNativeAuthenticated === true && nativeSessionMatch?.[1]) {
+    const nationId = parsePositiveInteger(nativeSessionMatch[1]);
+    if (!nationId) return null;
+    const account = await PnwNativeAccount.findOne({ nationId })
+      .select({ username: 1, nationId: 1 })
+      .lean()
+      .exec();
+    if (!account) return null;
+    return {
+      nationId,
+      username: typeof account.username === 'string' && account.username.trim()
+        ? account.username
+        : `Nation#${nationId}`,
+    };
+  }
+
+  if (!discordUserId) return null;
+
+  const db = mongoose.connection.useDb('TRF', { useCache: true });
+  const registration = await db.collection<RegistrationDoc>('registrations').findOne(
+    { discord_id: discordUserId },
+    { projection: { _id: 0, nation_id: 1, discord_username: 1 } }
+  );
+  const nationId = parsePositiveInteger(registration?.nation_id);
+  if (!registration || !nationId) return null;
+
+  return {
+    nationId,
+    username: registration.discord_username || session.discordUsername || `Nation#${nationId}`,
+  };
+}
+
+async function fetchNationAllianceInfo(nationId: number): Promise<NationAllianceInfo | null> {
+  const now = Date.now();
+  const cached = nationAllianceCache.get(nationId);
+  if (cached && cached.expiresAt > now) return cached.info;
+
+  const apiKey = getPnwGraphqlApiKey();
+  if (!apiKey) {
+    nationAllianceCache.set(nationId, { expiresAt: now + NATION_ALLIANCE_CACHE_MS, info: null });
+    return null;
+  }
+
+  const endpoint = (process.env.PW_GRAPHQL_URL || 'https://api.politicsandwar.com/graphql').trim();
+  const query = `
+    query NationAlliance($nationId: Int!) {
+      nations(id: [$nationId], first: 1, page: 1) {
+        data {
+          id
+          nation_name
+          alliance_id
+        }
+      }
+    }
+  `;
+
+  const authModes: Array<(req: superagent.SuperAgentRequest) => superagent.SuperAgentRequest> = [
+    (req) => req.query({ api_key: apiKey }),
+    (req) => req.set('Authorization', `Bearer ${apiKey}`),
+    (req) => req.set('X-Api-Key', apiKey),
+  ];
+
+  for (const applyAuth of authModes) {
+    const response = await applyAuth(superagent.post(endpoint))
+      .accept('json')
+      .send({ query, variables: { nationId } })
+      .ok(() => true)
+      .timeout({ response: 4000, deadline: 6000 })
+      .catch(() => undefined);
+
+    const body = response?.body as Record<string, unknown> | undefined;
+    const data = body?.data as Record<string, unknown> | undefined;
+    const nationsContainer = data?.nations as Record<string, unknown> | undefined;
+    const nations = nationsContainer?.data as Array<Record<string, unknown>> | undefined;
+    const nation = Array.isArray(nations) ? nations[0] : undefined;
+    const resolvedNationId = parsePositiveInteger(nation?.id);
+    if (!nation || resolvedNationId !== nationId) continue;
+
+    const info: NationAllianceInfo = {
+      allianceId: parsePositiveInteger(nation.alliance_id),
+      nationName: typeof nation.nation_name === 'string' ? nation.nation_name : undefined,
+    };
+    nationAllianceCache.set(nationId, { expiresAt: now + NATION_ALLIANCE_CACHE_MS, info });
+    return info;
+  }
+
+  nationAllianceCache.set(nationId, { expiresAt: now + NATION_ALLIANCE_CACHE_MS, info: null });
+  return null;
+}
+
+async function resolveChatAccess(session: SessionData | null): Promise<RegisteredNation | null> {
+  if (!session) return null;
+  if (session.discordAuthenticated !== true && session.pnwNativeAuthenticated !== true) return null;
+
+  const trackedAllianceId = getTrackedAllianceId();
+  if (!trackedAllianceId) return null;
+
+  const registeredNation = await resolveRegisteredNation(session);
+  if (!registeredNation) return null;
+
+  const allianceInfo = await fetchNationAllianceInfo(registeredNation.nationId);
+  if (allianceInfo?.allianceId !== trackedAllianceId) return null;
+
+  return {
+    ...registeredNation,
+    username: allianceInfo.nationName || registeredNation.username,
+  };
 }
 
 function parseSessionData(
   req: http.IncomingMessage,
   store: SessionStore,
   secret: string
-): Promise<Record<string, unknown> | null> {
+): Promise<SessionData | null> {
   return new Promise((resolve) => {
     const cookies = cookie.parse(req.headers.cookie || '');
     const rawSid = cookies['connect.sid'];
     if (!rawSid) return resolve(null);
 
-    const unsigned = rawSid.startsWith('s:')
-      ? rawSid.slice(2).split('.')[0]
-      : rawSid.split('.')[0];
+    const sid = getSignedSessionId(rawSid, secret);
+    if (!sid) return resolve(null);
 
-    if (!unsigned) return resolve(null);
-
-    store.get(unsigned, (err, session) => {
+    store.get(sid, (err, session) => {
       if (err || !session) return resolve(null);
-      resolve(session as Record<string, unknown>);
+      resolve(session);
     });
   });
 }
@@ -121,30 +284,28 @@ export function attachChatServer(
   const chatWss = new ws.WebSocketServer({ noServer: true });
 
   httpServer.on('upgrade', async (req, socket, head) => {
-    if (req.url !== '/api/chat/ws') return;
+    if (!isChatUpgradePath(req)) return;
 
     const session = await parseSessionData(req, store, sessionSecret);
+    const access = await resolveChatAccess(session);
 
-    const authenticated = session?.discordAuthenticated === true;
-    const hasMemberRole =
-      (session?.discordRoles as Record<string, unknown> | undefined)?.member_guild === true;
+    if (!session) {
+      writeUpgradeError(socket, 401, 'Unauthorized');
+      return;
+    }
 
-    if (!authenticated || !hasMemberRole) {
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-      socket.destroy();
+    if (!access) {
+      writeUpgradeError(socket, 403, 'Forbidden');
       return;
     }
 
     if (clients.size >= MAX_CLIENTS) {
-      socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
-      socket.destroy();
+      writeUpgradeError(socket, 503, 'Service Unavailable');
       return;
     }
 
     chatWss.handleUpgrade(req, socket, head, async (client) => {
-      const discordUserId =
-        typeof session?.discordUserId === 'string' ? session.discordUserId : '';
-      const username = await resolveNationName(discordUserId);
+      const username = access.username;
 
       const info: ClientInfo = {
         username,

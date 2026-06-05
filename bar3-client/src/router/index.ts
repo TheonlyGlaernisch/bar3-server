@@ -12,6 +12,7 @@ import DiscordCallback from '@/views/DiscordCallback.vue';
 import BotPanel from '@/views/BotPanel.vue';
 import Nation from '@/views/Nation.vue';
 import Alliance from '@/views/Alliance.vue';
+import Chat from '@/components/Chat.vue';
 import { discordAuth } from '@/utilities/discordAuth';
 import { normalizeReturnTo } from '@/utilities/serverUrls';
 
@@ -27,6 +28,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/account', name: 'Account', component: AccountManager, meta: { requiresClientAccess: true } },
   { path: '/nation', name: 'Nation', component: Nation, meta: { requiresMemberAccess: true } },
   { path: '/alliance', name: 'Alliance', component: Alliance, meta: { requiresMemberAccess: true } },
+  { path: '/chat', name: 'Chat', component: Chat, meta: { requiresMemberAccess: true } },
   { path: '/about', name: 'About', component: About },
   { path: '/help', name: 'Help', component: Help },
   { path: '/constitution', name: 'Constitution', component: ConstitutionView, meta: { requiresMemberAccess: true } },
