@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { join } from 'path';
 import { existsSync, readFileSync } from 'fs';
 import session from 'express-session';
+import * as http from 'http';
 import rateLimit from 'express-rate-limit';
 import accountRoutes from './api/AccountRoutes';
 import { mountLegacyUiAndApi } from './api';
@@ -18,6 +19,7 @@ import discordLoginRouter from './api/routers/discordLogin';
 import { requireDiscordAuth } from './api/middleware/discordAuth';
 import { isTrustedOrigin } from './api/middleware/sameOrigin';
 import { startAutomationLoop } from './services/v2AutomationRunner';
+import { attachChatServer } from './services/chatServer';
 import AccountService from './services/accountService';
 import superagent from 'superagent';
 // Extend express-session SessionData with Discord fields
@@ -56,22 +58,23 @@ if (!sessionSecret || sessionSecret === 'bar3-change-me-in-production') {
     'Set a strong random secret in your .env file before deploying to production.'
   );
 }
-app.use(
-  session({
-    secret: sessionSecret || 'bar3-change-me-in-production',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      // Use secure cookies in production (requires HTTPS)
-      secure: process.env.NODE_ENV === 'production',
-      // 'none' is required for cross-origin requests (client on a different
-      // domain) to send the session cookie.  Must be paired with secure:true.
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    },
-  })
-);
+const sessionStore = new session.MemoryStore();
+const sessionMiddleware = session({
+  store: sessionStore,
+  secret: sessionSecret || 'bar3-change-me-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    // Use secure cookies in production (requires HTTPS)
+    secure: process.env.NODE_ENV === 'production',
+    // 'none' is required for cross-origin requests (client on a different
+    // domain) to send the session cookie.  Must be paired with secure:true.
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+  },
+});
+app.use(sessionMiddleware);
 
 // Middleware
 app.use(express.json());
@@ -447,12 +450,6 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 
 const PORT = process.env.PORT || 3000;
 
-import * as http from 'http';
-import { attachChatServer } from './services/chatServer';
-
-const sessionMiddleware = session({ /* same options as before */ });
-app.use(sessionMiddleware);
-
 // expose the store so chatServer can share it
 const httpServer = http.createServer(app);
 
@@ -461,7 +458,7 @@ httpServer.listen(PORT, () => {
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
-attachChatServer(httpServer, sessionMiddleware.store, sessionSecret || 'bar3-change-me-in-production');
+attachChatServer(httpServer, sessionStore, sessionSecret || 'bar3-change-me-in-production');
 startAutomationLoop();
 
 

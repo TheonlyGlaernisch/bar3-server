@@ -24,6 +24,3 @@ chatMessageSchema.index(
 );
 
 export const ChatMessage = mongoose.model<IChatMessage>('ChatMessage', chatMessageSchema);
-
-// Export the interface
-export { IChatMessage };

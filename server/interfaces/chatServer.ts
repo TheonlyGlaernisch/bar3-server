@@ -1,6 +1,8 @@
+import { SessionData } from 'express-session';
+
 export interface SessionStore {
   get(
     sid: string,
-    callback: (err: unknown, session: Record<string, unknown> | null) => void
+    callback: (err: unknown, session?: SessionData | null) => void
   ): void;
 }
