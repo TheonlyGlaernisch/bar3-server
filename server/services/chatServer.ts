@@ -37,6 +37,8 @@ const RATE_WINDOW_MS = 1000;
 const RATE_MAX = 2;
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 const NATION_ALLIANCE_CACHE_MS = 5 * 60 * 1000;
+const CHAT_UNAUTHENTICATED_CLOSE_CODE = 4001;
+const CHAT_FORBIDDEN_CLOSE_CODE = 4003;
 
 type RegistrationDoc = {
   nation_id?: number | string;
@@ -118,6 +120,19 @@ function isChatUpgradePath(req: http.IncomingMessage): boolean {
 function writeUpgradeError(socket: import('net').Socket, status: number, message: string): void {
   socket.write(`HTTP/1.1 ${status} ${message}\r\n\r\n`);
   socket.destroy();
+}
+
+function closeRejectedWebSocket(
+  wss: ws.WebSocketServer,
+  req: http.IncomingMessage,
+  socket: import('net').Socket,
+  head: Buffer,
+  code: number,
+  reason: string
+): void {
+  wss.handleUpgrade(req, socket, head, (client) => {
+    client.close(code, reason);
+  });
 }
 
 function getSignedSessionId(rawSid: string, secret: string): string | null {
@@ -290,12 +305,26 @@ export function attachChatServer(
     const access = await resolveChatAccess(session);
 
     if (!session) {
-      writeUpgradeError(socket, 401, 'Unauthorized');
+      closeRejectedWebSocket(
+        chatWss,
+        req,
+        socket,
+        head,
+        CHAT_UNAUTHENTICATED_CLOSE_CODE,
+        'Unauthorized'
+      );
       return;
     }
 
     if (!access) {
-      writeUpgradeError(socket, 403, 'Forbidden');
+      closeRejectedWebSocket(
+        chatWss,
+        req,
+        socket,
+        head,
+        CHAT_FORBIDDEN_CLOSE_CODE,
+        'Forbidden'
+      );
       return;
     }
 
