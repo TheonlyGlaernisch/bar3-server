@@ -214,7 +214,7 @@ export default defineComponent({
       connectWebSocket();
       authCheckInterval = window.setInterval(() => {
         if (!ws && isAuthenticated.value) connectWebSocket();
-      }, 5000);
+      }, 300000);
     });
 
     onUnmounted(() => {
