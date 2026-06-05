@@ -88,9 +88,13 @@ export default defineComponent({
     const statusMessage = ref('Connecting to chat...');
     const statusType = ref<'info' | 'error'>('info');
 
+    const RECONNECT_DELAY_MS = 5 * 1000;
+    const REJECTED_RECONNECT_DELAY_MS = 5 * 60 * 1000;
+    const REJECTED_CLOSE_CODES = new Set([4001, 4003]);
+
     let ws: WebSocket | null = null;
-    let reconnectTimer: number | undefined;
-    let authCheckInterval: number | undefined;
+    let reconnectTimer: number | null = null;
+    let lastCloseWasRejected = false;
 
     const isAuthenticated = computed(() => store.getters.isDiscordAuthed && store.getters.hasMemberRole);
     const canSend = computed(() => connected.value && isAuthenticated.value);
@@ -118,10 +122,23 @@ export default defineComponent({
     };
 
     const clearReconnectTimer = () => {
-      if (reconnectTimer !== undefined) {
+      if (reconnectTimer !== null) {
         window.clearTimeout(reconnectTimer);
-        reconnectTimer = undefined;
+        reconnectTimer = null;
       }
+    };
+
+    const scheduleReconnect = () => {
+      clearReconnectTimer();
+
+      if (!isAuthenticated.value) return;
+
+      const delay = lastCloseWasRejected ? REJECTED_RECONNECT_DELAY_MS : RECONNECT_DELAY_MS;
+      reconnectTimer = window.setTimeout(() => {
+        if (!ws || ws.readyState === WebSocket.CLOSED) {
+          connectWebSocket();
+        }
+      }, delay);
     };
 
     const closeSocket = () => {
@@ -178,6 +195,7 @@ export default defineComponent({
       ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
+        lastCloseWasRejected = false;
         connected.value = true;
         connecting.value = false;
         setStatus('', 'info');
@@ -185,14 +203,21 @@ export default defineComponent({
 
       ws.onmessage = handleWebSocketMessage;
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
+        if (REJECTED_CLOSE_CODES.has(event.code)) {
+          lastCloseWasRejected = true;
+        }
+
         ws = null;
         connected.value = false;
         connecting.value = false;
         setStatus(
-          'Chat is unavailable. Make sure your Discord registration or nation login is tied to a nation in the tracked alliance.',
+          lastCloseWasRejected
+            ? 'Chat access was rejected. Make sure your registered nation is in the tracked alliance; retrying in 5 minutes.'
+            : 'Chat disconnected. Reconnecting in 5 seconds...',
           'error'
         );
+        scheduleReconnect();
       };
 
       ws.onerror = () => {
@@ -212,13 +237,9 @@ export default defineComponent({
 
     onMounted(() => {
       connectWebSocket();
-      authCheckInterval = window.setInterval(() => {
-        if (!ws && isAuthenticated.value) connectWebSocket();
-      }, 5000);
     });
 
     onUnmounted(() => {
-      if (authCheckInterval !== undefined) window.clearInterval(authCheckInterval);
       closeSocket();
     });
 
