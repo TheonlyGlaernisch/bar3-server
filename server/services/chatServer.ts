@@ -250,18 +250,22 @@ async function fetchNationAllianceInfo(nationId: number): Promise<NationAlliance
   return null;
 }
 
-async function resolveChatAccess(session: SessionData | null): Promise<RegisteredNation | null> {
+export async function resolveChatRegistration(session: SessionData | null): Promise<RegisteredNation | null> {
   if (!session) return null;
   if (session.discordAuthenticated !== true && session.pnwNativeAuthenticated !== true) return null;
+  return resolveRegisteredNation(session);
+}
 
-  const trackedAllianceId = getTrackedAllianceId();
-  if (!trackedAllianceId) return null;
-
-  const registeredNation = await resolveRegisteredNation(session);
+async function resolveChatAccess(session: SessionData | null): Promise<RegisteredNation | null> {
+  const registeredNation = await resolveChatRegistration(session);
   if (!registeredNation) return null;
 
+  const trackedAllianceId = getTrackedAllianceId();
+  if (!trackedAllianceId) return registeredNation;
+
   const allianceInfo = await fetchNationAllianceInfo(registeredNation.nationId);
-  if (allianceInfo?.allianceId !== trackedAllianceId) return null;
+  if (!allianceInfo) return registeredNation;
+  if (allianceInfo.allianceId !== trackedAllianceId) return null;
 
   return {
     ...registeredNation,

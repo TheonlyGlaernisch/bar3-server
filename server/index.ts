@@ -19,7 +19,7 @@ import discordLoginRouter from './api/routers/discordLogin';
 import { requireDiscordAuth } from './api/middleware/discordAuth';
 import { isTrustedOrigin } from './api/middleware/sameOrigin';
 import { startAutomationLoop } from './services/v2AutomationRunner';
-import { attachChatServer } from './services/chatServer';
+import { attachChatServer, resolveChatRegistration } from './services/chatServer';
 import AccountService from './services/accountService';
 import superagent from 'superagent';
 // Extend express-session SessionData with Discord fields
@@ -341,6 +341,18 @@ app.post('/api/bot/send', botRouteLimiter, botWriteRouteLimiter, requireDiscordA
   proxyBotApi(req, res, 'post', '/api/bot/send'));
 app.post('/api/bot/config', botRouteLimiter, botWriteRouteLimiter, requireDiscordAuth, requireTrustedOriginForUnsafeMethod, requireDiscordAdmin, (_req: Request, res: Response) =>
   res.status(204).end());
+app.get('/api/chat/status', rateLimit({
+  windowMs: BOT_ROUTE_WINDOW_MS,
+  limit: BOT_ROUTE_MAX_REQUESTS,
+  standardHeaders: true,
+  legacyHeaders: false,
+}), requireDiscordAuth, async (req: Request, res: Response) => {
+  const registeredNation = await resolveChatRegistration(req.session ?? null);
+  res.status(200).json({
+    authenticated: true,
+    registered: registeredNation !== null,
+  });
+});
 app.get('/api/member/nation', rateLimit({
   windowMs: BOT_ROUTE_WINDOW_MS,
   limit: BOT_ROUTE_MAX_REQUESTS,

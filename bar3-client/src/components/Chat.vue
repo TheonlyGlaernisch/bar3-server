@@ -60,6 +60,7 @@
 <script lang="ts">
 import { computed, defineComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useStore } from 'vuex';
+import { getChatRegistrationStatus } from '@/utilities/chatApi';
 
 type ChatPayload = {
   type: 'message' | 'system' | 'history';
@@ -89,14 +90,14 @@ export default defineComponent({
     const statusType = ref<'info' | 'error'>('info');
 
     const RECONNECT_DELAY_MS = 5 * 1000;
-    const REJECTED_RECONNECT_DELAY_MS = 5 * 60 * 1000;
     const REJECTED_CLOSE_CODES = new Set([4001, 4003]);
 
     let ws: WebSocket | null = null;
     let reconnectTimer: number | null = null;
     let lastCloseWasRejected = false;
+    let registrationCheckInFlight: Promise<boolean> | null = null;
 
-    const isAuthenticated = computed(() => store.getters.isDiscordAuthed && store.getters.hasMemberRole);
+    const isAuthenticated = computed(() => store.getters.isDiscordAuthed);
     const canSend = computed(() => connected.value && isAuthenticated.value);
     const connectionLabel = computed(() => {
       if (connected.value) return 'Connected';
@@ -131,14 +132,12 @@ export default defineComponent({
     const scheduleReconnect = () => {
       clearReconnectTimer();
 
-      if (!isAuthenticated.value) return;
-
-      const delay = lastCloseWasRejected ? REJECTED_RECONNECT_DELAY_MS : RECONNECT_DELAY_MS;
+      if (!isAuthenticated.value || lastCloseWasRejected) return;
       reconnectTimer = window.setTimeout(() => {
         if (!ws || ws.readyState === WebSocket.CLOSED) {
           connectWebSocket();
         }
-      }, delay);
+      }, RECONNECT_DELAY_MS);
     };
 
     const closeSocket = () => {
@@ -153,6 +152,26 @@ export default defineComponent({
       }
       connected.value = false;
       connecting.value = false;
+    };
+
+    const verifyRegistration = async (): Promise<boolean> => {
+      if (registrationCheckInFlight) return registrationCheckInFlight;
+
+      registrationCheckInFlight = getChatRegistrationStatus()
+        .then((status) => {
+          if (!status.authenticated || !status.registered) {
+            closeSocket();
+            setStatus('Register or sign in with a registered Politics & War nation to use chat.', 'error');
+            return false;
+          }
+          return true;
+        })
+        .catch(() => true)
+        .finally(() => {
+          registrationCheckInFlight = null;
+        });
+
+      return registrationCheckInFlight;
     };
 
     const handleWebSocketMessage = (event: MessageEvent) => {
@@ -188,43 +207,49 @@ export default defineComponent({
 
       clearReconnectTimer();
       connecting.value = true;
-      setStatus('Connecting to chat...', 'info');
+      setStatus('Checking chat registration...', 'info');
 
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/api/chat/ws`;
-      ws = new WebSocket(wsUrl);
+      void verifyRegistration().then((registered) => {
+        if (!registered || ws || connected.value || !connecting.value) return;
 
-      ws.onopen = () => {
-        lastCloseWasRejected = false;
-        connected.value = true;
-        connecting.value = false;
-        setStatus('', 'info');
-      };
+        setStatus('Connecting to chat...', 'info');
 
-      ws.onmessage = handleWebSocketMessage;
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/api/chat/ws`;
+        ws = new WebSocket(wsUrl);
 
-      ws.onclose = (event) => {
-        if (REJECTED_CLOSE_CODES.has(event.code)) {
-          lastCloseWasRejected = true;
-        }
+        ws.onopen = () => {
+          lastCloseWasRejected = false;
+          connected.value = true;
+          connecting.value = false;
+          setStatus('', 'info');
+        };
 
-        ws = null;
-        connected.value = false;
-        connecting.value = false;
-        setStatus(
-          lastCloseWasRejected
-            ? 'Chat access was rejected. Make sure your registered nation is in the tracked alliance; retrying in 5 minutes.'
-            : 'Chat disconnected. Reconnecting in 5 seconds...',
-          'error'
-        );
-        scheduleReconnect();
-      };
+        ws.onmessage = handleWebSocketMessage;
 
-      ws.onerror = () => {
-        connected.value = false;
-        connecting.value = false;
-        setStatus('Unable to connect to chat right now.', 'error');
-      };
+        ws.onclose = (event) => {
+          if (REJECTED_CLOSE_CODES.has(event.code)) {
+            lastCloseWasRejected = true;
+          }
+
+          ws = null;
+          connected.value = false;
+          connecting.value = false;
+          setStatus(
+            lastCloseWasRejected
+              ? 'Chat access was rejected. Register or sign in with a registered nation in the tracked alliance.'
+              : 'Chat disconnected. Reconnecting in 5 seconds...',
+            'error'
+          );
+          scheduleReconnect();
+        };
+
+        ws.onerror = () => {
+          connected.value = false;
+          connecting.value = false;
+          setStatus('Unable to connect to chat right now.', 'error');
+        };
+      });
     };
 
     const sendMessage = () => {
