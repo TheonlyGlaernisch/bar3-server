@@ -1,259 +1,373 @@
 <template>
-  <div class="chat-container">
-    <div class="chat-header">
-      <h2>Real-time Chat</h2>
-      <div class="user-info">
-        <span v-if="username">{{ username }}</span>
-        <span v-else>Loading...</span>
-      </div>
-    </div>
-
-    <div class="chat-messages" ref="messagesContainer">
-      <div 
-        v-for="message in messages" 
-        :key="message.timestamp"
-        :class="['message', message.type]"
-      >
-        <div class="message-header" v-if="message.type === 'message'">
-          <span class="username">{{ message.username }}</span>
-          <span class="timestamp">{{ formatTimestamp(message.timestamp) }}</span>
+  <div class="chat-page">
+    <section class="chat-container">
+      <div class="chat-header">
+        <div>
+          <h2>Alliance Chat</h2>
+          <p class="chat-subtitle">Real-time member chat for registered nations in the tracked alliance.</p>
         </div>
-        <div class="message-content" :class="{ system: message.type === 'system' }">
-          {{ message.text }}
+        <div class="connection-pill" :class="connectionClass">
+          {{ connectionLabel }}
         </div>
       </div>
-    </div>
 
-    <div class="chat-input-container">
-      <div class="input-wrapper">
+      <div v-if="statusMessage" class="chat-status" :class="statusType">
+        {{ statusMessage }}
+      </div>
+
+      <div class="chat-messages" ref="messagesContainer" aria-live="polite">
+        <div v-if="messages.length === 0" class="empty-state">
+          No messages yet. Start the conversation below.
+        </div>
+        <div
+          v-for="message in messages"
+          :key="`${message.timestamp}-${message.username || message.type}-${message.text}`"
+          :class="['message', message.type]"
+        >
+          <div class="message-header" v-if="message.type === 'message'">
+            <span class="username">{{ message.username }}</span>
+            <span class="timestamp">{{ formatTimestamp(message.timestamp) }}</span>
+          </div>
+          <div class="message-content" :class="{ system: message.type === 'system' }">
+            {{ message.text }}
+          </div>
+        </div>
+      </div>
+
+      <form class="chat-input-container" @submit.prevent="sendMessage">
+        <label class="sr-only" for="chat-message-input">Chat message</label>
         <input
+          id="chat-message-input"
           v-model="newMessage"
-          @keypress.enter="sendMessage"
           placeholder="Type your message..."
-          :disabled="!connected || !isAuthenticated"
+          :disabled="!canSend"
+          maxlength="500"
           class="message-input"
+          autocomplete="off"
         />
-        <button 
-          @click="sendMessage" 
-          :disabled="!connected || !isAuthenticated || !newMessage.trim()"
+        <button
+          type="submit"
+          :disabled="!canSend || !newMessage.trim()"
           class="send-button"
         >
           Send
         </button>
-      </div>
-    </div>
+      </form>
+    </section>
   </div>
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, onMounted, onUnmounted, nextTick } from 'vue';
+import { computed, defineComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useStore } from 'vuex';
 
+type ChatPayload = {
+  type: 'message' | 'system' | 'history';
+  username?: string;
+  text?: string;
+  timestamp?: number;
+  messages?: ChatMessage[];
+};
+
+type ChatMessage = {
+  type: 'message' | 'system';
+  username?: string;
+  text: string;
+  timestamp: number;
+};
+
 export default defineComponent({
-  name: 'Chat',
+  name: 'AllianceChat',
   setup() {
     const store = useStore();
     const messagesContainer = ref<HTMLElement | null>(null);
+    const messages = ref<ChatMessage[]>([]);
     const newMessage = ref('');
-    const isConnected = ref(false);
-    const username = ref('');
     const connected = ref(false);
-    const isAuthenticated = ref(false);
+    const connecting = ref(false);
+    const statusMessage = ref('Connecting to chat...');
+    const statusType = ref<'info' | 'error'>('info');
 
     let ws: WebSocket | null = null;
-    const messages = ref<any[]>([]);
-    const chatHistory = ref<any[]>([]);
+    let reconnectTimer: number | undefined;
+    let authCheckInterval: number | undefined;
 
-    // Format timestamp as readable date
-    const formatTimestamp = (timestamp: number) => {
-      const date = new Date(timestamp);
-      return date.toLocaleTimeString();
-    };
+    const isAuthenticated = computed(() => store.getters.isDiscordAuthed && store.getters.hasMemberRole);
+    const canSend = computed(() => connected.value && isAuthenticated.value);
+    const connectionLabel = computed(() => {
+      if (connected.value) return 'Connected';
+      if (connecting.value) return 'Connecting';
+      return 'Disconnected';
+    });
+    const connectionClass = computed(() => ({
+      connected: connected.value,
+      connecting: connecting.value,
+      disconnected: !connected.value && !connecting.value,
+    }));
 
-    // Handle incoming messages from WebSocket
-    const handleWebSocketMessage = (event: MessageEvent) => {
-      const data = JSON.parse(event.data);
-      
-      if (data.type === 'history') {
-        // Load initial history
-        chatHistory.value = [...data.messages];
-        messages.value = [...data.messages];
-        nextTick(() => {
-          scrollToBottom();
-        });
-      } else if (data.type === 'history_more') {
-        // Load more messages
-        messages.value = [...data.messages, ...messages.value];
-        nextTick(() => {
-          scrollToBottom();
-        });
-      } else {
-        // Regular message or system event
-        messages.value.push(data);
-        nextTick(() => {
-          scrollToBottom();
-        });
-      }
-    };
+    const formatTimestamp = (timestamp: number) => new Date(timestamp).toLocaleTimeString();
 
     const scrollToBottom = () => {
-      if (messagesContainer.value) {
-        messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+      if (!messagesContainer.value) return;
+      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+    };
+
+    const setStatus = (message: string, type: 'info' | 'error' = 'info') => {
+      statusMessage.value = message;
+      statusType.value = type;
+    };
+
+    const clearReconnectTimer = () => {
+      if (reconnectTimer !== undefined) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = undefined;
       }
     };
 
-    const connectWebSocket = () => {
-      if (!store.getters.isDiscordAuthed || !store.getters.hasMemberRole) {
+    const closeSocket = () => {
+      clearReconnectTimer();
+      if (ws) {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.close();
+        ws = null;
+      }
+      connected.value = false;
+      connecting.value = false;
+    };
+
+    const handleWebSocketMessage = (event: MessageEvent) => {
+      let data: ChatPayload;
+      try {
+        data = JSON.parse(event.data) as ChatPayload;
+      } catch {
         return;
       }
 
+      if (data.type === 'history' && Array.isArray(data.messages)) {
+        messages.value = data.messages;
+      } else if (data.type === 'message' || data.type === 'system') {
+        if (typeof data.text !== 'string' || typeof data.timestamp !== 'number') return;
+        messages.value.push({
+          type: data.type,
+          username: data.username,
+          text: data.text,
+          timestamp: data.timestamp,
+        });
+      }
+
+      void nextTick().then(scrollToBottom);
+    };
+
+    const connectWebSocket = () => {
+      if (!isAuthenticated.value) {
+        closeSocket();
+        setStatus('Sign in as a registered alliance nation to use chat.', 'error');
+        return;
+      }
+      if (ws || connecting.value || connected.value) return;
+
+      clearReconnectTimer();
+      connecting.value = true;
+      setStatus('Connecting to chat...', 'info');
+
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/api/chat/ws`;
-      
-      try {
-        ws = new WebSocket(wsUrl);
-        
-        ws.onopen = () => {
-          connected.value = true;
-          console.log('Connected to chat server');
-        };
+      ws = new WebSocket(wsUrl);
 
-        ws.onmessage = (event) => {
-          handleWebSocketMessage(event);
-        };
+      ws.onopen = () => {
+        connected.value = true;
+        connecting.value = false;
+        setStatus('', 'info');
+      };
 
-        ws.onclose = () => {
-          connected.value = false;
-          console.log('Disconnected from chat server');
-        };
+      ws.onmessage = handleWebSocketMessage;
 
-        ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
-          connected.value = false;
-        };
-      } catch (error) {
-        console.error('Failed to connect to WebSocket:', error);
+      ws.onclose = () => {
+        ws = null;
         connected.value = false;
-      }
+        connecting.value = false;
+        setStatus(
+          'Chat is unavailable. Make sure your Discord registration or nation login is tied to a nation in the tracked alliance.',
+          'error'
+        );
+      };
+
+      ws.onerror = () => {
+        connected.value = false;
+        connecting.value = false;
+        setStatus('Unable to connect to chat right now.', 'error');
+      };
     };
 
     const sendMessage = () => {
-      if (!ws || !connected.value || !newMessage.value.trim()) return;
+      const text = newMessage.value.trim();
+      if (!ws || !canSend.value || !text) return;
 
-      const messageData = {
-        type: 'message',
-        text: newMessage.value.trim(),
-        timestamp: Date.now()
-      };
-
-      ws.send(JSON.stringify(messageData));
+      ws.send(JSON.stringify({ text }));
       newMessage.value = '';
     };
 
-    // Load initial chat history
-    const loadInitialHistory = () => {
-      if (!ws || !connected.value) return;
-      
-      const historyRequest = {
-        type: 'history'
-      };
-      
-      ws.send(JSON.stringify(historyRequest));
-    };
-
-    // Check authentication status
-    const checkAuthStatus = () => {
-      isAuthenticated.value = store.getters.isDiscordAuthed && store.getters.hasMemberRole;
-      if (isAuthenticated.value) {
-        connectWebSocket();
-      } else {
-        connected.value = false;
-        if (ws) {
-          ws.close();
-        }
-      }
-    };
-
-    // Watch for authentication changes
     onMounted(() => {
-      checkAuthStatus();
-      
-      // Listen to store changes
-      const authCheckInterval = setInterval(() => {
-        checkAuthStatus();
-      }, 1000);
-      
-      // Scroll to bottom when messages update
-      watch(messages, () => {
-        scrollToBottom();
-      });
+      connectWebSocket();
+      authCheckInterval = window.setInterval(() => {
+        if (!ws && isAuthenticated.value) connectWebSocket();
+      }, 5000);
     });
 
     onUnmounted(() => {
-      if (ws) {
-        ws.close();
+      if (authCheckInterval !== undefined) window.clearInterval(authCheckInterval);
+      closeSocket();
+    });
+
+    watch(isAuthenticated, (authenticated) => {
+      if (authenticated) {
+        connectWebSocket();
+      } else {
+        closeSocket();
+        setStatus('Sign in as a registered alliance nation to use chat.', 'error');
       }
+    });
+
+    watch(messages, () => {
+      void nextTick().then(scrollToBottom);
     });
 
     return {
       messages,
       newMessage,
+      canSend,
       connected,
-      isAuthenticated,
-      username,
+      connectionLabel,
+      connectionClass,
+      statusMessage,
+      statusType,
       formatTimestamp,
       sendMessage,
-      messagesContainer
+      messagesContainer,
     };
-  }
+  },
 });
 </script>
 
 <style scoped>
+.chat-page {
+  min-height: calc(100vh - 64px);
+  padding: 24px;
+  background: #202020;
+}
+
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: calc(100vh - 112px);
+  min-height: 520px;
+  max-width: 1100px;
+  margin: 0 auto;
   background-color: #2d2d2d;
-  border-radius: 8px;
+  border: 1px solid rgba(255, 107, 0, 0.24);
+  border-radius: 12px;
   overflow: hidden;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
 }
 
 .chat-header {
-  padding: 16px;
+  padding: 18px 20px;
   border-bottom: 1px solid #444;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
   background-color: #1a1a1a;
   color: white;
 }
 
-.user-info {
-  font-size: 0.9em;
-  opacity: 0.8;
+.chat-header h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.chat-subtitle {
+  margin: 4px 0 0;
+  color: #bdbdbd;
+  font-size: 0.92rem;
+}
+
+.connection-pill {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.connection-pill.connected {
+  background: rgba(46, 204, 113, 0.18);
+  color: #6ee7a2;
+}
+
+.connection-pill.connecting {
+  background: rgba(255, 193, 7, 0.18);
+  color: #ffd166;
+}
+
+.connection-pill.disconnected {
+  background: rgba(231, 76, 60, 0.18);
+  color: #ff8a80;
+}
+
+.chat-status {
+  padding: 10px 20px;
+  border-bottom: 1px solid #444;
+  font-size: 0.92rem;
+}
+
+.chat-status.info {
+  color: #e0e0e0;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.chat-status.error {
+  color: #ffd0cb;
+  background: rgba(231, 76, 60, 0.14);
 }
 
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
+.empty-state {
+  margin: auto;
+  color: #aaa;
+  text-align: center;
+}
+
 .message {
-  max-width: 70%;
+  max-width: 72%;
   padding: 12px 16px;
   border-radius: 18px;
   line-height: 1.4;
-  position: relative;
   word-wrap: break-word;
+  color: #fff;
+  background: #3a3a3a;
+}
+
+.message.message {
+  align-self: flex-start;
 }
 
 .message-header {
   display: flex;
+  gap: 12px;
   justify-content: space-between;
   margin-bottom: 4px;
   font-size: 0.85em;
@@ -262,7 +376,7 @@ export default defineComponent({
 
 .username {
   font-weight: bold;
-  color: #ff6b00;
+  color: #ff9b4a;
 }
 
 .timestamp {
@@ -271,11 +385,12 @@ export default defineComponent({
 }
 
 .message-content {
-  font-size: 1em;
+  white-space: pre-wrap;
 }
 
 .message.system {
-  background-color: #333;
+  background-color: #1f1f1f;
+  color: #cfcfcf;
   text-align: center;
   max-width: 90%;
   margin: 0 auto;
@@ -283,40 +398,43 @@ export default defineComponent({
 }
 
 .chat-input-container {
+  display: flex;
+  gap: 10px;
   padding: 16px;
   border-top: 1px solid #444;
   background-color: #1a1a1a;
 }
 
-.input-wrapper {
-  display: flex;
-  gap: 8px;
-}
-
 .message-input {
   flex: 1;
-  padding: 12px 16px;
+  min-width: 0;
+  padding: 13px 16px;
   border-radius: 24px;
-  border: none;
+  border: 1px solid #4b4b4b;
   background-color: #333;
   color: white;
-  font-size: 1em;
+  font-size: 1rem;
 }
 
 .message-input:focus {
   outline: none;
-  box-shadow: 0 0 0 2px #ff6b00;
+  border-color: #ff6b00;
+  box-shadow: 0 0 0 2px rgba(255, 107, 0, 0.22);
+}
+
+.message-input:disabled {
+  opacity: 0.65;
 }
 
 .send-button {
-  padding: 12px 24px;
+  padding: 0 24px;
   border-radius: 24px;
   border: none;
   background-color: #ff6b00;
   color: white;
   font-weight: bold;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s, opacity 0.2s;
 }
 
 .send-button:hover:not(:disabled) {
@@ -328,20 +446,44 @@ export default defineComponent({
   cursor: not-allowed;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 @media (max-width: 768px) {
+  .chat-page {
+    min-height: calc(100vh - 56px);
+    padding: 12px;
+  }
+
   .chat-container {
-    height: calc(100vh - 120px);
+    height: calc(100vh - 80px);
+    min-height: 420px;
   }
-  
-  .message {
-    max-width: 90%;
-  }
-  
-  .input-wrapper {
+
+  .chat-header {
+    align-items: flex-start;
     flex-direction: column;
   }
-  
+
+  .message {
+    max-width: 92%;
+  }
+
+  .chat-input-container {
+    flex-direction: column;
+  }
+
   .send-button {
+    min-height: 44px;
     width: 100%;
   }
 }
