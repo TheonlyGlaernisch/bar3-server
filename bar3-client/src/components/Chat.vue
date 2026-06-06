@@ -62,6 +62,7 @@
           maxlength="500"
           class="message-input"
           autocomplete="off"
+          @input="onTypingInput"
         />
         <button
           type="submit"
@@ -108,6 +109,9 @@ export default defineComponent({
     const connecting = ref(false);
     const statusMessage = ref('Connecting to chat...');
     const statusType = ref<'info' | 'error'>('info');
+    const onlineUsers = ref<{ username: string; isAdmin: boolean }[]>([]);
+    const typingUsers = ref<string[]>([]);
+    let typingTimeout: number | null = null;
 
     const RECONNECT_DELAY_MS = 5 * 1000;
     const REJECTED_CLOSE_CODES = new Set([4001, 4003]);
