@@ -12,6 +12,14 @@ import signature from 'cookie-signature';
 import { ChatMessage } from '../interfaces/schemas/ChatMessageSchema';
 import { PnwNativeAccount } from '../interfaces/schemas/PnwNativeAccountSchema';
 
+
+const ADMIN_DISCORD_IDS: ReadonlySet<string> = new Set(
+  (process.env.ADMIN_DISCORD_IDS || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean),
+);
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ClientInfo {
