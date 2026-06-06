@@ -361,6 +361,11 @@ export function attachChatServer(
     chatWss.handleUpgrade(req, socket, head, async (client) => {
       const username = access.username;
 
+      const discordUserId =
+        typeof session?.discordUserId === 'string'
+        ? session.discordUserId.trim()
+        : '';
+      
       const info: ClientInfo = {
         username,
         isAdmin: discordUserId ? ADMIN_DISCORD_IDS.has(discordUserId) : false,
