@@ -268,19 +268,30 @@ export async function resolveChatRegistration(session: SessionData | null): Prom
 
 async function resolveChatAccess(session: SessionData | null): Promise<RegisteredNation | null> {
   const registeredNation = await resolveChatRegistration(session);
-  if (!registeredNation) return null;
 
-  const trackedAllianceId = getTrackedAllianceId();
-  if (!trackedAllianceId) return registeredNation;
+  // If registered normally, use that
+  if (registeredNation) {
+    const trackedAllianceId = getTrackedAllianceId();
+    if (!trackedAllianceId) return registeredNation;
+    const allianceInfo = await fetchNationAllianceInfo(registeredNation.nationId);
+    if (!allianceInfo) return registeredNation;
+    if (allianceInfo.allianceId !== trackedAllianceId) return null;
+    return {
+      ...registeredNation,
+      username: allianceInfo.nationName || registeredNation.username,
+    };
+  }
 
-  const allianceInfo = await fetchNationAllianceInfo(registeredNation.nationId);
-  if (!allianceInfo) return registeredNation;
-  if (allianceInfo.allianceId !== trackedAllianceId) return null;
+  // Not registered — check if they are an admin; if so, grant access with their Discord username
+  const discordUserId = typeof session?.discordUserId === 'string' ? session.discordUserId.trim() : '';
+  if (discordUserId && ADMIN_DISCORD_IDS.has(discordUserId)) {
+    return {
+      nationId: 0,
+      username: session?.discordUsername || 'Admin',
+    };
+  }
 
-  return {
-    ...registeredNation,
-    username: allianceInfo.nationName || registeredNation.username,
-  };
+  return null;
 }
 
 function parseSessionData(
@@ -352,6 +363,7 @@ export function attachChatServer(
 
       const info: ClientInfo = {
         username,
+        isAdmin: discordUserId ? ADMIN_DISCORD_IDS.has(discordUserId) : false,
         joinedAt: new Date(),
         lastMessageAt: 0,
         messageCount: 0,
