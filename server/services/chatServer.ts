@@ -266,7 +266,7 @@ export async function resolveChatRegistration(session: SessionData | null): Prom
   return resolveRegisteredNation(session);
 }
 
-async function resolveChatAccess(session: SessionData | null): Promise<RegisteredNation | null> {
+export async function resolveChatAccess(session: SessionData | null): Promise<RegisteredNation | null> {
   const registeredNation = await resolveChatRegistration(session);
 
   // If registered normally, use that
