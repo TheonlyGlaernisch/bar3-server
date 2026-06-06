@@ -19,10 +19,9 @@ import discordLoginRouter from './api/routers/discordLogin';
 import { requireDiscordAuth } from './api/middleware/discordAuth';
 import { isTrustedOrigin } from './api/middleware/sameOrigin';
 import { startAutomationLoop } from './services/v2AutomationRunner';
-import { attachChatServer, resolveChatRegistration } from './services/chatServer';
 import AccountService from './services/accountService';
 import superagent from 'superagent';
-import {attachChatServer, resolveChatRegistration, resolveChatAccess } from './services/chatServer';
+import { attachChatServer, resolveChatAccess } from './services/chatServer';
 // Extend express-session SessionData with Discord fields
 import './interfaces/session';
 import './interfaces/sessionPnwNative';
@@ -254,7 +253,11 @@ const requireDiscordAdmin = (req: Request, res: Response, next: NextFunction) =>
 };
 const requireDiscordMember = (req: Request, res: Response, next: NextFunction) => {
   const authRoles = (res.locals.discordAuth as { discordRoles?: { member_guild?: boolean } } | undefined)?.discordRoles;
-  const hasMemberRole = req.session?.discordRoles?.member_guild === true || authRoles?.member_guild === true;
+  const sessionDiscordId = req.session?.discordUserId;
+  const authDiscordId = (res.locals.discordAuth as { discordUserId?: string } | undefined)?.discordUserId;
+  const discordUserId = typeof sessionDiscordId === 'string' ? sessionDiscordId : authDiscordId;
+  const isAdmin = typeof discordUserId === 'string' && ADMIN_DISCORD_IDS.has(discordUserId);
+  const hasMemberRole = req.session?.discordRoles?.member_guild === true || authRoles?.member_guild === true || isAdmin;
   if (!hasMemberRole) {
     res.status(403).json({ error: 'Member access required' });
     return;
@@ -348,7 +351,7 @@ app.get('/api/chat/status', rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 }), requireDiscordAuth, async (req: Request, res: Response) => {
-const access = await resolveChatAccess(req.session ?? null);
+  const access = await resolveChatAccess(req.session ?? null);
   res.status(200).json({
     authenticated: true,
     registered: access !== null,
