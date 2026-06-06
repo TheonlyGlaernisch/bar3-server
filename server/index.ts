@@ -22,6 +22,7 @@ import { startAutomationLoop } from './services/v2AutomationRunner';
 import { attachChatServer, resolveChatRegistration } from './services/chatServer';
 import AccountService from './services/accountService';
 import superagent from 'superagent';
+import {attachChatServer, resolveChatRegistration, resolveChatAccess } from './services/chatServer';
 // Extend express-session SessionData with Discord fields
 import './interfaces/session';
 import './interfaces/sessionPnwNative';
@@ -347,10 +348,10 @@ app.get('/api/chat/status', rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 }), requireDiscordAuth, async (req: Request, res: Response) => {
-  const registeredNation = await resolveChatRegistration(req.session ?? null);
+const access = await resolveChatAccess(req.session ?? null);
   res.status(200).json({
     authenticated: true,
-    registered: registeredNation !== null,
+    registered: access !== null,
   });
 });
 app.get('/api/member/nation', rateLimit({
