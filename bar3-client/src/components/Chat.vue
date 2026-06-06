@@ -57,9 +57,11 @@
             <span :class="['username', { 'username--admin': message.isAdmin }]">{{ message.username }}</span>
             <span class="timestamp">{{ formatTimestamp(message.timestamp) }}</span>
           </div>
-          <div class="message-content" :class="{ system: message.type === 'system' }">
-            {{ message.text }}
-          </div>
+          <div
+            class="message-content"
+            :class="{ system: message.type === 'system' }"
+            v-html="renderText(message.text)"
+          />
         </div>
       </div>
       <div class="typing-indicator">
