@@ -516,7 +516,7 @@ export function attachChatServer(
         if (info) {
           broadcast({
             type: 'system',
-            text: ${info.username} left,
+            text: `${info.username} left`,
             timestamp: Date.now(),
           });
         }
