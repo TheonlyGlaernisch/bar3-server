@@ -443,7 +443,7 @@ export function attachChatServer(
       client.on('message', (raw) => {
         const info = clients.get(client);
         if (!info) return;
-
+      
         const now = Date.now();
         if (now - info.lastMessageAt < RATE_WINDOW_MS) {
           info.messageCount += 1;
@@ -452,69 +452,90 @@ export function attachChatServer(
           info.messageCount = 1;
           info.lastMessageAt = now;
         }
-        // Handle typing events
-        if (parsed.type === 'typing_start') {
-          const existing = typingUsers.get(client);
-          if (existing) clearTimeout(existing.timer);
-          const timer = setTimeout(() => {
-            typingUsers.delete(client);
-            broadcastTyping(client);
-          }, 5000);
-          typingUsers.set(client, { username: info.username, timer });
-          broadcastTyping(client);
-          return;
-        }
-        if (parsed.type === 'typing_stop') {
-          const existing = typingUsers.get(client);
-          if (existing) clearTimeout(existing.timer);
-          typingUsers.delete(client);
-          broadcastTyping(client);
-          return;
-        }
+      
         let parsed: { text?: unknown; type?: string };
         try {
           parsed = JSON.parse(raw.toString());
         } catch {
           return;
         }
-
-        const text = typeof parsed.text === 'string' ? parsed.text.trim() : '';
+      
+        if (parsed.type === 'typing_start') {
+          const existing = typingUsers.get(client);
+          if (existing) clearTimeout(existing.timer);
+      
+          const timer = setTimeout(() => {
+            typingUsers.delete(client);
+            broadcastTyping(client);
+          }, 5000);
+      
+          typingUsers.set(client, {
+            username: info.username,
+            timer,
+          });
+      
+          broadcastTyping(client);
+          return;
+        }
+      
+        if (parsed.type === 'typing_stop') {
+          const existing = typingUsers.get(client);
+          if (existing) clearTimeout(existing.timer);
+      
+          typingUsers.delete(client);
+          broadcastTyping(client);
+          return;
+        }
+      
+        const text = typeof parsed.text === 'string'
+          ? parsed.text.trim()
+          : '';
+      
         if (!text || text.length > MAX_MSG_LEN) return;
         if (isImageContent(text)) return;
-
+      
         broadcast({
-          type:      'message',
-          username:  info.username,
-          isAdmin:   info.isAdmin,
+          type: 'message',
+          username: info.username,
+          isAdmin: info.isAdmin,
           text,
           timestamp: now,
         });
       });
-
       client.on('close', () => {
         const info = clients.get(client);
-        if (info) {
-          broadcast({ type: 'system', text: `${info.username} left`, timestamp: Date.now() });
-        }
+      
         const typing = typingUsers.get(client);
-          if (typing) {
-            clearTimeout(typing.timer);
-            typingUsers.delete(client);
-            broadcastTyping();
-          }
-          broadcastOnlineUsers();
+        if (typing) {
+          clearTimeout(typing.timer);
+          typingUsers.delete(client);
+        }
+      
         clients.delete(client);
+      
+        if (info) {
+          broadcast({
+            type: 'system',
+            text: ${info.username} left,
+            timestamp: Date.now(),
+          });
+        }
+      
+        broadcastTyping();
+        broadcastOnlineUsers();
       });
-
+      
       client.on('error', () => {
         const typing = typingUsers.get(client);
-          if (typing) {
-            clearTimeout(typing.timer);
-            typingUsers.delete(client);
-            broadcastTyping();
-          }
-          broadcastOnlineUsers();
+        if (typing) {
+          clearTimeout(typing.timer);
+          typingUsers.delete(client);
+        }
+      
         clients.delete(client);
+      
+        broadcastTyping();
+        broadcastOnlineUsers();
       });
     });
   });
