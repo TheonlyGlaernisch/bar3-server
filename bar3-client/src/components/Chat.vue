@@ -78,17 +78,37 @@
       </div>
       <form class="chat-input-container" @submit.prevent="sendMessage">
         <label class="sr-only" for="chat-message-input">Chat message</label>
-        <input
-          id="chat-message-input"
-          v-model="newMessage"
-          placeholder="Type your message..."
-          :disabled="!canSend"
-          maxlength="500"
-          class="message-input"
-          autocomplete="off"
-          @input="sendTypingStart"
-          @blur="sendTypingStop"
-        />
+        <div class="input-wrapper">
+          <Transition name="panel">
+            <ul v-if="mentionSuggestions.length" class="mention-menu" role="listbox">
+              <li
+                v-for="(u, i) in mentionSuggestions"
+                :key="u.username"
+                class="mention-menu__item"
+                :class="{ 'mention-menu__item--active': i === mentionIndex }"
+                @mousedown.prevent="insertMention(u.username)"
+                role="option"
+              >
+                <span class="online-dot online-dot--sm" />
+                {{ u.username }}
+                <span v-if="u.isAdmin" class="online-panel__admin-badge">admin</span>
+              </li>
+            </ul>
+          </Transition>
+          <input
+            id="chat-message-input"
+            ref="inputRef"
+            v-model="newMessage"
+            placeholder="Type your message..."
+            :disabled="!canSend"
+            maxlength="500"
+            class="message-input"
+            autocomplete="off"
+            @input="onInputChange"
+            @keydown="onInputKeydown"
+            @blur="sendTypingStop"
+          />
+        </div>
         <button
           type="submit"
           :disabled="!canSend || !newMessage.trim()"
