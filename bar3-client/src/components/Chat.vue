@@ -73,6 +73,7 @@ type ChatPayload = {
 type ChatMessage = {
   type: 'message' | 'system';
   username?: string;
+  isAdmin?: boolean;   // ADD THIS
   text: string;
   timestamp: number;
 };
@@ -189,6 +190,7 @@ export default defineComponent({
         messages.value.push({
           type: data.type,
           username: data.username,
+          isAdmin: data.isAdmin,   // ADD THIS
           text: data.text,
           timestamp: data.timestamp,
         });
