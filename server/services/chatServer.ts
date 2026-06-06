@@ -420,10 +420,10 @@ export function attachChatServer(
         broadcast({
           type:      'message',
           username:  info.username,
+          isAdmin:   info.isAdmin,
           text,
           timestamp: now,
         });
-      });
 
       client.on('close', () => {
         const info = clients.get(client);
