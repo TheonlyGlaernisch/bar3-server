@@ -67,13 +67,14 @@ type ChatPayload = {
   username?: string;
   text?: string;
   timestamp?: number;
+  isAdmin?: boolean;
   messages?: ChatMessage[];
 };
 
 type ChatMessage = {
   type: 'message' | 'system';
   username?: string;
-  isAdmin?: boolean;   // ADD THIS
+  isAdmin?: boolean;
   text: string;
   timestamp: number;
 };
@@ -184,13 +185,16 @@ export default defineComponent({
       }
 
       if (data.type === 'history' && Array.isArray(data.messages)) {
-        messages.value = data.messages;
+        messages.value = data.messages.map((message) => ({
+          ...message,
+          isAdmin: message.isAdmin === true,
+        }));
       } else if (data.type === 'message' || data.type === 'system') {
         if (typeof data.text !== 'string' || typeof data.timestamp !== 'number') return;
         messages.value.push({
           type: data.type,
           username: data.username,
-          isAdmin: data.isAdmin,   // ADD THIS
+          isAdmin: data.isAdmin === true,
           text: data.text,
           timestamp: data.timestamp,
         });

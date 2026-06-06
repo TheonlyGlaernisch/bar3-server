@@ -24,7 +24,7 @@ const ADMIN_DISCORD_IDS: ReadonlySet<string> = new Set(
 
 interface ClientInfo {
   username: string;
-  isAdmin: boolean;   // ADD THIS
+  isAdmin: boolean;
   joinedAt: Date;
   lastMessageAt: number;
   messageCount: number;
@@ -33,7 +33,7 @@ interface ClientInfo {
 interface ChatPayload {
   type: 'message' | 'system';
   username?: string;
-  isAdmin?: boolean;  // ADD THIS
+  isAdmin?: boolean;
   text: string;
   timestamp: number;
 }
@@ -53,6 +53,12 @@ const CHAT_FORBIDDEN_CLOSE_CODE = 4003;
 type RegistrationDoc = {
   nation_id?: number | string;
   discord_username?: string;
+};
+
+type ChatAccess = {
+  nationId: number;
+  username: string;
+  isAdmin: boolean;
 };
 
 type RegisteredNation = {
@@ -88,6 +94,7 @@ function broadcast(message: ChatPayload): void {
     text:      message.text,
     type:      message.type,
     timestamp: new Date(message.timestamp),
+    isAdmin: message.isAdmin === true,
   }).catch(() => undefined);
 }
 
@@ -117,6 +124,15 @@ function getTrackedAllianceId(): number | null {
 
 function getPnwGraphqlApiKey(): string {
   return (process.env.PNW_API_KEY || process.env.PW_SCAN_API_KEY || '').trim();
+}
+
+function getDiscordUserId(session: SessionData | null): string {
+  return typeof session?.discordUserId === 'string' ? session.discordUserId.trim() : '';
+}
+
+function isDiscordAdmin(session: SessionData | null): boolean {
+  const discordUserId = getDiscordUserId(session);
+  return discordUserId !== '' && ADMIN_DISCORD_IDS.has(discordUserId);
 }
 
 function isChatUpgradePath(req: http.IncomingMessage): boolean {
@@ -266,28 +282,32 @@ export async function resolveChatRegistration(session: SessionData | null): Prom
   return resolveRegisteredNation(session);
 }
 
-export async function resolveChatAccess(session: SessionData | null): Promise<RegisteredNation | null> {
+export async function resolveChatAccess(session: SessionData | null): Promise<ChatAccess | null> {
+  if (!session || (session.discordAuthenticated !== true && session.pnwNativeAuthenticated !== true)) return null;
+
+  const admin = isDiscordAdmin(session);
   const registeredNation = await resolveChatRegistration(session);
 
   // If registered normally, use that
   if (registeredNation) {
     const trackedAllianceId = getTrackedAllianceId();
-    if (!trackedAllianceId) return registeredNation;
+    if (!trackedAllianceId) return { ...registeredNation, isAdmin: admin };
     const allianceInfo = await fetchNationAllianceInfo(registeredNation.nationId);
-    if (!allianceInfo) return registeredNation;
-    if (allianceInfo.allianceId !== trackedAllianceId) return null;
+    if (!allianceInfo) return { ...registeredNation, isAdmin: admin };
+    if (allianceInfo.allianceId !== trackedAllianceId && !admin) return null;
     return {
       ...registeredNation,
       username: allianceInfo.nationName || registeredNation.username,
+      isAdmin: admin,
     };
   }
 
   // Not registered — check if they are an admin; if so, grant access with their Discord username
-  const discordUserId = typeof session?.discordUserId === 'string' ? session.discordUserId.trim() : '';
-  if (discordUserId && ADMIN_DISCORD_IDS.has(discordUserId)) {
+  if (admin) {
     return {
       nationId: 0,
-      username: session?.discordUsername || 'Admin',
+      username: session.discordUsername || 'Admin',
+      isAdmin: true,
     };
   }
 
@@ -361,14 +381,9 @@ export function attachChatServer(
     chatWss.handleUpgrade(req, socket, head, async (client) => {
       const username = access.username;
 
-      const discordUserId =
-        typeof session?.discordUserId === 'string'
-        ? session.discordUserId.trim()
-        : '';
-      
       const info: ClientInfo = {
         username,
-        isAdmin: discordUserId ? ADMIN_DISCORD_IDS.has(discordUserId) : false,
+        isAdmin: access.isAdmin,
         joinedAt: new Date(),
         lastMessageAt: 0,
         messageCount: 0,
@@ -390,6 +405,7 @@ export function attachChatServer(
               username:  d.username,
               text:      d.text,
               timestamp: (d.timestamp as Date).getTime(),
+              isAdmin: d.isAdmin === true,
             })),
           }));
         })
@@ -429,6 +445,7 @@ export function attachChatServer(
           text,
           timestamp: now,
         });
+      });
 
       client.on('close', () => {
         const info = clients.get(client);
@@ -436,7 +453,6 @@ export function attachChatServer(
           broadcast({ type: 'system', text: `${info.username} left`, timestamp: Date.now() });
         }
         clients.delete(client);
-      });
       });
 
       client.on('error', () => {

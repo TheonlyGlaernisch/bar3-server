@@ -5,6 +5,7 @@ export interface IChatMessage extends Document {
   text: string;
   type: 'message' | 'system';
   timestamp: Date;
+  isAdmin?: boolean;
 }
 
 const chatMessageSchema = new Schema<IChatMessage>(
@@ -13,6 +14,7 @@ const chatMessageSchema = new Schema<IChatMessage>(
     text: { type: String, required: true },
     type: { type: String, enum: ['message', 'system'], required: true },
     timestamp: { type: Date, required: true, default: Date.now },
+    isAdmin: { type: Boolean, required: false, default: false },
   },
   { collection: 'chat_messages' }
 );
