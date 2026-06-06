@@ -25,7 +25,7 @@
           :class="['message', message.type]"
         >
           <div class="message-header" v-if="message.type === 'message'">
-            <span class="username">{{ message.username }}</span>
+            <span :class="['username', { 'username--admin': message.isAdmin }]">{{ message.username }}</span>
             <span class="timestamp">{{ formatTimestamp(message.timestamp) }}</span>
           </div>
           <div class="message-content" :class="{ system: message.type === 'system' }">
