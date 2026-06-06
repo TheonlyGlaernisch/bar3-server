@@ -263,7 +263,7 @@ export default defineComponent({
         setStatus('Connecting to chat...', 'info');
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = ${protocol}//${window.location.host}/api/chat/ws;
+        const wsUrl = `${protocol}//${window.location.host}/api/chat/ws`;
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
