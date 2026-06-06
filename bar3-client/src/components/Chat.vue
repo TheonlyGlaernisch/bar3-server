@@ -7,8 +7,32 @@
           <p class="chat-subtitle">provided by TRF or something</p>
         </div>
         <div class="d-flex align-center gap-8">
-          <div class="online-count" v-if="onlineUsers.length">
-            <span class="online-dot"></span>{{ onlineUsers.length }} online
+          <div class="online-panel-wrapper" v-if="onlineUsers.length">
+            <button
+              class="online-pill"
+              :class="{ 'online-pill--active': showOnlineUsers }"
+              @click.stop="showOnlineUsers = !showOnlineUsers"
+              :aria-expanded="showOnlineUsers"
+              aria-label="Toggle online users list"
+            >
+              <span class="online-dot" />
+              {{ onlineUsers.length }} online
+            </button>
+            <Transition name="panel">
+              <ul v-if="showOnlineUsers" class="online-panel" role="listbox">
+                <li
+                  v-for="user in onlineUsers"
+                  :key="user.username"
+                  class="online-panel__user"
+                  :class="{ 'online-panel__user--admin': user.isAdmin }"
+                >
+                  <span class="online-dot online-dot--sm" />
+                  {{ user.username }}
+                  <span v-if="user.isAdmin" class="online-panel__admin-badge">admin</span>
+                </li>
+                <li v-if="!onlineUsers.length" class="online-panel__empty">Nobody online</li>
+              </ul>
+            </Transition>
           </div>
           <div class="connection-pill" :class="connectionClass">
             {{ connectionLabel }}
