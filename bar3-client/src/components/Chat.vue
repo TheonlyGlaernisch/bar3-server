@@ -6,8 +6,13 @@
           <h2>Alliance Chat</h2>
           <p class="chat-subtitle">provided by TRF or something</p>
         </div>
-        <div class="connection-pill" :class="connectionClass">
-          {{ connectionLabel }}
+        <div class="d-flex align-center gap-8">
+          <div class="online-count" v-if="onlineUsers.length">
+            <span class="online-dot"></span>{{ onlineUsers.length }} online
+          </div>
+          <div class="connection-pill" :class="connectionClass">
+            {{ connectionLabel }}
+          </div>
         </div>
       </div>
 
@@ -33,7 +38,20 @@
           </div>
         </div>
       </div>
-
+      <div class="typing-indicator">
+        <template v-if="typingUsers.length === 1">
+          <span class="dots"><span>.</span><span>.</span><span>.</span></span>
+          {{ typingUsers[0] }} is typing
+        </template>
+        <template v-else-if="typingUsers.length === 2">
+          <span class="dots"><span>.</span><span>.</span><span>.</span></span>
+          {{ typingUsers[0] }} and {{ typingUsers[1] }} are typing
+        </template>
+        <template v-else-if="typingUsers.length > 2">
+          <span class="dots"><span>.</span><span>.</span><span>.</span></span>
+          Several people are typing
+        </template>
+      </div>
       <form class="chat-input-container" @submit.prevent="sendMessage">
         <label class="sr-only" for="chat-message-input">Chat message</label>
         <input
