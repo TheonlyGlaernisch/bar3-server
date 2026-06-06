@@ -111,7 +111,6 @@ export default defineComponent({
     const statusType = ref<'info' | 'error'>('info');
     const onlineUsers = ref<{ username: string; isAdmin: boolean }[]>([]);
     const typingUsers = ref<string[]>([]);
-    let typingTimeout: number | null = null;
 
     const RECONNECT_DELAY_MS = 5 * 1000;
     const REJECTED_CLOSE_CODES = new Set([4001, 4003]);
@@ -120,6 +119,7 @@ export default defineComponent({
     let reconnectTimer: number | null = null;
     let lastCloseWasRejected = false;
     let registrationCheckInFlight: Promise<boolean> | null = null;
+    let typingDebounceTimer: number | null = null;
 
     const isAuthenticated = computed(() => store.getters.isDiscordAuthed);
     const canSend = computed(() => connected.value && isAuthenticated.value);
@@ -155,7 +155,6 @@ export default defineComponent({
 
     const scheduleReconnect = () => {
       clearReconnectTimer();
-
       if (!isAuthenticated.value || lastCloseWasRejected) return;
       reconnectTimer = window.setTimeout(() => {
         if (!ws || ws.readyState === WebSocket.CLOSED) {
@@ -180,7 +179,6 @@ export default defineComponent({
 
     const verifyRegistration = async (): Promise<boolean> => {
       if (registrationCheckInFlight) return registrationCheckInFlight;
-
       registrationCheckInFlight = getChatRegistrationStatus()
         .then((status) => {
           if (!status.authenticated || !status.registered) {
@@ -191,23 +189,39 @@ export default defineComponent({
           return true;
         })
         .catch(() => true)
-        .finally(() => {
-          registrationCheckInFlight = null;
-        });
-
+        .finally(() => { registrationCheckInFlight = null; });
       return registrationCheckInFlight;
     };
 
+    const sendTypingStop = () => {
+      if (typingDebounceTimer !== null) {
+        window.clearTimeout(typingDebounceTimer);
+        typingDebounceTimer = null;
+      }
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'typing_stop' }));
+      }
+    };
+
+    const sendTypingStart = () => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (typingDebounceTimer !== null) window.clearTimeout(typingDebounceTimer);
+      ws.send(JSON.stringify({ type: 'typing_start' }));
+      typingDebounceTimer = window.setTimeout(() => {
+        typingDebounceTimer = null;
+      }, 400);
+    };
+
     const handleWebSocketMessage = (event: MessageEvent) => {
-      let data: ChatPayload;
+      let data: ChatPayload & { users?: { username: string; isAdmin: boolean }[]; typing?: string[] };
       try {
-        data = JSON.parse(event.data) as ChatPayload;
+        data = JSON.parse(event.data);
       } catch {
         return;
       }
 
-      if (data.type === 'history' && Array.isArray(data.messages)) {
-        messages.value = data.messages.map((message) => ({
+      if (data.type === 'history' && Array.isArray((data as any).messages)) {
+        messages.value = (data as any).messages.map((message: ChatMessage) => ({
           ...message,
           isAdmin: message.isAdmin === true,
         }));
@@ -220,6 +234,12 @@ export default defineComponent({
           text: data.text,
           timestamp: data.timestamp,
         });
+      } else if ((data as any).type === 'users_list') {
+        onlineUsers.value = Array.isArray((data as any).users) ? (data as any).users : [];
+        return;
+      } else if ((data as any).type === 'typing_update') {
+        typingUsers.value = Array.isArray((data as any).typing) ? (data as any).typing : [];
+        return;
       }
 
       void nextTick().then(scrollToBottom);
@@ -239,11 +259,10 @@ export default defineComponent({
 
       void verifyRegistration().then((registered) => {
         if (!registered || ws || connected.value || !connecting.value) return;
-
         setStatus('Connecting to chat...', 'info');
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/api/chat/ws`;
+        const wsUrl = ${protocol}//${window.location.host}/api/chat/ws;
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
@@ -256,13 +275,12 @@ export default defineComponent({
         ws.onmessage = handleWebSocketMessage;
 
         ws.onclose = (event) => {
-          if (REJECTED_CLOSE_CODES.has(event.code)) {
-            lastCloseWasRejected = true;
-          }
-
+          if (REJECTED_CLOSE_CODES.has(event.code)) lastCloseWasRejected = true;
           ws = null;
           connected.value = false;
           connecting.value = false;
+          onlineUsers.value = [];
+          typingUsers.value = [];
           setStatus(
             lastCloseWasRejected
               ? 'Chat access was rejected. Register or sign in with a registered nation in the tracked alliance.'
@@ -283,16 +301,15 @@ export default defineComponent({
     const sendMessage = () => {
       const text = newMessage.value.trim();
       if (!ws || !canSend.value || !text) return;
-
       ws.send(JSON.stringify({ text }));
       newMessage.value = '';
+      sendTypingStop();
     };
 
-    onMounted(() => {
-      connectWebSocket();
-    });
+    onMounted(() => { connectWebSocket(); });
 
     onUnmounted(() => {
+      if (typingDebounceTimer !== null) window.clearTimeout(typingDebounceTimer);
       closeSocket();
     });
 
@@ -305,9 +322,7 @@ export default defineComponent({
       }
     });
 
-    watch(messages, () => {
-      void nextTick().then(scrollToBottom);
-    });
+    watch(messages, () => { void nextTick().then(scrollToBottom); });
 
     return {
       messages,
@@ -318,8 +333,12 @@ export default defineComponent({
       connectionClass,
       statusMessage,
       statusType,
+      onlineUsers,
+      typingUsers,
       formatTimestamp,
       sendMessage,
+      sendTypingStart,
+      sendTypingStop,
       messagesContainer,
     };
   },
