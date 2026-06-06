@@ -62,7 +62,8 @@
           maxlength="500"
           class="message-input"
           autocomplete="off"
-          @input="onTypingInput"
+          @input="sendTypingStart"
+          @blur="sendTypingStop"
         />
         <button
           type="submit"
