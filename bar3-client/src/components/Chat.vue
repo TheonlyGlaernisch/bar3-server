@@ -427,6 +427,11 @@ export default defineComponent({
   color: #ff9b4a;
 }
 
+.username--admin {
+  color: #3fb950;   /* green, matches the badge-green color used in admin panel */
+}
+
+  
 .timestamp {
   font-size: 0.75em;
   opacity: 0.7;
