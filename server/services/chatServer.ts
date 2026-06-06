@@ -437,6 +437,7 @@ export function attachChatServer(
         }
         clients.delete(client);
       });
+      });
 
       client.on('error', () => {
         clients.delete(client);
