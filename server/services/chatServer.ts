@@ -41,6 +41,7 @@ interface ChatPayload {
 // ─── State ────────────────────────────────────────────────────────────────────
 
 const clients = new Map<ws.WebSocket, ClientInfo>();
+const typingUsers = new Map<ws.WebSocket, { username: string; timer: ReturnType<typeof setTimeout> }>();
 const MAX_CLIENTS = 50;
 const MAX_MSG_LEN = 500;
 const RATE_WINDOW_MS = 1000;
@@ -105,6 +106,26 @@ function isImageContent(text: string): boolean {
     lower.includes('data:image') ||
     /https?:\/\/\S+\.(png|jpg|jpeg|gif|webp|svg|bmp)/i.test(text)
   );
+}
+function broadcastTyping(excludeClient?: ws.WebSocket): void {
+  const usernames = [...typingUsers.values()].map((t) => t.username);
+  const payload = JSON.stringify({ type: 'typing_update', typing: usernames });
+  for (const [client] of clients) {
+    if (client === excludeClient) continue;
+    if (client.readyState === ws.WebSocket.OPEN) {
+      client.send(payload);
+    }
+  }
+}
+
+function broadcastOnlineUsers(): void {
+  const users = [...clients.values()].map((c) => ({ username: c.username, isAdmin: c.isAdmin }));
+  const payload = JSON.stringify({ type: 'users_list', users });
+  for (const [client] of clients) {
+    if (client.readyState === ws.WebSocket.OPEN) {
+      client.send(payload);
+    }
+  }
 }
 
 function parsePositiveInteger(value: unknown): number | null {
@@ -390,6 +411,11 @@ export function attachChatServer(
       };
 
       clients.set(client, info);
+      // Send current online users to new client
+      const currentUsers = [...clients.values()].map((c) => ({ username: c.username, isAdmin: c.isAdmin }));
+      client.send(JSON.stringify({ type: 'users_list', users: currentUsers }));
+      // Notify everyone else of the new user
+      broadcastOnlineUsers();
 
       // Deliver history to this client before announcing their arrival
       ChatMessage.find({ timestamp: { $gte: new Date(Date.now() - FOURTEEN_DAYS_MS) } })
@@ -426,8 +452,26 @@ export function attachChatServer(
           info.messageCount = 1;
           info.lastMessageAt = now;
         }
-
-        let parsed: { text?: unknown };
+        // Handle typing events
+        if (parsed.type === 'typing_start') {
+          const existing = typingUsers.get(client);
+          if (existing) clearTimeout(existing.timer);
+          const timer = setTimeout(() => {
+            typingUsers.delete(client);
+            broadcastTyping(client);
+          }, 5000);
+          typingUsers.set(client, { username: info.username, timer });
+          broadcastTyping(client);
+          return;
+        }
+        if (parsed.type === 'typing_stop') {
+          const existing = typingUsers.get(client);
+          if (existing) clearTimeout(existing.timer);
+          typingUsers.delete(client);
+          broadcastTyping(client);
+          return;
+        }
+        let parsed: { text?: unknown; type?: string };
         try {
           parsed = JSON.parse(raw.toString());
         } catch {
@@ -452,10 +496,24 @@ export function attachChatServer(
         if (info) {
           broadcast({ type: 'system', text: `${info.username} left`, timestamp: Date.now() });
         }
+        const typing = typingUsers.get(client);
+          if (typing) {
+            clearTimeout(typing.timer);
+            typingUsers.delete(client);
+            broadcastTyping();
+          }
+          broadcastOnlineUsers();
         clients.delete(client);
       });
 
       client.on('error', () => {
+        const typing = typingUsers.get(client);
+          if (typing) {
+            clearTimeout(typing.timer);
+            typingUsers.delete(client);
+            broadcastTyping();
+          }
+          broadcastOnlineUsers();
         clients.delete(client);
       });
     });
