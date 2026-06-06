@@ -16,6 +16,7 @@ import { PnwNativeAccount } from '../interfaces/schemas/PnwNativeAccountSchema';
 
 interface ClientInfo {
   username: string;
+  isAdmin: boolean;   // ADD THIS
   joinedAt: Date;
   lastMessageAt: number;
   messageCount: number;
@@ -24,6 +25,7 @@ interface ClientInfo {
 interface ChatPayload {
   type: 'message' | 'system';
   username?: string;
+  isAdmin?: boolean;  // ADD THIS
   text: string;
   timestamp: number;
 }
