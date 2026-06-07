@@ -353,7 +353,7 @@ r
       sendTypingStop();
     };
 
-    onMounted(() => { connectWebSocket(); });
+    onMounted(() => { connectWebSocket(); requestNotificationPermission(); });
 
     onUnmounted(() => {
       if (typingDebounceTimer !== null) window.clearTimeout(typingDebounceTimer);
