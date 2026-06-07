@@ -419,7 +419,14 @@ export function attachChatServer(
 
       clients.set(client, info);
       // Send current online users to new client
-      const currentUsers = [...clients.values()].map((c) => ({ username: c.username, isAdmin: c.isAdmin }));
+      const seenJoin = new Set<string>();
+      const currentUsers = [...clients.values()]
+        .filter((c) => {
+          if (seenJoin.has(c.username)) return false;
+          seenJoin.add(c.username);
+          return true;
+        })
+        .map((c) => ({ username: c.username, isAdmin: c.isAdmin }));
       client.send(JSON.stringify({ type: 'users_list', users: currentUsers }));
       // Notify everyone else of the new user
       broadcastOnlineUsers();
