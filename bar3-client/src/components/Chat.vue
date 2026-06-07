@@ -498,12 +498,11 @@ export default defineComponent({
     })
     
     function renderText(text: string): string {
-      // 1. Escape HTML to prevent injection
+      if (!text) return ''
       const escaped = text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
-      // 2. Highlight @mentions
       return escaped.replace(/@(\w+)/g, (_, name: string) => {
         const isSelf = myUsername.value && name.toLowerCase() === myUsername.value.toLowerCase()
         return `<span class="mention${isSelf ? ' mention--self' : ''}">@${name}</span>`
