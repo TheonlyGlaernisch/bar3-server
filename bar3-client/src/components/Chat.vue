@@ -314,12 +314,12 @@ export default defineComponent({
         // users_list immediately after open — our name is the most-recently-joined.
         // A cleaner heuristic: match against discordUsername from the store.
         if (!myUsername.value && onlineUsers.value.length > 0) {
-          const storeUsername = store.state?.discordUsername  // if available
+          const storeUsername = (store.state as any)?.discordUsername as string | undefined
           const match = storeUsername
-            ? onlineUsers.value.find(u => u.username === storeUsername)
+            ? (onlineUsers.value.find(u => u.username === storeUsername) ?? null)
             : null
           if (match) myUsername.value = match.username
-        }
+         }
         return
       } else if ((data as any).type === 'typing_update') {
         typingUsers.value = Array.isArray((data as any).typing) ? (data as any).typing : [];
