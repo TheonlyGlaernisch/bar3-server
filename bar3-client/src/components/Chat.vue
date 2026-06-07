@@ -161,7 +161,7 @@ export default defineComponent({
 
     const RECONNECT_DELAY_MS = 5 * 1000;
     const REJECTED_CLOSE_CODES = new Set([4001, 4003]);
-
+r
     let ws: WebSocket | null = null;
     let reconnectTimer: number | null = null;
     let lastCloseWasRejected = false;
