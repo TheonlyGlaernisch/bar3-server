@@ -1,6 +1,33 @@
 <!-- eslint-disable vue/multi-word-component-names -->
 <template>
   <div class="chat-page">
+
+    <!-- ── In-site mention toasts ─────────────────────────────────────────── -->
+    <TransitionGroup name="toast" tag="div" class="toast-stack">
+      <div
+        v-for="toast in mentionToasts"
+        :key="toast.id"
+        class="mention-toast"
+        @click="dismissToast(toast.id)"
+      >
+        <span class="mention-toast__icon">@</span>
+        <div class="mention-toast__body">
+          <span class="mention-toast__from">{{ toast.from }}</span>
+          <span class="mention-toast__text">{{ toast.text }}</span>
+        </div>
+        <button class="mention-toast__close" @click.stop="dismissToast(toast.id)" aria-label="Dismiss">✕</button>
+      </div>
+    </TransitionGroup>
+
+    <!-- ── Notification permission nudge ─────────────────────────────────── -->
+    <div v-if="notificationPermission === 'default'" class="notif-nudge">
+      <span>Enable push notifications to get pinged when you're mentioned while away.</span>
+      <button @click="requestNotificationPermission">Enable</button>
+    </div>
+    <div v-else-if="notificationPermission === 'denied'" class="notif-nudge notif-nudge--denied">
+      Push notifications are blocked. You'll still see in-app alerts when mentioned.
+    </div>
+
     <section class="chat-container">
       <div class="chat-header">
         <div>
@@ -127,6 +154,147 @@
 <script lang="ts" src="./Chat.script.ts"></script>
 
 <style scoped>
+/* ── Toast stack ──────────────────────────────────────────────────────────── */
+.toast-stack {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.mention-toast {
+  pointer-events: all;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 107, 0, 0.5);
+  border-radius: 12px;
+  padding: 12px 14px;
+  min-width: 260px;
+  max-width: 340px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.mention-toast:hover {
+  border-color: #ff6b00;
+}
+
+.mention-toast__icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #ff6b00;
+  color: #fff;
+  font-weight: 900;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mention-toast__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mention-toast__from {
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: #ff9b4a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mention-toast__text {
+  font-size: 0.8rem;
+  color: #ccc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.mention-toast__close {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.mention-toast__close:hover {
+  color: #ccc;
+}
+
+/* Toast enter/leave transitions */
+.toast-enter-active,
+.toast-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.toast-enter-from {
+  opacity: 0;
+  transform: translateX(40px);
+}
+
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(40px);
+}
+
+/* ── Notification nudge bar ──────────────────────────────────────────────── */
+.notif-nudge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: rgba(255, 107, 0, 0.12);
+  border-bottom: 1px solid rgba(255, 107, 0, 0.25);
+  font-size: 0.82rem;
+  color: #ccc;
+}
+
+.notif-nudge--denied {
+  background: rgba(80, 80, 80, 0.12);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #888;
+}
+
+.notif-nudge button {
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid #ff6b00;
+  background: transparent;
+  color: #ff9b4a;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.notif-nudge button:hover {
+  background: rgba(255, 107, 0, 0.18);
+}
+
+/* ── Page layout ─────────────────────────────────────────────────────────── */
 .chat-page {
   min-height: calc(100vh - 64px);
   padding: 24px;
@@ -503,12 +671,22 @@
     min-height: 44px;
     width: 100%;
   }
-    
-    .online-panel {
+
+  .online-panel {
     right: auto;
     left: 0;
     min-width: 160px;
     max-width: calc(100vw - 24px);
+  }
+
+  .toast-stack {
+    top: 12px;
+    right: 12px;
+    left: 12px;
+  }
+
+  .mention-toast {
+    max-width: 100%;
   }
 }
 </style>
