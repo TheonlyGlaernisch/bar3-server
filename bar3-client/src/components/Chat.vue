@@ -712,6 +712,138 @@ r
   white-space: nowrap;
   border: 0;
 }
+/* ── Online panel ─────────────────────────── */
+.online-panel-wrapper {
+  position: relative;
+}
+
+.online-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: transparent;
+  color: #ccc;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.online-pill:hover,
+.online-pill--active { background: rgba(255,255,255,0.08); }
+
+.online-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4caf50;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.online-dot--sm { width: 6px; height: 6px; }
+
+.online-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 180px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 6px 0;
+  list-style: none;
+  margin: 0;
+  z-index: 100;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+
+.online-panel__user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  font-size: 0.85rem;
+  color: #ccc;
+}
+.online-panel__user--admin { color: #3fb950; }
+
+.online-panel__admin-badge {
+  margin-left: auto;
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(63,185,80,0.15);
+  color: #3fb950;
+  border: 1px solid rgba(63,185,80,0.3);
+}
+
+.online-panel__empty {
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  color: #666;
+}
+
+/* ── Mention autocomplete ─────────────────── */
+.input-wrapper {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+}
+
+.input-wrapper .message-input {
+  width: 100%;
+}
+
+.mention-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 200px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 6px 0;
+  list-style: none;
+  margin: 0;
+  z-index: 100;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+
+.mention-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #ccc;
+  transition: background 0.1s;
+}
+.mention-menu__item--active,
+.mention-menu__item:hover {
+  background: rgba(255,255,255,0.07);
+  color: #fff;
+}
+
+/* ── @mention highlights in messages ─────── */
+.mention {
+  background: rgba(88,166,255,0.15);
+  color: #58a6ff;
+  border-radius: 3px;
+  padding: 0 3px;
+  font-weight: 500;
+}
+.mention--self {
+  background: rgba(255,107,0,0.18);
+  color: #ff9b4a;
+}
+
+/* ── Shared panel transition ──────────────── */
+.panel-enter-active,
+.panel-leave-active { transition: opacity 0.15s, transform 0.15s; }
+.panel-enter-from,
+.panel-leave-to { opacity: 0; transform: translateY(-4px); }
 
 @media (max-width: 768px) {
   .chat-page {
