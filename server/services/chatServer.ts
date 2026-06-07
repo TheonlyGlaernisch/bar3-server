@@ -119,7 +119,14 @@ function broadcastTyping(excludeClient?: ws.WebSocket): void {
 }
 
 function broadcastOnlineUsers(): void {
-  const users = [...clients.values()].map((c) => ({ username: c.username, isAdmin: c.isAdmin }));
+  const seen = new Set<string>();
+  const users = [...clients.values()]
+    .filter((c) => {
+      if (seen.has(c.username)) return false;
+      seen.add(c.username);
+      return true;
+    })
+    .map((c) => ({ username: c.username, isAdmin: c.isAdmin }));
   const payload = JSON.stringify({ type: 'users_list', users });
   for (const [client] of clients) {
     if (client.readyState === ws.WebSocket.OPEN) {
