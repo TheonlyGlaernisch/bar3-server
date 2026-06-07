@@ -288,6 +288,7 @@ export default defineComponent({
       if (data.type === 'history' && Array.isArray((data as any).messages)) {
         messages.value = (data as any).messages.map((message: ChatMessage) => ({
           ...message,
+          text: message.text ?? '', 
           isAdmin: message.isAdmin === true,
         }));
       } else if (data.type === 'message' || data.type === 'system') {
