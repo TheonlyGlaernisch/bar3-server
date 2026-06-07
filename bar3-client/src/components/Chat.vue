@@ -299,6 +299,14 @@ export default defineComponent({
           text: data.text,
           timestamp: data.timestamp,
         });
+        if (
+          data.type === 'message' &&
+          myUsername.value &&
+          typeof data.text === 'string' &&
+          data.text.toLowerCase().includes(`@${myUsername.value.toLowerCase()}`)
+        ) {
+          notifyMention(data.username || 'Someone', data.text);
+        }
         // in handleWebSocketMessage, inside the `users_list` branch:
       } else if ((data as any).type === 'users_list') {
         onlineUsers.value = Array.isArray((data as any).users) ? (data as any).users : []
