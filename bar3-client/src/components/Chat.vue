@@ -299,10 +299,20 @@ export default defineComponent({
           text: data.text,
           timestamp: data.timestamp,
         });
-        
+        // in handleWebSocketMessage, inside the `users_list` branch:
       } else if ((data as any).type === 'users_list') {
-        onlineUsers.value = Array.isArray((data as any).users) ? (data as any).users : [];
-        return;
+        onlineUsers.value = Array.isArray((data as any).users) ? (data as any).users : []
+        // If we just connected and don't know our name yet, the server sends
+        // users_list immediately after open — our name is the most-recently-joined.
+        // A cleaner heuristic: match against discordUsername from the store.
+        if (!myUsername.value && onlineUsers.value.length > 0) {
+          const storeUsername = store.state?.discordUsername  // if available
+          const match = storeUsername
+            ? onlineUsers.value.find(u => u.username === storeUsername)
+            : null
+          if (match) myUsername.value = match.username
+        }
+        return
       } else if ((data as any).type === 'typing_update') {
         typingUsers.value = Array.isArray((data as any).typing) ? (data as any).typing : [];
         return;
