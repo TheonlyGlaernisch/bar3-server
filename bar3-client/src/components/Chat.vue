@@ -299,6 +299,7 @@ export default defineComponent({
           text: data.text,
           timestamp: data.timestamp,
         });
+        
       } else if ((data as any).type === 'users_list') {
         onlineUsers.value = Array.isArray((data as any).users) ? (data as any).users : [];
         return;
@@ -309,6 +310,17 @@ export default defineComponent({
 
       void nextTick().then(scrollToBottom);
     };
+    // inside the `else if (data.type === 'message' || data.type === 'system')` branch,
+// after messages.value.push(...)
+
+    if (
+      data.type === 'message' &&
+      myUsername.value &&
+      typeof data.text === 'string' &&
+      data.text.toLowerCase().includes(`@${myUsername.value.toLowerCase()}`)
+    ) {
+      notifyMention(data.username || 'Someone', data.text)
+    }
 
     const connectWebSocket = () => {
       if (!isAuthenticated.value) {
