@@ -3,7 +3,7 @@ import { useStore } from 'vuex';
 import { getChatRegistrationStatus } from '@/utilities/chatApi';
 
 type ChatPayload = {
-  type: 'message' | 'system' | 'history';
+  type: 'message' | 'system' | 'history' | 'connected' | 'users_list' | 'typing_update';
   username?: string;
   text?: string;
   timestamp?: number;
@@ -19,6 +19,12 @@ type ChatMessage = {
   timestamp: number;
 };
 
+type MentionToast = {
+  id: number;
+  from: string;
+  text: string;
+};
+
 export default defineComponent({
   name: 'AllianceChat',
   setup() {
@@ -32,25 +38,104 @@ export default defineComponent({
     const statusType = ref<'info' | 'error'>('info');
     const onlineUsers = ref<{ username: string; isAdmin: boolean }[]>([]);
     const typingUsers = ref<string[]>([]);
+    const mentionToasts = ref<MentionToast[]>([]);
+    const notificationPermission = ref<NotificationPermission>('default');
+    // myUsername: resolved from server 'connected' event, users_list self-match, or store
+    const myUsername = ref('');
+    let toastCounter = 0;
 
     const RECONNECT_DELAY_MS = 5 * 1000;
     const REJECTED_CLOSE_CODES = new Set([4001, 4003]);
 
+    // ── Resolve own username robustly ────────────────────────────────────────
+    // Priority: server 'connected' event > users_list self-match > vuex store state
+    function resolveMyUsername(candidate: string) {
+      if (candidate && !myUsername.value) {
+        myUsername.value = candidate;
+      }
+    }
+
+    function resolveFromStore() {
+      // Try common vuex state shapes — adjust key if yours differs
+      const state = store.state as any;
+      const candidate =
+        state?.username ||
+        state?.discordUsername ||
+        state?.user?.username ||
+        state?.auth?.username ||
+        '';
+      if (candidate) resolveMyUsername(candidate);
+    }
+
+    // ── Audio ping ───────────────────────────────────────────────────────────
+    function playMentionSound() {
+      try {
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.18, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.35);
+        osc.onended = () => ctx.close();
+      } catch {
+        // AudioContext not available — skip silently
+      }
+    }
+
+    // ── In-site toast ────────────────────────────────────────────────────────
+    function showMentionToast(from: string, text: string) {
+      const id = ++toastCounter;
+      mentionToasts.value.push({ id, from, text: text.slice(0, 120) });
+      setTimeout(() => {
+        mentionToasts.value = mentionToasts.value.filter((t) => t.id !== id);
+      }, 5000);
+    }
+
+    function dismissToast(id: number) {
+      mentionToasts.value = mentionToasts.value.filter((t) => t.id !== id);
+    }
+
+    // ── Push + in-site notification ──────────────────────────────────────────
     async function requestNotificationPermission() {
-      if ('Notification' in window && Notification.permission === 'default') {
-        await Notification.requestPermission();
+      if (!('Notification' in window)) return;
+      if (Notification.permission === 'default') {
+        const result = await Notification.requestPermission();
+        notificationPermission.value = result;
+      } else {
+        notificationPermission.value = Notification.permission;
       }
     }
 
     function notifyMention(fromUsername: string, text: string) {
-      if (!('Notification' in window) || Notification.permission !== 'granted') return;
-      if (document.visibilityState === 'visible') return;
-      const n = new Notification(`${fromUsername} mentioned you`, {
-        body: text.slice(0, 100),
-        icon: '/src/favicon.ico',
-        tag: 'bar3-chat-mention',
-      });
-      n.onclick = () => { window.focus(); n.close(); };
+      // Push notification when tab is hidden
+      if (document.visibilityState !== 'visible') {
+        if ('Notification' in window && Notification.permission === 'granted') {
+          // Use a unique tag per mention so they don't deduplicate each other
+          const n = new Notification(`${fromUsername} mentioned you`, {
+            body: text.slice(0, 100),
+            icon: '/favicon.ico',
+            tag: `bar3-mention-${Date.now()}`,
+          });
+          n.onclick = () => { window.focus(); n.close(); };
+        }
+      }
+
+      // In-site toast fires regardless of tab visibility
+      showMentionToast(fromUsername, text);
+      playMentionSound();
+    }
+
+    function isMentioned(text: string): boolean {
+      if (!myUsername.value) return false;
+      // Match @username as a whole word (not part of a longer name)
+      const escaped = myUsername.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`@${escaped}(?:\\b|$)`, 'i').test(text);
     }
 
     let ws: WebSocket | null = null;
@@ -124,6 +209,10 @@ export default defineComponent({
             setStatus('Register or sign in with a registered Politics & War nation to use chat.', 'error');
             return false;
           }
+          // If the registration API also returns the username, grab it here
+          if ((status as any).username) {
+            resolveMyUsername((status as any).username);
+          }
           return true;
         })
         .catch(() => true)
@@ -150,13 +239,19 @@ export default defineComponent({
       }, 400);
     };
 
-    const myUsername = ref('');
-
     const handleWebSocketMessage = (event: MessageEvent) => {
       let data: ChatPayload & { users?: { username: string; isAdmin: boolean }[]; typing?: string[] };
       try {
         data = JSON.parse(event.data);
       } catch {
+        return;
+      }
+
+      // ── Server tells us who we are on connect ──
+      // Handle both { type: 'connected', username: '...' }
+      // and { type: 'self', username: '...' } — whichever your server sends
+      if ((data.type === 'connected' || (data as any).type === 'self') && data.username) {
+        resolveMyUsername(data.username);
         return;
       }
 
@@ -175,22 +270,28 @@ export default defineComponent({
           text: data.text,
           timestamp: data.timestamp,
         });
+
+        // Only notify if it's not our own message and we're mentioned
         if (
           data.type === 'message' &&
-          myUsername.value &&
-          typeof data.text === 'string' &&
-          data.text.toLowerCase().includes(`@${myUsername.value.toLowerCase()}`)
+          data.username !== myUsername.value &&
+          isMentioned(data.text)
         ) {
           notifyMention(data.username || 'Someone', data.text);
         }
       } else if ((data as any).type === 'users_list') {
-        onlineUsers.value = Array.isArray((data as any).users) ? (data as any).users : [];
-        if (!myUsername.value && onlineUsers.value.length > 0) {
-          const storeUsername = (store.state as any)?.discordUsername as string | undefined;
-          const match = storeUsername
-            ? (onlineUsers.value.find(u => u.username === storeUsername) ?? null)
-            : null;
-          if (match) myUsername.value = match.username;
+        const users: { username: string; isAdmin: boolean }[] = Array.isArray((data as any).users)
+          ? (data as any).users
+          : [];
+        onlineUsers.value = users;
+
+        // Try to identify ourselves from the users list + store as a fallback
+        if (!myUsername.value) {
+          resolveFromStore();
+          // If store gave us a username, verify it's actually in the list
+          if (myUsername.value && !users.find(u => u.username === myUsername.value)) {
+            myUsername.value = '';
+          }
         }
         return;
       } else if ((data as any).type === 'typing_update') {
@@ -226,6 +327,8 @@ export default defineComponent({
           connected.value = true;
           connecting.value = false;
           setStatus('', 'info');
+          // Last-resort: try resolving username from store now that we're connected
+          if (!myUsername.value) resolveFromStore();
         };
 
         ws.onmessage = handleWebSocketMessage;
@@ -262,7 +365,10 @@ export default defineComponent({
       sendTypingStop();
     };
 
-    onMounted(() => { connectWebSocket(); requestNotificationPermission(); });
+    onMounted(() => {
+      connectWebSocket();
+      requestNotificationPermission();
+    });
 
     onUnmounted(() => {
       if (typingDebounceTimer !== null) window.clearTimeout(typingDebounceTimer);
@@ -274,6 +380,7 @@ export default defineComponent({
         connectWebSocket();
       } else {
         closeSocket();
+        myUsername.value = '';
         setStatus('Sign in as a registered alliance nation to use chat.', 'error');
       }
     });
@@ -341,12 +448,6 @@ export default defineComponent({
       nextTick(() => inputRef.value?.focus());
     }
 
-    watch(connected, (val) => {
-      if (val && onlineUsers.value.length === 1) {
-        myUsername.value = onlineUsers.value[0].username;
-      }
-    });
-
     function renderText(text: string): string {
       if (!text) return '';
       const escaped = text
@@ -370,6 +471,9 @@ export default defineComponent({
       statusType,
       onlineUsers,
       typingUsers,
+      mentionToasts,
+      notificationPermission,
+      myUsername,
       formatTimestamp,
       sendMessage,
       sendTypingStart,
@@ -383,6 +487,8 @@ export default defineComponent({
       onInputKeydown,
       insertMention,
       renderText,
+      dismissToast,
+      requestNotificationPermission,
     };
   },
 });
