@@ -320,18 +320,15 @@ export default defineComponent({
 
       void nextTick().then(scrollToBottom);
     };
-    // inside the `else if (data.type === 'message' || data.type === 'system')` branch,
-// after messages.value.push(...)
-
-    if (
-      data.type === 'message' &&
-      myUsername.value &&
-      typeof data.text === 'string' &&
-      data.text.toLowerCase().includes(`@${myUsername.value.toLowerCase()}`)
-    ) {
-      notifyMention(data.username || 'Someone', data.text)
-    }
-
+    // We need the current user's username to highlight self-mentions.
+    // It comes from the users_list — find ourselves by checking onlineUsers
+    // against the session username stored in the chat server. Since the server
+    // sets the username from the registered nation name we expose it via a
+    // computed that picks the first user whose name matches what the server
+    // echoed back in our own join message. A simpler approach: track it when
+    // the websocket opens by reading the first system message that contains "joined".
+    // For now we store it as a ref updated on connect.
+    const myUsername = ref('')
     const connectWebSocket = () => {
       if (!isAuthenticated.value) {
         closeSocket();
@@ -476,15 +473,7 @@ export default defineComponent({
     }
     
     // ── Mention rendering ─────────────────────────────────────────
-    // We need the current user's username to highlight self-mentions.
-    // It comes from the users_list — find ourselves by checking onlineUsers
-    // against the session username stored in the chat server. Since the server
-    // sets the username from the registered nation name we expose it via a
-    // computed that picks the first user whose name matches what the server
-    // echoed back in our own join message. A simpler approach: track it when
-    // the websocket opens by reading the first system message that contains "joined".
-    // For now we store it as a ref updated on connect.
-    const myUsername = ref('')
+  
     
     // Capture our username from the first system "joined" message we receive.
     // Patch handleWebSocketMessage: after pushing the system message, check:
