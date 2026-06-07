@@ -370,7 +370,108 @@ r
     });
 
     watch(messages, () => { void nextTick().then(scrollToBottom); });
-
+    // ── Online panel ──────────────────────────────────────────────
+    const showOnlineUsers = ref(false)
+    
+    // Close the panel when clicking anywhere outside it
+    onMounted(() => {
+      document.addEventListener('click', () => { showOnlineUsers.value = false })
+    })
+    
+    // ── @mention autocomplete ─────────────────────────────────────
+    const inputRef = ref<HTMLInputElement | null>(null)
+    const mentionSuggestions = ref<{ username: string; isAdmin: boolean }[]>([])
+    const mentionIndex = ref(0)
+    let mentionStart = -1
+    
+    function onInputChange() {
+      // fire the existing typing signal too
+      sendTypingStart()
+    
+      const val = newMessage.value
+      const cursor = inputRef.value?.selectionStart ?? val.length
+      const slice = val.slice(0, cursor)
+      const atPos = slice.lastIndexOf('@')
+    
+      if (atPos !== -1 && (atPos === 0 || /\s/.test(val[atPos - 1]))) {
+        const query = slice.slice(atPos + 1).toLowerCase()
+        if (!query.includes(' ')) {
+          mentionStart = atPos
+          mentionSuggestions.value = onlineUsers.value.filter(u =>
+            u.username.toLowerCase().startsWith(query)
+          )
+          mentionIndex.value = 0
+          return
+        }
+      }
+    
+      mentionSuggestions.value = []
+      mentionStart = -1
+    }
+    
+    function onInputKeydown(e: KeyboardEvent) {
+      if (!mentionSuggestions.value.length) return
+    
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        mentionIndex.value = (mentionIndex.value + 1) % mentionSuggestions.value.length
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        mentionIndex.value = (mentionIndex.value - 1 + mentionSuggestions.value.length) % mentionSuggestions.value.length
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        insertMention(mentionSuggestions.value[mentionIndex.value].username)
+      } else if (e.key === 'Escape') {
+        mentionSuggestions.value = []
+      }
+    }
+    
+    function insertMention(username: string) {
+      const val = newMessage.value
+      const cursor = inputRef.value?.selectionStart ?? val.length
+      newMessage.value = val.slice(0, mentionStart) + `@${username} ` + val.slice(cursor)
+      mentionSuggestions.value = []
+      mentionStart = -1
+      nextTick(() => inputRef.value?.focus())
+    }
+    
+    // ── Mention rendering ─────────────────────────────────────────
+    // We need the current user's username to highlight self-mentions.
+    // It comes from the users_list — find ourselves by checking onlineUsers
+    // against the session username stored in the chat server. Since the server
+    // sets the username from the registered nation name we expose it via a
+    // computed that picks the first user whose name matches what the server
+    // echoed back in our own join message. A simpler approach: track it when
+    // the websocket opens by reading the first system message that contains "joined".
+    // For now we store it as a ref updated on connect.
+    const myUsername = ref('')
+    
+    // Capture our username from the first system "joined" message we receive.
+    // Patch handleWebSocketMessage: after pushing the system message, check:
+    //   if (data.text?.endsWith(' joined') && !myUsername.value) {
+    //     // The last join before anyone else is us (optimistic — good enough)
+    //   }
+    // A cleaner hook: set it when ws.onopen fires and we already know the name
+    // from the access resolution. Since we can't easily get it from the client,
+    // we just look it up from the users_list after connection.
+    watch(connected, (val) => {
+      if (val && onlineUsers.value.length === 1) {
+        myUsername.value = onlineUsers.value[0].username
+      }
+    })
+    
+    function renderText(text: string): string {
+      // 1. Escape HTML to prevent injection
+      const escaped = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+      // 2. Highlight @mentions
+      return escaped.replace(/@(\w+)/g, (_, name: string) => {
+        const isSelf = myUsername.value && name.toLowerCase() === myUsername.value.toLowerCase()
+        return `<span class="mention${isSelf ? ' mention--self' : ''}">@${name}</span>`
+      })
+    }
     return {
       messages,
       newMessage,
@@ -387,6 +488,15 @@ r
       sendTypingStart,
       sendTypingStop,
       messagesContainer,
+      showOnlineUsers,
+      inputRef,
+      mentionSuggestions,
+      mentionIndex,
+      onInputChange,
+      onInputKeydown,
+      insertMention,
+      renderText,
+      }
     };
   },
 });
