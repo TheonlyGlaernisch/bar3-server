@@ -370,6 +370,8 @@
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
+  max-height: 40vh;
+  overflow-y: auto;
   min-width: 180px;
   background: #1a1a1a;
   border: 1px solid #333;
@@ -500,6 +502,13 @@
   .send-button {
     min-height: 44px;
     width: 100%;
+  }
+    
+    .online-panel {
+    right: auto;
+    left: 0;
+    min-width: 160px;
+    max-width: calc(100vw - 24px);
   }
 }
 </style>
