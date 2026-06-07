@@ -161,7 +161,25 @@ export default defineComponent({
 
     const RECONNECT_DELAY_MS = 5 * 1000;
     const REJECTED_CLOSE_CODES = new Set([4001, 4003]);
-r
+    // after the existing imports, inside setup()
+
+    // ── Push notifications ────────────────────────────────────────────────────
+    async function requestNotificationPermission() {
+      if ('Notification' in window && Notification.permission === 'default') {
+        await Notification.requestPermission()
+      }
+    }
+    
+    function notifyMention(fromUsername: string, text: string) {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return
+      if (document.visibilityState === 'visible') return  // already looking at the tab
+      const n = new Notification(`${fromUsername} mentioned you`, {
+        body: text.slice(0, 100),
+        icon: '/src/favicon.ico',
+        tag: 'bar3-chat-mention',   // replaces previous instead of stacking
+      })
+      n.onclick = () => { window.focus(); n.close() }
+    }
     let ws: WebSocket | null = null;
     let reconnectTimer: number | null = null;
     let lastCloseWasRejected = false;
