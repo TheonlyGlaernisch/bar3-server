@@ -79,7 +79,7 @@ export default defineComponent({
       if (hasMemberAccess) {
       chatService.init(this.$store);
      }
-    }
+    
 
     await Promise.all([
       (async () => {
