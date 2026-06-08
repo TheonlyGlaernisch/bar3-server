@@ -2,6 +2,7 @@ import { GitHubRelease } from '@/types';
 import { createStore } from 'vuex';
 
 import analytics from './modules/analytics';
+import chat from './modules/Chat';
 import { API_BASE_URL } from '@/utilities/serverUrls';
 
 export default createStore({
