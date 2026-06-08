@@ -122,5 +122,6 @@ export default createStore({
   actions: {},
   modules: {
     analytics,
+    chat,
   },
 });
