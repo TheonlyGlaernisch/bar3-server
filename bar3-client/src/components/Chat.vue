@@ -199,6 +199,78 @@
   background: rgba(255, 107, 0, 0.18);
 }
 
+/* ── Mention toasts ──────────────────────────────────────────────────────── */
+.mention-toasts {
+  position: absolute;
+  top: 70px;
+  right: 16px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.mention-toast {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 107, 0, 0.5);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  font-size: 0.82rem;
+  color: #e0e0e0;
+  max-width: 280px;
+  pointer-events: all;
+}
+
+.mention-toast__from {
+  font-weight: 700;
+  color: #ff9b4a;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.mention-toast__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #bbb;
+}
+
+.mention-toast__close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 0 0 8px;
+  flex-shrink: 0;
+}
+
+.mention-toast__close:hover {
+  color: #ccc;
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast-enter-from {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
 /* ── Page layout ─────────────────────────────────────────────────────────── */
 .chat-page {
   min-height: calc(100vh - 64px);
