@@ -290,6 +290,7 @@
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+  position: relative;
 }
 
 .chat-header {
