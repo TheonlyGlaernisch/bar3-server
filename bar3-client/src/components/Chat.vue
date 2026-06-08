@@ -50,6 +50,18 @@
           </div>
         </div>
       </div>
+      <!-- Mention toasts -->
+      <TransitionGroup name="toast" tag="div" class="mention-toasts" aria-live="polite">
+        <div
+          v-for="toast in mentionToasts"
+          :key="toast.id"
+          class="mention-toast"
+        >
+          <span class="mention-toast__from">@{{ toast.from }}</span>
+          <span class="mention-toast__text">{{ toast.text }}</span>
+          <button class="mention-toast__close" aria-label="Dismiss" @click="dismissToast(toast.id)">×</button>
+         </div>
+      </TransitionGroup>
 
       <div v-if="statusMessage" class="chat-status" :class="statusType">
         {{ statusMessage }}
