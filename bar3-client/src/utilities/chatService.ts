@@ -272,15 +272,33 @@ class ChatService {
     }
   }
 
-  private sendPushNotification(from: string, text: string): void {
-    if (!('Notification' in window) || Notification.permission !== 'granted') return;
-    if (document.hasFocus()) return;
+  private async sendPushNotification(from: string, text: string): Promise<void> {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  if (document.hasFocus()) return;
+
+  // Try service worker first (works in Opera and modern browsers)
+  if ('serviceWorker' in navigator) {
+    const registration = await navigator.serviceWorker.ready.catch(() => null);
+    if (registration) {
+      await registration.showNotification(`${from} mentioned you`, {
+        body: text.slice(0, 100),
+        icon: '/favicon.ico',
+        tag: `bar3-mention-${Date.now()}`,
+      }).catch(() => undefined);
+      return;
+    }
+  }
+
+  // Fallback to basic Notification API
+  try {
     const n = new Notification(`${from} mentioned you`, {
       body: text.slice(0, 100),
       icon: '/favicon.ico',
       tag: `bar3-mention-${Date.now()}`,
     });
     n.onclick = () => { window.focus(); n.close(); };
+  } catch {
+    // Notification constructor blocked (Opera without SW, etc.)
   }
 }
 
