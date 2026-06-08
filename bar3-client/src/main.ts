@@ -13,6 +13,10 @@ document.title = 'TRF owns this thing';
 const app = createApp(App);
 
 
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+}
+
 app.use(store);
 app.use(router);
 app.use(vuetify);
