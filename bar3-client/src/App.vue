@@ -68,12 +68,22 @@ export default defineComponent({
     V2AutomationToggle,
   },
   setup() {
-    const { mobile: isMobile } = useDisplay();
-    return { isMobile };
-    const store = useStore();
-    const mentionToasts = computed(() => store.getters['chat/mentionToasts'] ?? []);
-    const dismissToast = (id: number) => store.commit('chat/dismissMentionToast', id);
-  },
+  const { mobile: isMobile } = useDisplay();
+
+  const store = useStore();
+  const mentionToasts = computed(
+    () => store.getters['chat/mentionToasts'] ?? []
+  );
+
+  const dismissToast = (id: number) =>
+    store.commit('chat/dismissMentionToast', id);
+
+  return {
+    isMobile,
+    mentionToasts,
+    dismissToast,
+  };
+},
   data() {
     return {
       sideBarOpen: false,
