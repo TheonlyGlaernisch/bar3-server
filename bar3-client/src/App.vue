@@ -57,6 +57,8 @@ import V2AutomationToggle from '@/components/V2AutomationToggle.vue';
 import { hasV2Credentials, v2Api } from '@/utilities/v2Api';
 import { discordAuth } from '@/utilities/discordAuth';
 import { chatService } from '@/utilities/chatService';
+import { useStore } from 'vuex';
+import { computed } from 'vue';
 
   
 export default defineComponent({
@@ -68,6 +70,9 @@ export default defineComponent({
   setup() {
     const { mobile: isMobile } = useDisplay();
     return { isMobile };
+    const store = useStore();
+    const mentionToasts = computed(() => store.getters['chat/mentionToasts'] ?? []);
+    const dismissToast = (id: number) => store.commit('chat/dismissMentionToast', id);
   },
   data() {
     return {
@@ -111,6 +116,19 @@ export default defineComponent({
 
 <style>
   @import url('styles/viewStyle.css');
+
+
+  .mention-toasts--global {
+  position: fixed;
+  bottom: 24px;
+  right: 16px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
 
   .v-toolbar__content {
     border-bottom: thin solid rgba(255, 107, 0, 0.3) !important;
