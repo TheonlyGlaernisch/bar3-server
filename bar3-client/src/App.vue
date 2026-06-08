@@ -74,6 +74,11 @@ export default defineComponent({
 
     if (!session.authenticated) {
       return;
+
+    const hasMemberAccess = session.roles.memberGuild || session.isAdmin;
+      if (hasMemberAccess) {
+      chatService.init(this.$store);
+     }
     }
 
     await Promise.all([
