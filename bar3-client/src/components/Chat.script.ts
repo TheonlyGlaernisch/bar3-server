@@ -13,7 +13,11 @@ export default defineComponent({
     const inputRef = ref<HTMLInputElement | null>(null);
     const mentionIndex = ref(0);
     const mentionSuggestions = ref<{ username: string; isAdmin: boolean }[]>([]);
+    const showScrollButton = ref(false);
     let mentionStart = -1;
+
+    // How many px from the bottom before the button appears
+    const SCROLL_THRESHOLD = 200;
 
     // ── Read all reactive state from store ────────────────────────────────────
     const messages = computed(() => store.getters['chat/messages']);
@@ -30,20 +34,41 @@ export default defineComponent({
 
     const canSend = computed(() => connected.value && store.getters.isDiscordAuthed);
 
-    // ── Auto-scroll ───────────────────────────────────────────────────────────
-    const scrollToBottom = () => {
-      if (!messagesContainer.value) return;
-      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+    // ── Scroll helpers ────────────────────────────────────────────────────────
+    const isNearBottom = (): boolean => {
+      const el = messagesContainer.value;
+      if (!el) return true;
+      return el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD;
     };
 
-    watch(messages, () => { void nextTick().then(scrollToBottom); });
+    const scrollToBottom = () => {
+      const el = messagesContainer.value;
+      if (!el) return;
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      showScrollButton.value = false;
+    };
+
+    const onScroll = () => {
+      showScrollButton.value = !isNearBottom();
+    };
+
+    // When new messages arrive, auto-scroll only if already near bottom;
+    // otherwise show the button so the user knows there's something new.
+    watch(messages, () => {
+      void nextTick().then(() => {
+        if (isNearBottom()) {
+          scrollToBottom();
+        } else {
+          showScrollButton.value = true;
+        }
+      });
+    });
 
     // ── Mention toasts ────────────────────────────────────────────────────────
     const dismissToast = (id: number) => {
       store.commit('chat/dismissMentionToast', id);
     };
 
-    // Auto-dismiss toasts after 5 s
     watch(mentionToasts, (toasts) => {
       for (const toast of toasts) {
         window.setTimeout(() => dismissToast(toast.id), 5000);
@@ -67,6 +92,7 @@ export default defineComponent({
       if (!text || !canSend.value) return;
       chatService.send(text);
       newMessage.value = '';
+      void nextTick().then(scrollToBottom);
     };
 
     // ── Typing indicators ─────────────────────────────────────────────────────
@@ -139,15 +165,12 @@ export default defineComponent({
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
     onMounted(() => {
-      // Service is already running (started by App.vue); just scroll to bottom and request notification perms.
       void nextTick().then(scrollToBottom);
       requestNotificationPermission();
-
       document.addEventListener('click', () => { showOnlineUsers.value = false; });
     });
 
     onUnmounted(() => {
-      // Do NOT disconnect — the service persists across routes intentionally.
       chatService.sendTypingStop();
     });
 
@@ -165,10 +188,13 @@ export default defineComponent({
       mentionToasts,
       notificationPermission,
       myUsername,
+      showScrollButton,
       formatTimestamp,
       sendMessage,
       sendTypingStart,
       sendTypingStop,
+      scrollToBottom,
+      onScroll,
       messagesContainer,
       showOnlineUsers,
       inputRef,
