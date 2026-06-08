@@ -301,5 +301,5 @@ class ChatService {
     // Notification constructor blocked (Opera without SW, etc.)
   }
 }
-
+}
 export const chatService = new ChatService();
