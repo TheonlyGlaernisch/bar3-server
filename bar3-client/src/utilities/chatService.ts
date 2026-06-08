@@ -229,7 +229,7 @@ class ChatService {
       const myUsername: string = this.store?.state.chat?.myUsername ?? '';
       if (data.type === 'message' && data.username !== myUsername && myUsername) {
         const escaped = myUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        if (new RegExp(`@${escaped}(?:\\b|$)`, 'i').test(data.text)) {
+        if (new RegExp(`@${escaped}(?:[^a-zA-Z0-9_]|$)`, 'i').test(data.text)) {
           this.commit('pushMentionToast', {
             id: Date.now() + Math.random(),
             from: data.username || 'Someone',
