@@ -27,10 +27,10 @@ export default defineComponent({
     const connectionClass = computed(() => store.getters['chat/connectionClass']);
     const statusMessage = computed(() => store.getters['chat/statusMessage']);
     const statusType = computed(() => store.getters['chat/statusType']);
-    const onlineUsers = computed(() => store.getters['chat/onlineUsers']);
-    const typingUsers = computed(() => store.getters['chat/typingUsers']);
-    const myUsername = computed(() => store.getters['chat/myUsername']);
-    const mentionToasts = computed(() => store.getters['chat/mentionToasts']);
+    const onlineUsers = computed(() => store.getters['chat/onlineUsers'] ?? []);
+    const typingUsers = computed(() => store.getters['chat/typingUsers'] ?? []);
+    const myUsername = computed(() => store.getters['chat/myUsername'] ?? '');
+    const mentionToasts = computed(() => store.getters['chat/mentionToasts'] ?? []);
 
     const canSend = computed(() => connected.value && store.getters.isDiscordAuthed);
 
