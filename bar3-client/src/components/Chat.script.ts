@@ -69,9 +69,12 @@ export default defineComponent({
       store.commit('chat/dismissMentionToast', id);
     };
 
-    watch(mentionToasts, (toasts) => {
+    watch(mentionToasts, (toasts, prev) => {
+      const prevIds = new Set((prev ?? []).map(t => t.id));
       for (const toast of toasts) {
-        window.setTimeout(() => dismissToast(toast.id), 5000);
+        if (!prevIds.has(toast.id)) {
+          window.setTimeout(() => dismissToast(toast.id), 5000);
+        }
       }
     });
 
