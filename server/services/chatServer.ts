@@ -418,6 +418,9 @@ export function attachChatServer(
       };
 
       clients.set(client, info);
+
+      // Tell the client who they are
+      client.send(JSON.stringify({ type: 'connected', username }));
       // Send current online users to new client
       const seenJoin = new Set<string>();
       const currentUsers = [...clients.values()]
