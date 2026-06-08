@@ -282,7 +282,6 @@ class ChatService {
     });
     n.onclick = () => { window.focus(); n.close(); };
   }
-  }
 }
 
 export const chatService = new ChatService();
