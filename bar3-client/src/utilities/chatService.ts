@@ -273,14 +273,15 @@ class ChatService {
   }
 
   private sendPushNotification(from: string, text: string): void {
-    if (document.visibilityState !== 'visible' && 'Notification' in window && Notification.permission === 'granted') {
-      const n = new Notification(`${from} mentioned you`, {
-        body: text.slice(0, 100),
-        icon: '/favicon.ico',
-        tag: `bar3-mention-${Date.now()}`,
-      });
-      n.onclick = () => { window.focus(); n.close(); };
-    }
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    if (document.hasFocus()) return;
+    const n = new Notification(`${from} mentioned you`, {
+      body: text.slice(0, 100),
+      icon: '/favicon.ico',
+      tag: `bar3-mention-${Date.now()}`,
+    });
+    n.onclick = () => { window.focus(); n.close(); };
+  }
   }
 }
 
