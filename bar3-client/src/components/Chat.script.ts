@@ -111,7 +111,7 @@ export default defineComponent({
         const query = slice.slice(atPos + 1).toLowerCase();
         if (!query.includes(' ')) {
           mentionStart = atPos;
-          mentionSuggestions.value = onlineUsers.value.filter((u: { username: string }) =>
+          mentionSuggestions.value = (onlineUsers.value ?? []).filter((u: { username: string }) =>
             u.username.toLowerCase().startsWith(query)
           );
           mentionIndex.value = 0;
