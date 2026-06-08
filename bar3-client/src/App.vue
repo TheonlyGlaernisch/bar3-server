@@ -43,7 +43,9 @@ import SideBar from '@/components/SideBar.vue';
 import V2AutomationToggle from '@/components/V2AutomationToggle.vue';
 import { hasV2Credentials, v2Api } from '@/utilities/v2Api';
 import { discordAuth } from '@/utilities/discordAuth';
+import { chatService } from '@/utilities/chatService';
 
+  
 export default defineComponent({
   name: 'App',
   components: {
