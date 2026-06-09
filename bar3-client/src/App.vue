@@ -21,19 +21,6 @@
             Bar 3
           </div>
         </div>
-        <!-- in App.vue template, inside <v-app> at the top level -->
-        <TransitionGroup name="toast" tag="div" class="mention-toasts mention-toasts--global">
-          <div
-            v-for="toast in mentionToasts"
-            :key="toast.id"
-            class="mention-toast"
-            @click="dismissToast(toast.id)"
-          >
-            <span class="mention-toast__from">{{ toast.from }}</span>
-            <span class="mention-toast__text">{{ toast.text }}</span>
-            <button class="mention-toast__close" @click.stop="dismissToast(toast.id)">×</button>
-          </div>
-        </TransitionGroup>
 
         <v-spacer />
 
@@ -42,6 +29,20 @@
 
       <side-bar v-model="sideBarOpen" :disabled="false"/>
     </template>
+
+            <!-- in App.vue template, inside <v-app> at the top level -->
+    <TransitionGroup name="toast" tag="div" class="mention-toasts mention-toasts--global">
+      <div
+        v-for="toast in mentionToasts"
+        :key="toast.id"
+        class="mention-toast"
+        @click="dismissToast(toast.id)"
+      >
+        <span class="mention-toast__from">{{ toast.from }}</span>
+        <span class="mention-toast__text">{{ toast.text }}</span>
+        <button class="mention-toast__close" @click.stop="dismissToast(toast.id)">×</button>
+      </div>
+    </TransitionGroup>
 
     <v-main>
       <router-view />
