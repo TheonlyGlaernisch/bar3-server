@@ -79,12 +79,13 @@ export default defineComponent({
       return Object.values(map).filter((r: any) => r.count > 0);
     }
 
+    // In Chat.ts
     function toggleReaction(key: string, emoji: string) {
-  // Optimistic local update
+      const existing = reactions.value[key]?.[emoji];
+      const delta: 1 | -1 = existing?.myReaction ? -1 : 1;
       store.commit('chat/toggleReactionOptimistic', { messageKey: key, emoji });
-  // Send to server
-      chatService.sendReaction(key, emoji);
-     }
+      chatService.sendReaction(key, emoji, delta);
+    }
 
     function onMessageMouseEnter(key: string) {
       if (hoverLeaveTimer) {
