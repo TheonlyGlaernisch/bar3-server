@@ -12,6 +12,7 @@ import v2TemplatesRouter from './api/routers/v2/templates';
 import v2AutomationRouter from './api/routers/v2/automation';
 import v2AnalyticsRouter from './api/routers/v2/analytics';
 import v2SendTestRouter from './api/routers/v2/sendTest';
+import v2PushRouter from './api/routers/v2/push';
 import discordAuthRouter from './api/routers/discord/auth';
 import adminRouter from './api/routers/admin';
 import pnwNativeAuthRouter from './api/routers/pnwNativeAuth';
@@ -452,6 +453,7 @@ app.use('/api/v2/templates', v2TemplatesRouter);
 app.use('/api/v2/automation', v2AutomationRouter);
 app.use('/api/v2/send-test', v2SendTestRouter);
 app.use('/api/v2/analytics', v2AnalyticsRouter);
+app.use('/api/v2/push', v2PushRouter);
 // Mount legacy UI + wildcard route after API routes so it doesn't intercept /api/v2/* GET requests.
 mountLegacyUiAndApi(app);
 
