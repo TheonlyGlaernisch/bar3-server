@@ -71,7 +71,14 @@ class ChatService {
       this.ws.send(JSON.stringify({ type: 'typing_stop' }));
     }
   }
-
+  sendReaction(messageKey: string, emoji: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+  // Toggle: check current state to determine delta
+    const reactions = this.store?.state.chat?.reactions ?? {};
+    const existing = reactions[messageKey]?.[emoji];
+    const delta = existing?.myReaction ? -1 : 1;
+    this.ws.send(JSON.stringify({ type: 'reaction', messageKey, emoji, delta }));
+  }
   disconnect(): void {
     this.started = false;
     this.closeSocket();
@@ -211,6 +218,21 @@ class ChatService {
         text: m.text ?? '',
         isAdmin: m.isAdmin === true,
       })));
+      return;
+    }
+
+    if (data.type === 'reaction_update') {
+      this.commit('applyReactionDelta', {
+        messageKey: data.messageKey,
+        emoji: data.emoji,
+        username: data.username,
+        delta: data.delta,
+      });
+      return;
+    }
+
+    if (data.type === 'reactions_snapshot') {
+      this.commit('setReactionsSnapshot', data.snapshot);
       return;
     }
 
