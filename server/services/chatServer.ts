@@ -38,10 +38,34 @@ interface ChatPayload {
   timestamp: number;
 }
 
+interface ReactionPayload {
+  type: 'reaction';
+  messageKey: string;
+  emoji: string;
+  username: string;
+  /** +1 to add, -1 to remove */
+  delta: 1 | -1;
+}
+
+interface ReactionBroadcast {
+  type: 'reaction_update';
+  messageKey: string;
+  emoji: string;
+  username: string;
+  delta: 1 | -1;
+}
+
 // ─── State ────────────────────────────────────────────────────────────────────
 
 const clients = new Map<ws.WebSocket, ClientInfo>();
 const typingUsers = new Map<ws.WebSocket, { username: string; timer: ReturnType<typeof setTimeout> }>();
+
+/**
+ * In-memory reaction store: messageKey → emoji → Set<username>
+ * Cleared on server restart (reactions are ephemeral).
+ */
+const reactionStore = new Map<string, Map<string, Set<string>>>();
+
 const MAX_CLIENTS = 50;
 const MAX_MSG_LEN = 500;
 const RATE_WINDOW_MS = 1000;
@@ -50,6 +74,10 @@ const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 const NATION_ALLIANCE_CACHE_MS = 5 * 60 * 1000;
 const CHAT_UNAUTHENTICATED_CLOSE_CODE = 4001;
 const CHAT_FORBIDDEN_CLOSE_CODE = 4003;
+/** Max distinct emoji per message to prevent spam */
+const MAX_EMOJI_PER_MESSAGE = 20;
+/** Max reactions per user per message */
+const MAX_REACTIONS_PER_USER_PER_MESSAGE = 5;
 
 type RegistrationDoc = {
   nation_id?: number | string;
@@ -89,7 +117,6 @@ function broadcast(message: ChatPayload): void {
     }
   }
 
-  // Persist — fire-and-forget, never blocks the live broadcast
   ChatMessage.create({
     username:  message.username ?? '',
     text:      message.text,
@@ -97,6 +124,77 @@ function broadcast(message: ChatPayload): void {
     timestamp: new Date(message.timestamp),
     isAdmin: message.isAdmin === true,
   }).catch(() => undefined);
+}
+
+function broadcastReaction(payload: ReactionBroadcast): void {
+  const data = JSON.stringify(payload);
+  for (const [client] of clients) {
+    if (client.readyState === ws.WebSocket.OPEN) {
+      client.send(data);
+    }
+  }
+}
+
+/**
+ * Build the full reaction snapshot for a message key so a newly joined
+ * client can hydrate its reaction state.
+ */
+function buildReactionSnapshot(messageKey: string): Record<string, string[]> {
+  const emojiMap = reactionStore.get(messageKey);
+  if (!emojiMap) return {};
+  const snapshot: Record<string, string[]> = {};
+  for (const [emoji, users] of emojiMap) {
+    if (users.size > 0) snapshot[emoji] = Array.from(users);
+  }
+  return snapshot;
+}
+
+/**
+ * Apply a reaction delta to the store.
+ * Returns the effective delta after applying (0 if nothing changed).
+ */
+function applyReaction(
+  messageKey: string,
+  emoji: string,
+  username: string,
+  delta: 1 | -1
+): 1 | -1 | 0 {
+  let emojiMap = reactionStore.get(messageKey);
+  if (!emojiMap) {
+    if (delta === -1) return 0;
+    emojiMap = new Map();
+    reactionStore.set(messageKey, emojiMap);
+  }
+
+  let users = emojiMap.get(emoji);
+  if (!users) {
+    if (delta === -1) return 0;
+    users = new Set();
+    emojiMap.set(emoji, users);
+  }
+
+  if (delta === 1) {
+    if (users.has(username)) return 0; // already reacted
+
+    // Enforce per-message emoji cap
+    if (emojiMap.size >= MAX_EMOJI_PER_MESSAGE && !emojiMap.has(emoji)) return 0;
+
+    // Enforce per-user per-message cap
+    let userReactionCount = 0;
+    for (const [, uSet] of emojiMap) {
+      if (uSet.has(username)) userReactionCount++;
+    }
+    if (userReactionCount >= MAX_REACTIONS_PER_USER_PER_MESSAGE) return 0;
+
+    users.add(username);
+    return 1;
+  } else {
+    if (!users.has(username)) return 0; // wasn't reacted
+    users.delete(username);
+    if (users.size === 0) emojiMap.delete(emoji);
+    if (emojiMap.size === 0) reactionStore.delete(messageKey);
+    return -1;
+  }
 }
 
 function isImageContent(text: string): boolean {
@@ -107,6 +205,7 @@ function isImageContent(text: string): boolean {
     /https?:\/\/\S+\.(png|jpg|jpeg|gif|webp|svg|bmp)/i.test(text)
   );
 }
+
 function broadcastTyping(excludeClient?: ws.WebSocket): void {
   const usernames = [...typingUsers.values()].map((t) => t.username);
   const payload = JSON.stringify({ type: 'typing_update', typing: usernames });
@@ -191,7 +290,6 @@ function closeRejectedWebSocket(
 
 function getSignedSessionId(rawSid: string, secret: string): string | null {
   if (!rawSid.startsWith('s:')) return null;
-
   const unsigned = signature.unsign(rawSid.slice(2), secret);
   return unsigned === false || !unsigned ? null : unsigned;
 }
@@ -316,7 +414,6 @@ export async function resolveChatAccess(session: SessionData | null): Promise<Ch
   const admin = isDiscordAdmin(session);
   const registeredNation = await resolveChatRegistration(session);
 
-  // If registered normally, use that
   if (registeredNation) {
     const trackedAllianceId = getTrackedAllianceId();
     if (!trackedAllianceId) return { ...registeredNation, isAdmin: admin };
@@ -330,7 +427,6 @@ export async function resolveChatAccess(session: SessionData | null): Promise<Ch
     };
   }
 
-  // Not registered — check if they are an admin; if so, grant access with their Discord username
   if (admin) {
     return {
       nationId: 0,
@@ -378,26 +474,12 @@ export function attachChatServer(
     const access = await resolveChatAccess(session);
 
     if (!session) {
-      closeRejectedWebSocket(
-        chatWss,
-        req,
-        socket,
-        head,
-        CHAT_UNAUTHENTICATED_CLOSE_CODE,
-        'Unauthorized'
-      );
+      closeRejectedWebSocket(chatWss, req, socket, head, CHAT_UNAUTHENTICATED_CLOSE_CODE, 'Unauthorized');
       return;
     }
 
     if (!access) {
-      closeRejectedWebSocket(
-        chatWss,
-        req,
-        socket,
-        head,
-        CHAT_FORBIDDEN_CLOSE_CODE,
-        'Forbidden'
-      );
+      closeRejectedWebSocket(chatWss, req, socket, head, CHAT_FORBIDDEN_CLOSE_CODE, 'Forbidden');
       return;
     }
 
@@ -421,6 +503,7 @@ export function attachChatServer(
 
       // Tell the client who they are
       client.send(JSON.stringify({ type: 'connected', username }));
+
       // Send current online users to new client
       const seenJoin = new Set<string>();
       const currentUsers = [...clients.values()]
@@ -431,126 +514,152 @@ export function attachChatServer(
         })
         .map((c) => ({ username: c.username, isAdmin: c.isAdmin }));
       client.send(JSON.stringify({ type: 'users_list', users: currentUsers }));
-      // Notify everyone else of the new user
+
       broadcastOnlineUsers();
 
-      // Deliver history to this client before announcing their arrival
+      // Deliver message history + current reaction state
       ChatMessage.find({ timestamp: { $gte: new Date(Date.now() - FOURTEEN_DAYS_MS) } })
         .sort({ timestamp: 1 })
         .lean()
         .exec()
         .then((docs) => {
           if (client.readyState !== ws.WebSocket.OPEN) return;
-          client.send(JSON.stringify({
-            type: 'history',
-            messages: docs.map((d) => ({
-              type:      d.type,
-              username:  d.username,
-              text:      d.text,
-              timestamp: (d.timestamp as Date).getTime(),
-              isAdmin: d.isAdmin === true,
-            })),
+
+          const messages = docs.map((d) => ({
+            type:      d.type,
+            username:  d.username,
+            text:      d.text,
+            timestamp: (d.timestamp as Date).getTime(),
+            isAdmin:   d.isAdmin === true,
           }));
+
+          client.send(JSON.stringify({ type: 'history', messages }));
+
+          // Send the full reaction snapshot so the joining client is up to date
+          if (reactionStore.size > 0) {
+            const snapshot: Record<string, Record<string, string[]>> = {};
+            for (const [msgKey, emojiMap] of reactionStore) {
+              const emojiSnap: Record<string, string[]> = {};
+              for (const [emoji, users] of emojiMap) {
+                if (users.size > 0) emojiSnap[emoji] = Array.from(users);
+              }
+              if (Object.keys(emojiSnap).length > 0) snapshot[msgKey] = emojiSnap;
+            }
+            if (Object.keys(snapshot).length > 0) {
+              client.send(JSON.stringify({ type: 'reactions_snapshot', snapshot }));
+            }
+          }
         })
         .catch(() => undefined);
 
-      // Announce join to everyone (also persists via broadcast)
       broadcast({ type: 'system', text: `${username} joined`, timestamp: Date.now() });
 
       client.on('message', (raw) => {
-        const info = clients.get(client);
-        if (!info) return;
-      
+        const clientInfo = clients.get(client);
+        if (!clientInfo) return;
+
         const now = Date.now();
-        if (now - info.lastMessageAt < RATE_WINDOW_MS) {
-          info.messageCount += 1;
-          if (info.messageCount > RATE_MAX) return;
-        } else {
-          info.messageCount = 1;
-          info.lastMessageAt = now;
-        }
-      
-        let parsed: { text?: unknown; type?: string };
+
+        let parsed: { text?: unknown; type?: string; messageKey?: unknown; emoji?: unknown; delta?: unknown };
         try {
           parsed = JSON.parse(raw.toString());
         } catch {
           return;
         }
-      
+
+        // ── Reaction event ────────────────────────────────────────────────
+        if (parsed.type === 'reaction') {
+          const messageKey = typeof parsed.messageKey === 'string' ? parsed.messageKey.trim() : '';
+          const emoji = typeof parsed.emoji === 'string' ? parsed.emoji.trim() : '';
+          const delta = parsed.delta === 1 ? 1 : -1;
+
+          if (!messageKey || !emoji || emoji.length > 8) return;
+
+          const effectiveDelta = applyReaction(messageKey, emoji, clientInfo.username, delta as 1 | -1);
+          if (effectiveDelta === 0) return; // no-op
+
+          broadcastReaction({
+            type: 'reaction_update',
+            messageKey,
+            emoji,
+            username: clientInfo.username,
+            delta: effectiveDelta,
+          });
+          return;
+        }
+
+        // ── Typing events ──────────────────────────────────────────────────
         if (parsed.type === 'typing_start') {
           const existing = typingUsers.get(client);
           if (existing) clearTimeout(existing.timer);
-      
+
           const timer = setTimeout(() => {
             typingUsers.delete(client);
             broadcastTyping(client);
           }, 5000);
-      
-          typingUsers.set(client, {
-            username: info.username,
-            timer,
-          });
-      
+
+          typingUsers.set(client, { username: clientInfo.username, timer });
           broadcastTyping(client);
           return;
         }
-      
+
         if (parsed.type === 'typing_stop') {
           const existing = typingUsers.get(client);
           if (existing) clearTimeout(existing.timer);
-      
           typingUsers.delete(client);
           broadcastTyping(client);
           return;
         }
-      
-        const text = typeof parsed.text === 'string'
-          ? parsed.text.trim()
-          : '';
-      
+
+        // ── Rate limit for regular messages ────────────────────────────────
+        if (now - clientInfo.lastMessageAt < RATE_WINDOW_MS) {
+          clientInfo.messageCount += 1;
+          if (clientInfo.messageCount > RATE_MAX) return;
+        } else {
+          clientInfo.messageCount = 1;
+          clientInfo.lastMessageAt = now;
+        }
+
+        const text = typeof parsed.text === 'string' ? parsed.text.trim() : '';
         if (!text || text.length > MAX_MSG_LEN) return;
         if (isImageContent(text)) return;
-      
+
         broadcast({
           type: 'message',
-          username: info.username,
-          isAdmin: info.isAdmin,
+          username: clientInfo.username,
+          isAdmin: clientInfo.isAdmin,
           text,
           timestamp: now,
         });
       });
+
       client.on('close', () => {
-        const info = clients.get(client);
-      
+        const clientInfo = clients.get(client);
+
         const typing = typingUsers.get(client);
         if (typing) {
           clearTimeout(typing.timer);
           typingUsers.delete(client);
         }
-      
+
         clients.delete(client);
-      
-        if (info) {
-          broadcast({
-            type: 'system',
-            text: `${info.username} left`,
-            timestamp: Date.now(),
-          });
+
+        if (clientInfo) {
+          broadcast({ type: 'system', text: `${clientInfo.username} left`, timestamp: Date.now() });
         }
-      
+
         broadcastTyping();
         broadcastOnlineUsers();
       });
-      
+
       client.on('error', () => {
         const typing = typingUsers.get(client);
         if (typing) {
           clearTimeout(typing.timer);
           typingUsers.delete(client);
         }
-      
+
         clients.delete(client);
-      
         broadcastTyping();
         broadcastOnlineUsers();
       });
