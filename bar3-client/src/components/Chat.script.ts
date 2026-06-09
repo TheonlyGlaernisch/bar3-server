@@ -64,7 +64,7 @@ export default defineComponent({
     let mentionStart = -1;
 
     // ── Reactions ─────────────────────────────────────────────────────────────
-    const reactions = ref<ReactionsMap>(new Map());
+    const reactions = computed(() => store.getters['chat/reactions']);
     const hoveredMessageKey = ref<string | null>(null);
     let hoverLeaveTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -72,31 +72,19 @@ export default defineComponent({
       return `${msg.timestamp}-${msg.username || msg.type}-${idx}`;
     }
 
-    function getReactions(key: string): Reaction[] {
-      const map = reactions.value.get(key);
+    
+    function getReactions(key: string) {
+      const map = reactions.value[key];
       if (!map) return [];
-      return Array.from(map.values()).filter((r) => r.count > 0);
+      return Object.values(map).filter((r: any) => r.count > 0);
     }
 
     function toggleReaction(key: string, emoji: string) {
-      const map = reactions.value.get(key) ?? new Map<string, Reaction>();
-      const existing = map.get(emoji);
-      if (existing) {
-        if (existing.myReaction) {
-          existing.count = Math.max(0, existing.count - 1);
-          existing.myReaction = false;
-        } else {
-          existing.count += 1;
-          existing.myReaction = true;
-        }
-        if (existing.count === 0) map.delete(emoji);
-        else map.set(emoji, { ...existing });
-      } else {
-        map.set(emoji, { emoji, count: 1, myReaction: true });
-      }
-      reactions.value = new Map(reactions.value.set(key, map));
-      hoveredMessageKey.value = null;
-    }
+  // Optimistic local update
+      store.commit('chat/toggleReactionOptimistic', { messageKey: key, emoji });
+  // Send to server
+      chatService.sendReaction(key, emoji);
+     }
 
     function onMessageMouseEnter(key: string) {
       if (hoverLeaveTimer) {
