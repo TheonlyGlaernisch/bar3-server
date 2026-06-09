@@ -14,6 +14,7 @@
 
 import { Store } from 'vuex';
 import { getChatRegistrationStatus } from '@/utilities/chatApi';
+import { AUTH_BASE_URL } from '@/utilities/serverUrls';
 
 export type ChatMessage = {
   type: 'message' | 'system';
@@ -27,6 +28,87 @@ type OnlineUser = { username: string; isAdmin: boolean };
 
 const RECONNECT_DELAY_MS = 5_000;
 const REJECTED_CLOSE_CODES = new Set([4001, 4003]);
+
+// ── Server-push helpers ───────────────────────────────────────────────────────
+
+/**
+ * Convert a base64url string to a Uint8Array (needed for applicationServerKey).
+ */
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+}
+
+/**
+ * Fetch the server's VAPID public key.
+ * Returns null when the server hasn't configured push (503 or network error).
+ */
+async function fetchVapidPublicKey(): Promise<string | null> {
+  try {
+    const res = await fetch(`${AUTH_BASE_URL}/api/v2/push/vapid-key`, {
+      credentials: 'include',
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return typeof data?.publicKey === 'string' ? data.publicKey : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Register the active ServiceWorker's push subscription with the server.
+ * Silently no-ops when:
+ *  - Notifications are not granted
+ *  - Push API is not supported (non-HTTPS, old browser)
+ *  - Server hasn't configured VAPID keys
+ *
+ * Must be called AFTER Notification.requestPermission() resolves to 'granted'.
+ */
+async function registerServerPushSubscription(): Promise<void> {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  if (Notification.permission !== 'granted') return;
+
+  const vapidPublicKey = await fetchVapidPublicKey();
+  if (!vapidPublicKey) return; // server push not configured
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
+
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+      });
+    }
+
+    // Send subscription to the server so it can push to us when offline
+    const sub = subscription.toJSON() as {
+      endpoint: string;
+      keys?: { p256dh?: string; auth?: string };
+    };
+
+    if (!sub.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) return;
+
+    await fetch(`${AUTH_BASE_URL}/api/v2/push/subscribe`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: sub.endpoint,
+        keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
+      }),
+    });
+  } catch (err) {
+    // Push subscription can fail for many benign reasons (blocked by OS, etc.)
+    console.warn('[chatService] Could not register server push subscription:', err);
+  }
+}
+
+// ── ChatService class ─────────────────────────────────────────────────────────
 
 class ChatService {
   private ws: WebSocket | null = null;
@@ -71,11 +153,12 @@ class ChatService {
       this.ws.send(JSON.stringify({ type: 'typing_stop' }));
     }
   }
-// In chatService.ts
+
   sendReaction(messageKey: string, emoji: string, delta: 1 | -1): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     this.ws.send(JSON.stringify({ type: 'reaction', messageKey, emoji, delta }));
   }
+
   disconnect(): void {
     this.started = false;
     this.closeSocket();
@@ -84,6 +167,32 @@ class ChatService {
     this.commit('setStatusMessage', '');
     this.commit('setOnlineUsers', []);
     this.commit('setTypingUsers', []);
+  }
+
+  /**
+   * Request notification permission and, if granted, register a server-push
+   * subscription so @mentions arrive even when the app is closed / backgrounded.
+   *
+   * On iOS 16.4+ (PWA added to Home Screen) this is the call that enables
+   * true background push. On other platforms it enables both in-app toasts
+   * and OS-level notifications.
+   */
+  async requestNotificationPermission(): Promise<NotificationPermission> {
+    if (!('Notification' in window)) return 'denied';
+
+    let permission = Notification.permission;
+
+    if (permission === 'default') {
+      permission = await Notification.requestPermission();
+    }
+
+    if (permission === 'granted') {
+      // Register server push regardless of whether we just asked or it was
+      // already granted — handles the case where the SW updated.
+      await registerServerPushSubscription();
+    }
+
+    return permission;
   }
 
   // ── Internals ───────────────────────────────────────────────────────────────
@@ -210,11 +319,14 @@ class ChatService {
     }
 
     if (data.type === 'history' && Array.isArray(data.messages)) {
-      this.commit('setMessages', data.messages.map((m: any) => ({
-        ...m,
-        text: m.text ?? '',
-        isAdmin: m.isAdmin === true,
-      })));
+      this.commit(
+        'setMessages',
+        data.messages.map((m: any) => ({
+          ...m,
+          text: m.text ?? '',
+          isAdmin: m.isAdmin === true,
+        }))
+      );
       return;
     }
 
@@ -244,7 +356,9 @@ class ChatService {
       };
       this.commit('pushMessage', msg);
 
-      // Mention notification
+      // In-app mention: show a toast + play a sound when the app is open.
+      // The OS-level notification for offline/background is handled server-side
+      // via the stored push subscription (server/services/pushService.ts).
       const myUsername: string = this.store?.state.chat?.myUsername ?? '';
       if (data.type === 'message' && data.username !== myUsername && myUsername) {
         const escaped = myUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -255,7 +369,9 @@ class ChatService {
             text: data.text.slice(0, 120),
           });
           this.playMentionSound();
-          this.sendPushNotification(data.username || 'Someone', data.text);
+          // Only show an OS notification when the page is not focused
+          // (server-push handles the truly-offline / backgrounded case)
+          this.showFocusedPageNotification(data.username || 'Someone', data.text);
         }
       }
       return;
@@ -291,34 +407,30 @@ class ChatService {
     }
   }
 
-  private async sendPushNotification(from: string, text: string): Promise<void> {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  if (document.hasFocus()) return;
+  /**
+   * Show a native OS notification when the page doesn't have focus.
+   * This covers the "app is open in another tab" case.
+   * The "app is completely closed / backgrounded on iOS" case is handled by
+   * the server sending a Web Push to the stored subscription.
+   */
+  private showFocusedPageNotification(from: string, text: string): void {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    if (document.hasFocus()) return; // already visible — toast is enough
 
-  // Try service worker first (works in Opera and modern browsers)
-  if ('serviceWorker' in navigator) {
-    const registration = await navigator.serviceWorker.ready.catch(() => null);
-    if (registration) {
-      await registration.showNotification(`${from} mentioned you`, {
+    try {
+      const n = new Notification(`${from} mentioned you`, {
         body: text.slice(0, 100),
         icon: '/favicon.ico',
         tag: `bar3-mention-${Date.now()}`,
-      }).catch(() => undefined);
-      return;
+      });
+      n.onclick = () => {
+        window.focus();
+        n.close();
+      };
+    } catch {
+      // Notification constructor not available (e.g. SW-only contexts)
     }
   }
+}
 
-  // Fallback to basic Notification API
-  try {
-    const n = new Notification(`${from} mentioned you`, {
-      body: text.slice(0, 100),
-      icon: '/favicon.ico',
-      tag: `bar3-mention-${Date.now()}`,
-    });
-    n.onclick = () => { window.focus(); n.close(); };
-  } catch {
-    // Notification constructor blocked (Opera without SW, etc.)
-  }
-}
-}
 export const chatService = new ChatService();
