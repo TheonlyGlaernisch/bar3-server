@@ -2,6 +2,53 @@ import { computed, defineComponent, nextTick, onMounted, onUnmounted, ref, watch
 import { useStore } from 'vuex';
 import { chatService } from '@/utilities/chatService';
 
+// ── Emoji data ────────────────────────────────────────────────────────────────
+const EMOJI_CATEGORIES: { label: string; icon: string; emojis: string[] }[] = [
+  {
+    label: 'Smileys',
+    icon: '😀',
+    emojis: ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🫢','🫣','🤫','🤔','🫡','🤐','🤨','😐','😑','😶','🫥','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🤧','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐'],
+  },
+  {
+    label: 'Gestures',
+    icon: '👋',
+    emojis: ['👋','🤚','🖐','✋','🖖','🫱','🫲','🫳','🫴','👌','🤌','🤏','✌️','🤞','🫰','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','🫵','👍','👎','✊','👊','🤛','🤜','👏','🙌','🫶','👐','🤲','🤝','🙏','✍️','💪','🦵','🦶','👂','🦻','👃','🫀','🫁','🧠','🦷','🦴','👀','👁','👅','👄','🫦'],
+  },
+  {
+    label: 'Animals',
+    icon: '🐶',
+    emojis: ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐔','🐧','🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🪱','🐛','🦋','🐌','🐞','🐜','🪲','🦟','🦗','🪳','🕷','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🐊','🐅','🐆','🦓','🦍','🦧','🦣','🐘','🦛','🦏','🐪','🐫','🦒','🦘','🦬','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐'],
+  },
+  {
+    label: 'Food',
+    icon: '🍕',
+    emojis: ['🍕','🍔','🌭','🌮','🌯','🥙','🧆','🥚','🍳','🥘','🍲','🫕','🥣','🥗','🍿','🧈','🧂','🥫','🍱','🍘','🍙','🍚','🍛','🍜','🍝','🍠','🍢','🍣','🍤','🍥','🥮','🍡','🥟','🥠','🥡','🦪','🍦','🍧','🍨','🍩','🍪','🎂','🍰','🧁','🥧','🍫','🍬','🍭','🍮','🍯','🍼','🥛','☕','🫖','🍵','🧃','🥤','🧋','🍶','🍺','🍻','🥂','🍷','🫗','🥃','🍸','🍹','🧉','🍾'],
+  },
+  {
+    label: 'Objects',
+    icon: '💎',
+    emojis: ['💎','⚔️','🛡','🔧','🔨','⚙️','🔑','🗝','🔒','🔓','🔔','🔕','📢','📣','📯','🔊','🔉','🔈','🔇','📻','📺','📷','📸','📹','🎥','📽','🎞','📞','☎️','📟','📠','🔋','🪫','🔌','💡','🔦','🕯','🪔','🧯','🛢','💰','💴','💵','💶','💷','💸','💳','🪙','💹','✉️','📧','📨','📩','📤','📥','📦','📫','📪','📬','📭','📮','🗳','✏️','✒️','🖋','🖊','📝','📁','📂','🗂','📅','📆','🗒','🗓','📇','📈','📉','📊','📋','📌','📍','✂️','🗃','🗄','🗑'],
+  },
+  {
+    label: 'Symbols',
+    icon: '❤️',
+    emojis: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❤️‍🔥','❤️‍🩹','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✝️','☪️','🕉','☸️','✡️','🔯','🕎','☯️','☦️','🛐','⛎','♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓','🆔','⚛️','🉑','☢️','☣️','📴','📳','🈶','🈚','🈸','🈺','🈷️','✴️','🆚','💮','🉐','㊙️','㊗️','🈴','🈵','🈹','🈲','🅰️','🅱️','🆎','🆑','🅾️','🆘','❌','⭕','🛑','⛔','📛','🚫','💯','💢','♨️','🚷','🚯','🚳','🚱','🔞','📵','🚭','❗','❕','❓','❔','‼️','⁉️','🔅','🔆','〽️','⚠️','🚸','🔱','⚜️','🔰','♻️','✅','🈯','💹','❎','🌐','💠','Ⓜ️','🌀','💤','🏧','🚾','♿','🅿️','🛗','🈳','🈹','🚺','🚹','🚼','⚧','🚻','🚮','🎦','📶','🈁','🔣','ℹ️','🔤','🔡','🔠','🆖','🆗','🆙','🆒','🆕','🆓','0️⃣','1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟','🔢','#️⃣','*️⃣','⏏️','▶️','⏸','⏹','⏺','⏭','⏮','⏩','⏪','⏫','⏬','◀️','🔼','🔽','➡️','⬅️','⬆️','⬇️','↗️','↘️','↙️','↖️','↕️','↔️','↪️','↩️','⤴️','⤵️','🔀','🔁','🔂','🔃','🎵','🎶','➕','➖','➗','✖️','🟰','♾️','💲','❗','🔘','🔲','🔳','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟤','🔺','🔻','🔸','🔹','🔶','🔷','🔳','🔲','▪️','▫️','◾','◽','◼️','◻️','🟥','🟧','🟨','🟩','🟦','🟪','⬛','⬜','🟫'],
+  },
+];
+
+// Quick-reaction emoji bar shown on hover
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👏', '🎉'];
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface Reaction {
+  emoji: string;
+  count: number;
+  myReaction: boolean;
+}
+
+// Map of message key → emoji → Reaction
+type ReactionsMap = Map<string, Map<string, Reaction>>;
+
 export default defineComponent({
   name: 'AllianceChat',
   setup() {
@@ -16,10 +63,105 @@ export default defineComponent({
     const showScrollButton = ref(false);
     let mentionStart = -1;
 
-    // How many px from the bottom before the button appears
+    // ── Reactions ─────────────────────────────────────────────────────────────
+    const reactions = ref<ReactionsMap>(new Map());
+    const hoveredMessageKey = ref<string | null>(null);
+    let hoverLeaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function messageKey(msg: any, idx: number): string {
+      return `${msg.timestamp}-${msg.username || msg.type}-${idx}`;
+    }
+
+    function getReactions(key: string): Reaction[] {
+      const map = reactions.value.get(key);
+      if (!map) return [];
+      return Array.from(map.values()).filter((r) => r.count > 0);
+    }
+
+    function toggleReaction(key: string, emoji: string) {
+      const map = reactions.value.get(key) ?? new Map<string, Reaction>();
+      const existing = map.get(emoji);
+      if (existing) {
+        if (existing.myReaction) {
+          existing.count = Math.max(0, existing.count - 1);
+          existing.myReaction = false;
+        } else {
+          existing.count += 1;
+          existing.myReaction = true;
+        }
+        if (existing.count === 0) map.delete(emoji);
+        else map.set(emoji, { ...existing });
+      } else {
+        map.set(emoji, { emoji, count: 1, myReaction: true });
+      }
+      reactions.value = new Map(reactions.value.set(key, map));
+      hoveredMessageKey.value = null;
+    }
+
+    function onMessageMouseEnter(key: string) {
+      if (hoverLeaveTimer) {
+        clearTimeout(hoverLeaveTimer);
+        hoverLeaveTimer = null;
+      }
+      hoveredMessageKey.value = key;
+    }
+
+    function onMessageMouseLeave() {
+      hoverLeaveTimer = setTimeout(() => {
+        hoveredMessageKey.value = null;
+      }, 300);
+    }
+
+    function onReactionBarMouseEnter() {
+      if (hoverLeaveTimer) {
+        clearTimeout(hoverLeaveTimer);
+        hoverLeaveTimer = null;
+      }
+    }
+
+    // ── Emoji picker ──────────────────────────────────────────────────────────
+    const showEmojiPicker = ref(false);
+    const emojiSearchQuery = ref('');
+    const activeCategoryIndex = ref(0);
+
+    const filteredEmojis = computed(() => {
+      const q = emojiSearchQuery.value.trim().toLowerCase();
+      if (!q) return EMOJI_CATEGORIES[activeCategoryIndex.value]?.emojis ?? [];
+      const all = EMOJI_CATEGORIES.flatMap((c) => c.emojis);
+      // Very basic: return emojis whose category label or position matches query
+      // In practice you'd need an emoji name db; we just return all on search
+      return all.slice(0, 120);
+    });
+
+    function insertEmoji(emoji: string) {
+      const el = inputRef.value;
+      if (!el) {
+        newMessage.value += emoji;
+        return;
+      }
+      const start = el.selectionStart ?? newMessage.value.length;
+      const end = el.selectionEnd ?? newMessage.value.length;
+      newMessage.value =
+        newMessage.value.slice(0, start) + emoji + newMessage.value.slice(end);
+      nextTick(() => {
+        el.focus();
+        const pos = start + [...emoji].length;
+        el.setSelectionRange(pos, pos);
+      });
+    }
+
+    function toggleEmojiPicker() {
+      showEmojiPicker.value = !showEmojiPicker.value;
+      if (showEmojiPicker.value) emojiSearchQuery.value = '';
+    }
+
+    function closeEmojiPicker() {
+      showEmojiPicker.value = false;
+    }
+
+    // ── Scroll ────────────────────────────────────────────────────────────────
     const SCROLL_THRESHOLD = 200;
 
-    // ── Read all reactive state from store ────────────────────────────────────
     const messages = computed(() => store.getters['chat/messages']);
     const connected = computed(() => store.getters['chat/connected']);
     const connecting = computed(() => store.getters['chat/connecting']);
@@ -34,7 +176,6 @@ export default defineComponent({
 
     const canSend = computed(() => connected.value && store.getters.isDiscordAuthed);
 
-    // ── Scroll helpers ────────────────────────────────────────────────────────
     const isNearBottom = (): boolean => {
       const el = messagesContainer.value;
       if (!el) return true;
@@ -52,8 +193,6 @@ export default defineComponent({
       showScrollButton.value = !isNearBottom();
     };
 
-    // When new messages arrive, auto-scroll only if already near bottom;
-    // otherwise show the button so the user knows there's something new.
     watch(messages, () => {
       void nextTick().then(() => {
         if (isNearBottom()) {
@@ -70,7 +209,7 @@ export default defineComponent({
     };
 
     watch(mentionToasts, (toasts, prev) => {
-      const prevIds = new Set((prev ?? []).map(t => t.id));
+      const prevIds = new Set((prev ?? []).map((t: any) => t.id));
       for (const toast of toasts) {
         if (!prevIds.has(toast.id)) {
           window.setTimeout(() => dismissToast(toast.id), 5000);
@@ -98,7 +237,6 @@ export default defineComponent({
       void nextTick().then(scrollToBottom);
     };
 
-    // ── Typing indicators ─────────────────────────────────────────────────────
     const sendTypingStart = () => chatService.sendTypingStart();
     const sendTypingStop = () => chatService.sendTypingStop();
 
@@ -127,6 +265,10 @@ export default defineComponent({
     };
 
     const onInputKeydown = (e: KeyboardEvent) => {
+      if (showEmojiPicker.value && e.key === 'Escape') {
+        closeEmojiPicker();
+        return;
+      }
       if (!mentionSuggestions.value.length) return;
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -167,17 +309,28 @@ export default defineComponent({
     const formatTimestamp = (timestamp: number) => new Date(timestamp).toLocaleTimeString();
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
+    const handleDocumentClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.emoji-picker-container') && !target.closest('.emoji-picker-btn')) {
+        closeEmojiPicker();
+      }
+      showOnlineUsers.value = false;
+    };
+
     onMounted(() => {
       void nextTick().then(scrollToBottom);
       requestNotificationPermission();
-      document.addEventListener('click', () => { showOnlineUsers.value = false; });
+      document.addEventListener('click', handleDocumentClick);
     });
 
     onUnmounted(() => {
       chatService.sendTypingStop();
+      document.removeEventListener('click', handleDocumentClick);
+      if (hoverLeaveTimer) clearTimeout(hoverLeaveTimer);
     });
 
     return {
+      // chat state
       messages,
       newMessage,
       canSend,
@@ -192,6 +345,26 @@ export default defineComponent({
       notificationPermission,
       myUsername,
       showScrollButton,
+      // reactions
+      reactions,
+      hoveredMessageKey,
+      messageKey,
+      getReactions,
+      toggleReaction,
+      onMessageMouseEnter,
+      onMessageMouseLeave,
+      onReactionBarMouseEnter,
+      QUICK_REACTIONS,
+      // emoji picker
+      showEmojiPicker,
+      emojiSearchQuery,
+      activeCategoryIndex,
+      filteredEmojis,
+      EMOJI_CATEGORIES,
+      insertEmoji,
+      toggleEmojiPicker,
+      closeEmojiPicker,
+      // helpers
       formatTimestamp,
       sendMessage,
       sendTypingStart,
