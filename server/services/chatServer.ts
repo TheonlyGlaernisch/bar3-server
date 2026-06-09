@@ -580,6 +580,10 @@ export function attachChatServer(
           if (effectiveDelta === 0) return; // no-op
 
           broadcastReaction({ type: 'reaction_update', messageKey, emoji, username: clientInfo.username, delta: effectiveDelta }, client);
+            return;
+
+
+        }
 
         // ── Typing events ──────────────────────────────────────────────────
         if (parsed.type === 'typing_start') {
