@@ -126,9 +126,10 @@ function broadcast(message: ChatPayload): void {
   }).catch(() => undefined);
 }
 
-function broadcastReaction(payload: ReactionBroadcast): void {
+function broadcastReaction(payload: ReactionBroadcast, excludeClient?: ws.WebSocket): void {
   const data = JSON.stringify(payload);
   for (const [client] of clients) {
+    if (client === excludeClient) continue;
     if (client.readyState === ws.WebSocket.OPEN) {
       client.send(data);
     }
@@ -578,15 +579,7 @@ export function attachChatServer(
           const effectiveDelta = applyReaction(messageKey, emoji, clientInfo.username, delta as 1 | -1);
           if (effectiveDelta === 0) return; // no-op
 
-          broadcastReaction({
-            type: 'reaction_update',
-            messageKey,
-            emoji,
-            username: clientInfo.username,
-            delta: effectiveDelta,
-          });
-          return;
-        }
+          broadcastReaction({ type: 'reaction_update', messageKey, emoji, username: clientInfo.username, delta: effectiveDelta }, client);
 
         // ── Typing events ──────────────────────────────────────────────────
         if (parsed.type === 'typing_start') {
