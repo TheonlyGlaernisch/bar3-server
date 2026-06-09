@@ -71,12 +71,9 @@ class ChatService {
       this.ws.send(JSON.stringify({ type: 'typing_stop' }));
     }
   }
-  sendReaction(messageKey: string, emoji: string): void {
+// In chatService.ts
+  sendReaction(messageKey: string, emoji: string, delta: 1 | -1): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-  // Toggle: check current state to determine delta
-    const reactions = this.store?.state.chat?.reactions ?? {};
-    const existing = reactions[messageKey]?.[emoji];
-    const delta = existing?.myReaction ? -1 : 1;
     this.ws.send(JSON.stringify({ type: 'reaction', messageKey, emoji, delta }));
   }
   disconnect(): void {
