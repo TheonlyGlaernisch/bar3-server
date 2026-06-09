@@ -209,12 +209,8 @@ export default defineComponent({
     // ── Notifications ─────────────────────────────────────────────────────────
     const requestNotificationPermission = async () => {
       if (!('Notification' in window)) return;
-      if (Notification.permission === 'default') {
-        const result = await Notification.requestPermission();
-        notificationPermission.value = result;
-      } else {
-        notificationPermission.value = Notification.permission;
-      }
+      const result = await chatService.requestNotificationPermission();
+      notificationPermission.value = result;
     };
 
     // ── Send ──────────────────────────────────────────────────────────────────
