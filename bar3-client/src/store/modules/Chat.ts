@@ -12,7 +12,6 @@ export type Reaction = {
   myReaction: boolean;
 };
 
-/** messageKey → emoji → Reaction */
 export type ReactionsMap = Record<string, Record<string, Reaction>>;
 
 interface ChatState {
@@ -22,6 +21,8 @@ interface ChatState {
   statusMessage: string;
   statusType: 'info' | 'error';
   onlineUsers: { username: string; isAdmin: boolean }[];
+  /** Admins who have ever connected — includes currently-offline admins. */
+  knownAdmins: string[];
   typingUsers: string[];
   myUsername: string;
   mentionToasts: MentionToast[];
@@ -38,6 +39,7 @@ export default {
     statusMessage: '',
     statusType: 'info',
     onlineUsers: [],
+    knownAdmins: [],
     typingUsers: [],
     myUsername: '',
     mentionToasts: [],
@@ -61,6 +63,8 @@ export default {
     statusMessage: (state: ChatState) => state.statusMessage,
     statusType: (state: ChatState) => state.statusType,
     onlineUsers: (state: ChatState) => state.onlineUsers,
+    /** All known admins including offline ones, for @mention autocomplete. */
+    knownAdmins: (state: ChatState) => state.knownAdmins,
     typingUsers: (state: ChatState) => state.typingUsers,
     myUsername: (state: ChatState) => state.myUsername,
     mentionToasts: (state: ChatState) => state.mentionToasts,
@@ -89,6 +93,9 @@ export default {
     setOnlineUsers(state: ChatState, users: { username: string; isAdmin: boolean }[]) {
       state.onlineUsers = users;
     },
+    setKnownAdmins(state: ChatState, admins: string[]) {
+      state.knownAdmins = Array.isArray(admins) ? admins : [];
+    },
     setTypingUsers(state: ChatState, users: string[]) {
       state.typingUsers = users;
     },
@@ -102,12 +109,6 @@ export default {
       state.mentionToasts = state.mentionToasts.filter((t) => t.id !== id);
     },
 
-    // ── Reactions ────────────────────────────────────────────────────────────
-
-    /**
-     * Apply a single reaction delta from the server.
-     * delta=+1 means a user added the emoji, -1 means they removed it.
-     */
     applyReactionDelta(
       state: ChatState,
       payload: { messageKey: string; emoji: string; username: string; delta: 1 | -1 }
@@ -135,10 +136,6 @@ export default {
       state.reactions = { ...state.reactions, [messageKey]: msgReactions };
     },
 
-    /**
-     * Hydrate the full reaction snapshot sent on connect.
-     * snapshot: messageKey → emoji → string[] (usernames)
-     */
     setReactionsSnapshot(
       state: ChatState,
       snapshot: Record<string, Record<string, string[]>>
@@ -159,10 +156,6 @@ export default {
       state.reactions = next;
     },
 
-    /**
-     * Optimistic local toggle — applied immediately when the user clicks.
-     * The server will echo a reaction_update that produces the same result.
-     */
     toggleReactionOptimistic(
       state: ChatState,
       payload: { messageKey: string; emoji: string }
