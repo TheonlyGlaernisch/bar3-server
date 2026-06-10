@@ -55,7 +55,8 @@
     "typescript": "^5.3.3",
     "ws": "^8.18.0",
     "yargs": "^16.2.0",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "@types/web-push": "^3.6.4"
   },
   "pkg": {
     "assets": [
