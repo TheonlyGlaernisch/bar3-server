@@ -297,7 +297,7 @@ class ChatService {
     });
   }
 
-  private handleMessage(event: MessageEvent): void {
+  private async handleMessage(event: MessageEvent): Promise<void> {
     let data: any;
     try {
       data = JSON.parse(event.data);
