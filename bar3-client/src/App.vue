@@ -199,6 +199,20 @@ export default defineComponent({
   
     cursor: pointer;
   }
+  .toast-enter-active,
+  .toast-leave-active {
+    transition: all .25s ease;
+  }
+  
+  .toast-enter-from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  
+  .toast-leave-to {
+    opacity: 0;
+    transform: translateX(20px);
+  }
 
 
   .v-toolbar__content {
