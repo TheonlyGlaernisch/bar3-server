@@ -162,6 +162,7 @@ export default defineComponent({
     const typingUsers = computed(() => store.getters['chat/typingUsers'] ?? []);
     const myUsername = computed(() => store.getters['chat/myUsername'] ?? '');
     const mentionToasts = computed(() => store.getters['chat/mentionToasts'] ?? []);
+    const knownAdmins = computed(() => store.getters['chat/knownAdmins'] ?? []);
 
     const canSend = computed(() => connected.value && store.getters.isDiscordAuthed);
 
@@ -207,11 +208,13 @@ export default defineComponent({
     });
 
     // ── Notifications ─────────────────────────────────────────────────────────
+    // NEW:
     const requestNotificationPermission = async () => {
       if (!('Notification' in window)) return;
       const result = await chatService.requestNotificationPermission();
       notificationPermission.value = result;
     };
+
 
     // ── Send ──────────────────────────────────────────────────────────────────
     const sendMessage = () => {
@@ -237,9 +240,23 @@ export default defineComponent({
         const query = slice.slice(atPos + 1).toLowerCase();
         if (!query.includes(' ')) {
           mentionStart = atPos;
-          mentionSuggestions.value = (onlineUsers.value ?? []).filter((u: { username: string }) =>
+          // NEW — merges online users with known-offline admins:
+          const onlineSet = new Set((onlineUsers.value ?? []).map((u: { username: string }) => u.username.toLowerCase()));
+          
+          // Online users matching the query
+          const onlineSuggestions = (onlineUsers.value ?? []).filter((u: { username: string }) =>
             u.username.toLowerCase().startsWith(query)
           );
+          
+          // Offline admins matching the query (not already in the online list)
+          const offlineAdminSuggestions = (knownAdmins.value ?? [])
+            .filter((adminUsername: string) =>
+              adminUsername.toLowerCase().startsWith(query) &&
+              !onlineSet.has(adminUsername.toLowerCase())
+            )
+            .map((adminUsername: string) => ({ username: adminUsername, isAdmin: true, offline: true }));
+          
+          mentionSuggestions.value = [...onlineSuggestions, ...offlineAdminSuggestions];
           mentionIndex.value = 0;
           return;
         }
@@ -367,6 +384,7 @@ export default defineComponent({
       renderText,
       dismissToast,
       requestNotificationPermission,
+      knownAdmins
     };
   },
 });
