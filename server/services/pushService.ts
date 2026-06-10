@@ -9,7 +9,7 @@
  * Generate once with:  npx web-push generate-vapid-keys
  */
 import webpush from 'web-push';
-import { StoredPushSubscription } from '../interfaces/schemas/PushSubscriptionSchema';
+import { StoredPushSubscription } from '../interfaces/schemas/Pushsubscriptionschema';
 
 const VAPID_PUBLIC_KEY = (process.env.VAPID_PUBLIC_KEY || '').trim();
 const VAPID_PRIVATE_KEY = (process.env.VAPID_PRIVATE_KEY || '').trim();
