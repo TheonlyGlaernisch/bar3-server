@@ -1,16 +1,12 @@
 /**
  * pushService.ts — server-side Web Push delivery.
  *
- * Wraps the `web-push` library so the rest of the server only needs to call
- * `pushService.sendToUsername(username, payload)` without knowing anything
- * about VAPID keys or subscription storage.
- *
  * VAPID keys must be set via environment variables:
- *   VAPID_PUBLIC_KEY   – base64url-encoded 65-byte uncompressed EC public key
- *   VAPID_PRIVATE_KEY  – base64url-encoded 32-byte EC private key
- *   VAPID_SUBJECT      – mailto: or https: contact URI  (required by spec)
+ *   VAPID_PUBLIC_KEY   – base64url-encoded EC public key
+ *   VAPID_PRIVATE_KEY  – base64url-encoded EC private key
+ *   VAPID_SUBJECT      – mailto: or https: contact URI
  *
- * Generate them once with:  npx web-push generate-vapid-keys
+ * Generate once with:  npx web-push generate-vapid-keys
  */
 import webpush from 'web-push';
 import { StoredPushSubscription } from '../interfaces/schemas/PushSubscriptionSchema';
@@ -35,7 +31,6 @@ function ensureVapid(): void {
   vapidConfigured = true;
 }
 
-/** Returns the VAPID public key for the client to use when subscribing. */
 export function getVapidPublicKey(): string {
   return VAPID_PUBLIC_KEY;
 }
@@ -48,36 +43,36 @@ export interface PushPayload {
 
 /**
  * Upsert a push subscription for a given username.
- * Called when a client registers (or re-registers) a ServiceWorker push subscription.
+ * Username is always stored lowercase for consistent lookup regardless of
+ * the casing of the chat display name.
  */
 export async function saveSubscription(
   username: string,
   endpoint: string,
   keys: { p256dh: string; auth: string }
 ): Promise<void> {
+  const usernameLower = username.toLowerCase();
   await StoredPushSubscription.findOneAndUpdate(
-    { username, endpoint },
-    { username, endpoint, keys, updatedAt: new Date() },
+    { username: usernameLower, endpoint },
+    { username: usernameLower, endpoint, keys, updatedAt: new Date() },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   ).exec();
 }
 
 /**
  * Remove a specific push subscription.
- * Called on explicit unsubscribe or when the push server returns 404/410.
  */
 export async function removeSubscription(endpoint: string): Promise<void> {
   await StoredPushSubscription.deleteOne({ endpoint }).exec();
 }
 
 /**
- * Send a push notification to ALL stored subscriptions for the given username.
+ * Send a push notification to all stored subscriptions for the given username.
+ * Accepts any casing — always lowercases before lookup so "AdminBob" and
+ * "adminbob" both resolve to the same subscriptions.
  *
- * Stale / expired subscriptions (404 / 410 responses from the push server)
- * are automatically removed from the database.
- *
- * Silently no-ops when VAPID is not configured so the rest of the server
- * never needs to guard against missing keys.
+ * Stale subscriptions (404/410) are automatically removed.
+ * Silently no-ops when VAPID is not configured.
  */
 export async function sendToUsername(
   username: string,
@@ -86,7 +81,8 @@ export async function sendToUsername(
   ensureVapid();
   if (!vapidConfigured) return;
 
-  const subs = await StoredPushSubscription.find({ username })
+  const usernameLower = username.toLowerCase();
+  const subs = await StoredPushSubscription.find({ username: usernameLower })
     .lean()
     .exec();
   if (subs.length === 0) return;
@@ -108,7 +104,6 @@ export async function sendToUsername(
       } catch (err: any) {
         const status: number | undefined = err?.statusCode ?? err?.status;
         if (status === 404 || status === 410) {
-          // Subscription is gone — clean it up so we don't keep hitting it
           await StoredPushSubscription.deleteOne({ endpoint: sub.endpoint })
             .exec()
             .catch(() => undefined);
