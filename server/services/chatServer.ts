@@ -1,5 +1,13 @@
 /**
  * WebSocket chat server for alliance members.
+ *
+ * Changes vs previous version:
+ *  - Tracks known admin usernames in MongoDB (KnownAdmin collection) so
+ *    admins are pingable via @mention even when they're offline.
+ *  - Sends an `admin_users` frame to every client on connect so the @mention
+ *    autocomplete includes offline admins.
+ *  - Calls pushService.sendToUsername() on every @mention so the mentioned
+ *    user gets an OS push even when they have no open WS connection.
  */
 import * as http from 'http';
 import * as ws from 'ws';
@@ -20,6 +28,46 @@ const ADMIN_DISCORD_IDS: ReadonlySet<string> = new Set(
     .map((id) => id.trim())
     .filter(Boolean),
 );
+
+// ─── Known-admin persistence ──────────────────────────────────────────────────
+// We store admin usernames in a tiny MongoDB collection so the server can
+// broadcast them to clients even when no admin is currently connected.
+
+const knownAdminSchema = new mongoose.Schema(
+  { username: { type: String, required: true, unique: true } },
+  { collection: 'known_admin_usernames', timestamps: false }
+);
+const KnownAdmin = mongoose.model('KnownAdmin', knownAdminSchema);
+
+/** In-memory cache so we don't hit the DB on every connect. */
+let knownAdminUsernamesCache: string[] = [];
+let knownAdminCacheLoaded = false;
+
+async function loadKnownAdmins(): Promise<string[]> {
+  if (knownAdminCacheLoaded) return knownAdminUsernamesCache;
+  try {
+    const docs = await KnownAdmin.find({}).lean().exec();
+    knownAdminUsernamesCache = docs.map((d: any) => d.username as string);
+    knownAdminCacheLoaded = true;
+  } catch {
+    // DB not ready yet — return whatever we have in memory
+  }
+  return knownAdminUsernamesCache;
+}
+
+async function persistAdminUsername(username: string): Promise<void> {
+  if (knownAdminUsernamesCache.includes(username)) return;
+  try {
+    await KnownAdmin.findOneAndUpdate(
+      { username },
+      { username },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).exec();
+    knownAdminUsernamesCache = [...new Set([...knownAdminUsernamesCache, username])];
+  } catch {
+    // Non-fatal — admin is still in memory for this session
+  }
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,7 +92,6 @@ interface ReactionPayload {
   messageKey: string;
   emoji: string;
   username: string;
-  /** +1 to add, -1 to remove */
   delta: 1 | -1;
 }
 
@@ -60,11 +107,6 @@ interface ReactionBroadcast {
 
 const clients = new Map<ws.WebSocket, ClientInfo>();
 const typingUsers = new Map<ws.WebSocket, { username: string; timer: ReturnType<typeof setTimeout> }>();
-
-/**
- * In-memory reaction store: messageKey → emoji → Set<username>
- * Cleared on server restart (reactions are ephemeral).
- */
 const reactionStore = new Map<string, Map<string, Set<string>>>();
 
 const MAX_CLIENTS = 50;
@@ -75,9 +117,7 @@ const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 const NATION_ALLIANCE_CACHE_MS = 5 * 60 * 1000;
 const CHAT_UNAUTHENTICATED_CLOSE_CODE = 4001;
 const CHAT_FORBIDDEN_CLOSE_CODE = 4003;
-/** Max distinct emoji per message to prevent spam */
 const MAX_EMOJI_PER_MESSAGE = 20;
-/** Max reactions per user per message */
 const MAX_REACTIONS_PER_USER_PER_MESSAGE = 5;
 
 type RegistrationDoc = {
@@ -126,21 +166,53 @@ function broadcast(message: ChatPayload): void {
     isAdmin: message.isAdmin === true,
   }).catch(() => undefined);
 
-  // Server-push @mentions so offline users (and iOS home-screen app in background) still get notified
+  // ── Server-push @mentions ─────────────────────────────────────────────────
+  // This fires even when the mentioned user has no open WS connection,
+  // so offline admins and backgrounded iOS PWA users still get notified.
   if (message.type === 'message' && message.text && message.username) {
-    const senderLower = (message.username || '').toLowerCase();
+    const senderLower = (message.username).toLowerCase();
     const mentioned = extractMentionedUsernames(message.text);
-    for (const mentionedUsername of mentioned) {
-      if (mentionedUsername === senderLower) continue;
-      sendToUsername(mentionedUsername, {
+
+    for (const mentionedLower of mentioned) {
+      if (mentionedLower === senderLower) continue;
+
+      // Find the canonical stored username — push subscriptions are keyed by
+      // the exact username string used when the user registered, but
+      // extractMentionedUsernames returns lowercase. We need to look up the
+      // real casing from online clients first, then fall back to the raw value
+      // (which is fine because saveSubscription also lowercases on store).
+      const canonicalUsername = resolveCanonicalUsername(mentionedLower);
+
+      sendToUsername(canonicalUsername, {
         title: `${message.username} mentioned you`,
         body: message.text.slice(0, 100),
-        tag: `bar3-mention-${mentionedUsername}-${message.timestamp}`,
+        tag: `bar3-mention-${mentionedLower}-${message.timestamp}`,
       }).catch((err) => {
-        console.warn('[chatServer] Server push failed for @' + mentionedUsername + ':', err?.message ?? err);
+        console.warn(
+          '[chatServer] Server push failed for @' + mentionedLower + ':',
+          err?.message ?? err
+        );
       });
     }
   }
+}
+
+/**
+ * Resolve the canonical (correctly-cased) username for a lowercase mention.
+ *
+ * We check connected clients first (O(n) but n ≤ 50), then the known-admin
+ * cache. If nothing matches we return the lowercased value as-is — the push
+ * subscription lookup does a case-insensitive match via the stored lowercase
+ * username field so this still works.
+ */
+function resolveCanonicalUsername(lowerUsername: string): string {
+  for (const [, info] of clients) {
+    if (info.username.toLowerCase() === lowerUsername) return info.username;
+  }
+  for (const adminUsername of knownAdminUsernamesCache) {
+    if (adminUsername.toLowerCase() === lowerUsername) return adminUsername;
+  }
+  return lowerUsername;
 }
 
 function broadcastReaction(payload: ReactionBroadcast, excludeClient?: ws.WebSocket): void {
@@ -153,24 +225,6 @@ function broadcastReaction(payload: ReactionBroadcast, excludeClient?: ws.WebSoc
   }
 }
 
-/**
- * Build the full reaction snapshot for a message key so a newly joined
- * client can hydrate its reaction state.
- */
-function buildReactionSnapshot(messageKey: string): Record<string, string[]> {
-  const emojiMap = reactionStore.get(messageKey);
-  if (!emojiMap) return {};
-  const snapshot: Record<string, string[]> = {};
-  for (const [emoji, users] of emojiMap) {
-    if (users.size > 0) snapshot[emoji] = Array.from(users);
-  }
-  return snapshot;
-}
-
-/**
- * Apply a reaction delta to the store.
- * Returns the effective delta after applying (0 if nothing changed).
- */
 function applyReaction(
   messageKey: string,
   emoji: string,
@@ -192,22 +246,17 @@ function applyReaction(
   }
 
   if (delta === 1) {
-    if (users.has(username)) return 0; // already reacted
-
-    // Enforce per-message emoji cap
+    if (users.has(username)) return 0;
     if (emojiMap.size >= MAX_EMOJI_PER_MESSAGE && !emojiMap.has(emoji)) return 0;
-
-    // Enforce per-user per-message cap
     let userReactionCount = 0;
     for (const [, uSet] of emojiMap) {
       if (uSet.has(username)) userReactionCount++;
     }
     if (userReactionCount >= MAX_REACTIONS_PER_USER_PER_MESSAGE) return 0;
-
     users.add(username);
     return 1;
   } else {
-    if (!users.has(username)) return 0; // wasn't reacted
+    if (!users.has(username)) return 0;
     users.delete(username);
     if (users.size === 0) emojiMap.delete(emoji);
     if (emojiMap.size === 0) reactionStore.delete(messageKey);
@@ -249,6 +298,24 @@ function broadcastOnlineUsers(): void {
     if (client.readyState === ws.WebSocket.OPEN) {
       client.send(payload);
     }
+  }
+}
+
+/**
+ * Send the known-admin list to a specific client (on connect) or broadcast
+ * to all clients (when a new admin is discovered).
+ */
+function sendAdminList(target: ws.WebSocket | null): void {
+  const payload = JSON.stringify({
+    type: 'admin_users',
+    admins: knownAdminUsernamesCache,
+  });
+  if (target) {
+    if (target.readyState === ws.WebSocket.OPEN) target.send(payload);
+    return;
+  }
+  for (const [client] of clients) {
+    if (client.readyState === ws.WebSocket.OPEN) client.send(payload);
   }
 }
 
@@ -483,6 +550,9 @@ export function attachChatServer(
   store: SessionStore,
   sessionSecret: string
 ): void {
+  // Pre-load known admins so the first client to connect gets the full list
+  loadKnownAdmins().catch(() => undefined);
+
   const chatWss = new ws.WebSocketServer({ noServer: true });
 
   httpServer.on('upgrade', async (req, socket, head) => {
@@ -509,6 +579,16 @@ export function attachChatServer(
     chatWss.handleUpgrade(req, socket, head, async (client) => {
       const username = access.username;
 
+      // If this is an admin we haven't seen before, persist and broadcast
+      if (access.isAdmin) {
+        const isNew = !knownAdminUsernamesCache.includes(username);
+        await persistAdminUsername(username);
+        if (isNew) {
+          // Tell all currently-connected clients about this newly-known admin
+          sendAdminList(null);
+        }
+      }
+
       const info: ClientInfo = {
         username,
         isAdmin: access.isAdmin,
@@ -533,6 +613,10 @@ export function attachChatServer(
         .map((c) => ({ username: c.username, isAdmin: c.isAdmin }));
       client.send(JSON.stringify({ type: 'users_list', users: currentUsers }));
 
+      // Send the known-admin list so the client can show offline admins in autocomplete
+      await loadKnownAdmins();
+      sendAdminList(client);
+
       broadcastOnlineUsers();
 
       // Deliver message history + current reaction state
@@ -553,7 +637,6 @@ export function attachChatServer(
 
           client.send(JSON.stringify({ type: 'history', messages }));
 
-          // Send the full reaction snapshot so the joining client is up to date
           if (reactionStore.size > 0) {
             const snapshot: Record<string, Record<string, string[]>> = {};
             for (const [msgKey, emojiMap] of reactionStore) {
@@ -585,7 +668,6 @@ export function attachChatServer(
           return;
         }
 
-        // ── Reaction event ────────────────────────────────────────────────
         if (parsed.type === 'reaction') {
           const messageKey = typeof parsed.messageKey === 'string' ? parsed.messageKey.trim() : '';
           const emoji = typeof parsed.emoji === 'string' ? parsed.emoji.trim() : '';
@@ -594,15 +676,12 @@ export function attachChatServer(
           if (!messageKey || !emoji || emoji.length > 8) return;
 
           const effectiveDelta = applyReaction(messageKey, emoji, clientInfo.username, delta as 1 | -1);
-          if (effectiveDelta === 0) return; // no-op
+          if (effectiveDelta === 0) return;
 
           broadcastReaction({ type: 'reaction_update', messageKey, emoji, username: clientInfo.username, delta: effectiveDelta }, client);
-            return;
-
-
+          return;
         }
 
-        // ── Typing events ──────────────────────────────────────────────────
         if (parsed.type === 'typing_start') {
           const existing = typingUsers.get(client);
           if (existing) clearTimeout(existing.timer);
@@ -625,7 +704,6 @@ export function attachChatServer(
           return;
         }
 
-        // ── Rate limit for regular messages ────────────────────────────────
         if (now - clientInfo.lastMessageAt < RATE_WINDOW_MS) {
           clientInfo.messageCount += 1;
           if (clientInfo.messageCount > RATE_MAX) return;
