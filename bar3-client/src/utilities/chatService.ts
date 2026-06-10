@@ -39,21 +39,39 @@ async function fetchVapidPublicKey(): Promise<string | null> {
 }
 
 async function registerServerPushSubscription(): Promise<void> {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-  if (Notification.permission !== 'granted') return;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    console.warn('[chatService] ServiceWorker or PushManager not available');
+    return;
+  }
+  if (Notification.permission !== 'granted') {
+    console.warn('[chatService] Notification permission not granted:', Notification.permission);
+    return;
+  }
 
   const vapidPublicKey = await fetchVapidPublicKey();
-  if (!vapidPublicKey) return;
+  if (!vapidPublicKey) {
+    console.warn('[chatService] Failed to fetch VAPID public key');
+    return;
+  }
 
   try {
     const registration = await navigator.serviceWorker.ready;
+    console.log('[chatService] SW registration ready');
+
     let subscription = await registration.pushManager.getSubscription();
+    console.log('[chatService] Existing subscription:', subscription ? 'found' : 'not found');
 
     if (!subscription) {
-      subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-      });
+      try {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+        });
+        console.log('[chatService] New subscription created:', subscription.endpoint.slice(0, 50) + '...');
+      } catch (subErr) {
+        console.error('[chatService] Failed to create subscription:', subErr);
+        throw subErr;
+      }
     }
 
     const sub = subscription.toJSON() as {
@@ -61,9 +79,12 @@ async function registerServerPushSubscription(): Promise<void> {
       keys?: { p256dh?: string; auth?: string };
     };
 
-    if (!sub.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) return;
+    if (!sub.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) {
+      console.warn('[chatService] Subscription missing required fields');
+      return;
+    }
 
-    await fetch(`${AUTH_BASE_URL}/api/v2/push/subscribe`, {
+    const resp = await fetch(`${AUTH_BASE_URL}/api/v2/push/subscribe`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -72,8 +93,14 @@ async function registerServerPushSubscription(): Promise<void> {
         keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
       }),
     });
+
+    if (!resp.ok) {
+      console.error('[chatService] Server rejected subscription:', await resp.text());
+    } else {
+      console.log('[chatService] Subscription registered with server');
+    }
   } catch (err) {
-    console.warn('[chatService] Could not register server push subscription:', err);
+    console.error('[chatService] Full subscription error:', err);
   }
 }
 
@@ -370,23 +397,29 @@ class ChatService {
           // If a push subscription exists, the server handles delivery via SW push —
           // using showNotification() or new Notification() here would double-notify.
           if (!document.hasFocus() && Notification.permission === 'granted') {
-            const swReg = 'serviceWorker' in navigator
-              ? await navigator.serviceWorker.ready.catch(() => null)
-              : null;
-            const hasPushSub = swReg
-              ? !!(await swReg.pushManager.getSubscription().catch(() => null))
-              : false;
-          
+            let swReg = null;
+            let hasPushSub = false;
+
+            try {
+              if ('serviceWorker' in navigator) {
+                swReg = await navigator.serviceWorker.ready;
+                hasPushSub = !!(await swReg.pushManager.getSubscription());
+              }
+            } catch (e) {
+              console.warn('[chatService] Failed to check push subscription:', e);
+            }
+
+            // Only show local notification if NO push subscription exists
+            // (server will handle delivery via web push)
             if (!hasPushSub) {
               try {
-                const n = new Notification(
+                await showNotificationViaSwOrFallback(
                   `${data.username || 'Someone'} mentioned you`,
-                  { body: data.text.slice(0, 100), icon: '/favicon.ico',
-                    tag: `bar3-mention-${Date.now()}` }
+                  data.text.slice(0, 100),
+                  `bar3-mention-${Date.now()}`
                 );
-                n.onclick = () => { window.focus(); n.close(); };
-              } catch {
-                // Notification API unavailable
+              } catch (e) {
+                console.warn('[chatService] Failed to show local notification:', e);
               }
             }
           }
