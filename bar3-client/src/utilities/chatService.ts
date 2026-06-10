@@ -367,13 +367,28 @@ class ChatService {
           this.playMentionSound();
 
           // Show OS notification only when the page isn't focused.
-          // (Truly offline/backgrounded is handled server-side via stored push subscription.)
+          // If a push subscription exists, the server handles delivery via SW push —
+          // using showNotification() or new Notification() here would double-notify.
           if (!document.hasFocus() && Notification.permission === 'granted') {
-            showNotificationViaSwOrFallback(
-              `${data.username || 'Someone'} mentioned you`,
-              data.text.slice(0, 100),
-              `bar3-mention-${Date.now()}`
-            );
+            const swReg = 'serviceWorker' in navigator
+              ? await navigator.serviceWorker.ready.catch(() => null)
+              : null;
+            const hasPushSub = swReg
+              ? !!(await swReg.pushManager.getSubscription().catch(() => null))
+              : false;
+          
+            if (!hasPushSub) {
+              try {
+                const n = new Notification(
+                  `${data.username || 'Someone'} mentioned you`,
+                  { body: data.text.slice(0, 100), icon: '/favicon.ico',
+                    tag: `bar3-mention-${Date.now()}` }
+                );
+                n.onclick = () => { window.focus(); n.close(); };
+              } catch {
+                // Notification API unavailable
+              }
+            }
           }
         }
       }
