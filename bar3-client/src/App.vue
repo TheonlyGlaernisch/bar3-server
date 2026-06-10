@@ -130,15 +130,18 @@ export default defineComponent({
 
 
   .mention-toasts--global {
-  position: fixed;
-  bottom: 24px;
-  right: 16px;
-  z-index: 9999;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  pointer-events: none;
-}
+    position: fixed;
+    bottom: 24px;
+    right: 16px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+  
+    border: 1px solid orange;
+    border-radius: 4px; /* slightly rounded */
+  }
 
 
   .v-toolbar__content {
