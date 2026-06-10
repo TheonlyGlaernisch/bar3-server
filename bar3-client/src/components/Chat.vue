@@ -174,9 +174,10 @@
                 @mousedown.prevent="insertMention(u.username)"
                 role="option"
               >
-                <span class="online-dot online-dot--sm" />
+                <span class="online-dot online-dot--sm" :style="u.offline ? 'background:#666' : ''" />
                 {{ u.username }}
                 <span v-if="u.isAdmin" class="online-panel__admin-badge">admin</span>
+                <span v-if="u.offline" class="offline-badge">offline</span>
               </li>
             </ul>
           </Transition>
@@ -293,6 +294,8 @@
 .notif-nudge button:hover {
   background: rgba(255, 107, 0, 0.18);
 }
+
+  
 
 /* ── Mention toasts ──────────────────────────────────────────────────────── */
 .mention-toast {
@@ -814,6 +817,15 @@
   list-style: none; margin: 0;
   z-index: 100;
   box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+.offline-badge {
+  margin-left: auto;
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.08);
+  color: #666;
+  border: 1px solid #333;
 }
 
 .mention-menu__item {
