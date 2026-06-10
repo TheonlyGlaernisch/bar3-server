@@ -10,6 +10,12 @@
  * to the Home Screen AND the user must have granted permission inside the PWA.
  */
 
+// Detect if running on iOS
+function isIOS(): boolean {
+  const ua = navigator.userAgent.toLowerCase();
+  return /iphone|ipad|ipod/.test(ua);
+}
+
 // ── Push event ────────────────────────────────────────────────────────────────
 self.addEventListener('push', (event) => {
   let data = {};
@@ -29,8 +35,9 @@ self.addEventListener('push', (event) => {
     tag: data.tag || 'bar3-mention',
     // renotify: show a new notification even if one with the same tag exists
     renotify: true,
-    // Keep the notification visible until the user taps it (Android/desktop)
-    requireInteraction: false,
+    // iOS: works fine with false, actually prefers it
+    // Desktop Chrome: needs true for reliable delivery
+    requireInteraction: !isIOS(),
     data: { url: '/chat' },
   };
 
@@ -61,7 +68,7 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-// ── Activate ──────────────────────────────────────────────────────────────────
+// ── Activate ───────────────────────────────────────────────────────────────
 // Claim existing clients immediately so the updated SW takes effect without
 // a page reload. This ensures the push subscription is always tied to the
 // active SW registration.
