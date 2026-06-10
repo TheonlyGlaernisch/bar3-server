@@ -11,7 +11,7 @@
  */
 
 // Detect if running on iOS
-function isIOS(): boolean {
+function isIOS() {
   const ua = navigator.userAgent.toLowerCase();
   return /iphone|ipad|ipod/.test(ua);
 }
