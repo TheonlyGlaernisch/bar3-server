@@ -18,13 +18,19 @@ function isIOS() {
 
 // ── Push event ────────────────────────────────────────────────────────────────
 self.addEventListener('push', (event) => {
+  console.log('[sw] Push event received');
+  
   let data = {};
   if (event.data) {
     try {
       data = event.data.json();
-    } catch {
+      console.log('[sw] Parsed push data:', data);
+    } catch (e) {
       data = { body: event.data.text() };
+      console.log('[sw] Failed to parse JSON, using text:', data.body);
     }
+  } else {
+    console.log('[sw] No data in push event');
   }
 
   const title = data.title || 'Bar 3';
@@ -41,11 +47,23 @@ self.addEventListener('push', (event) => {
     data: { url: '/chat' },
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  console.log('[sw] Showing notification with title:', title, 'options:', options);
+
+  event.waitUntil(
+    self.registration
+      .showNotification(title, options)
+      .then(() => {
+        console.log('[sw] Notification shown successfully');
+      })
+      .catch((err) => {
+        console.error('[sw] Error showing notification:', err);
+      })
+  );
 });
 
 // ── Notification click ────────────────────────────────────────────────────────
 self.addEventListener('notificationclick', (event) => {
+  console.log('[sw] Notification clicked');
   event.notification.close();
 
   const targetUrl = new URL('/chat', self.location.origin).href;
@@ -73,5 +91,6 @@ self.addEventListener('notificationclick', (event) => {
 // a page reload. This ensures the push subscription is always tied to the
 // active SW registration.
 self.addEventListener('activate', (event) => {
+  console.log('[sw] Service Worker activated');
   event.waitUntil(self.clients.claim());
 });
