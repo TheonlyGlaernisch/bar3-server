@@ -73,6 +73,9 @@ export async function removeSubscription(endpoint: string): Promise<void> {
  * Accepts any casing — always lowercases before lookup so "AdminBob" and
  * "adminbob" both resolve to the same subscriptions.
  *
+ * First tries exact username match, then tries substring matches (for nation names
+ * that contain the mentioned word), then tries prefix match as fallback.
+ *
  * Stale subscriptions (404/410) are automatically removed.
  * Silently no-ops when VAPID is not configured.
  */
@@ -89,12 +92,29 @@ export async function sendToUsername(
   const usernameLower = username.toLowerCase();
   console.log('[pushService] Attempting to send push for user:', usernameLower);
 
-  const subs = await StoredPushSubscription.find({ username: usernameLower })
+  // First try exact match
+  let subs = await StoredPushSubscription.find({ username: usernameLower })
     .lean()
     .exec();
   
-  console.log('[pushService] Found', subs.length, 'subscriptions for', usernameLower);
-  
+  console.log('[pushService] Found', subs.length, 'exact match subscriptions for', usernameLower);
+
+  // If no exact match, try case-insensitive substring/contains match
+  // This handles cases where @kinkidom mentions someone with full name "Kinkidom of Ze Baguette"
+  if (subs.length === 0) {
+    console.log('[pushService] No exact match, trying substring match for:', usernameLower);
+    const allSubs = await StoredPushSubscription.find({})
+      .lean()
+      .exec();
+    
+    subs = allSubs.filter(sub => 
+      sub.username.toLowerCase().includes(usernameLower) ||
+      usernameLower.includes(sub.username.toLowerCase())
+    );
+    
+    console.log('[pushService] Found', subs.length, 'substring match subscriptions');
+  }
+
   if (subs.length === 0) {
     console.warn('[pushService] No subscriptions found for:', usernameLower);
     return;
