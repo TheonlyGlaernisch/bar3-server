@@ -1,17 +1,6 @@
 /**
  * chatService.ts — singleton WebSocket chat that persists across route changes.
- *
- * Usage:
- *   chatService.init(store)        // call once from App.vue after auth
- *   chatService.send(text)         // send a message
- *   chatService.sendTypingStart()
- *   chatService.sendTypingStop()
- *   chatService.disconnect()       // call on logout
- *
- * The service writes its state into the Vuex store (module 'chat') so any
- * component can read it reactively without owning the socket lifecycle.
  */
-
 import { Store } from 'vuex';
 import { getChatRegistrationStatus } from '@/utilities/chatApi';
 import { AUTH_BASE_URL } from '@/utilities/serverUrls';
@@ -24,16 +13,11 @@ export type ChatMessage = {
   timestamp: number;
 };
 
-type OnlineUser = { username: string; isAdmin: boolean };
-
 const RECONNECT_DELAY_MS = 5_000;
 const REJECTED_CLOSE_CODES = new Set([4001, 4003]);
 
 // ── Server-push helpers ───────────────────────────────────────────────────────
 
-/**
- * Convert a base64url string to a Uint8Array (needed for applicationServerKey).
- */
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -41,10 +25,6 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
 }
 
-/**
- * Fetch the server's VAPID public key.
- * Returns null when the server hasn't configured push (503 or network error).
- */
 async function fetchVapidPublicKey(): Promise<string | null> {
   try {
     const res = await fetch(`${AUTH_BASE_URL}/api/v2/push/vapid-key`, {
@@ -58,21 +38,12 @@ async function fetchVapidPublicKey(): Promise<string | null> {
   }
 }
 
-/**
- * Register the active ServiceWorker's push subscription with the server.
- * Silently no-ops when:
- *  - Notifications are not granted
- *  - Push API is not supported (non-HTTPS, old browser)
- *  - Server hasn't configured VAPID keys
- *
- * Must be called AFTER Notification.requestPermission() resolves to 'granted'.
- */
 async function registerServerPushSubscription(): Promise<void> {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
   if (Notification.permission !== 'granted') return;
 
   const vapidPublicKey = await fetchVapidPublicKey();
-  if (!vapidPublicKey) return; // server push not configured
+  if (!vapidPublicKey) return;
 
   try {
     const registration = await navigator.serviceWorker.ready;
@@ -85,7 +56,6 @@ async function registerServerPushSubscription(): Promise<void> {
       });
     }
 
-    // Send subscription to the server so it can push to us when offline
     const sub = subscription.toJSON() as {
       endpoint: string;
       keys?: { p256dh?: string; auth?: string };
@@ -103,12 +73,41 @@ async function registerServerPushSubscription(): Promise<void> {
       }),
     });
   } catch (err) {
-    // Push subscription can fail for many benign reasons (blocked by OS, etc.)
     console.warn('[chatService] Could not register server push subscription:', err);
   }
 }
 
-// ── ChatService class ─────────────────────────────────────────────────────────
+/**
+ * Show a notification via the Service Worker registration.
+ * This works on desktop Chrome/Firefox/Safari even when a SW push subscription
+ * is active — unlike `new Notification()` which is blocked in that context.
+ * Falls back to `new Notification()` when no SW is available.
+ */
+async function showNotificationViaSwOrFallback(title: string, body: string, tag: string): Promise<void> {
+  if ('serviceWorker' in navigator) {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      await registration.showNotification(title, {
+        body,
+        icon: '/favicon.ico',
+        tag,
+        renotify: true,
+      });
+      return;
+    } catch {
+      // SW path failed — fall through to direct Notification
+    }
+  }
+  // Fallback: direct Notification API (non-SW environments, e.g. localhost dev)
+  try {
+    const n = new Notification(title, { body, icon: '/favicon.ico', tag });
+    n.onclick = () => { window.focus(); n.close(); };
+  } catch {
+    // Notification not available at all
+  }
+}
+
+// ── ChatService ───────────────────────────────────────────────────────────────
 
 class ChatService {
   private ws: WebSocket | null = null;
@@ -170,25 +169,18 @@ class ChatService {
   }
 
   /**
-   * Request notification permission and, if granted, register a server-push
-   * subscription so @mentions arrive even when the app is closed / backgrounded.
-   *
-   * On iOS 16.4+ (PWA added to Home Screen) this is the call that enables
-   * true background push. On other platforms it enables both in-app toasts
-   * and OS-level notifications.
+   * Request notification permission and register a server-push subscription.
+   * Must be called from a user gesture (button click) on iOS.
    */
   async requestNotificationPermission(): Promise<NotificationPermission> {
     if (!('Notification' in window)) return 'denied';
 
     let permission = Notification.permission;
-
     if (permission === 'default') {
       permission = await Notification.requestPermission();
     }
 
     if (permission === 'granted') {
-      // Register server push regardless of whether we just asked or it was
-      // already granted — handles the case where the SW updated.
       await registerServerPushSubscription();
     }
 
@@ -330,6 +322,12 @@ class ChatService {
       return;
     }
 
+    // Known admins list — includes offline admins so they appear in @autocomplete
+    if (data.type === 'admin_users' && Array.isArray(data.admins)) {
+      this.commit('setKnownAdmins', data.admins);
+      return;
+    }
+
     if (data.type === 'reaction_update') {
       this.commit('applyReactionDelta', {
         messageKey: data.messageKey,
@@ -356,9 +354,7 @@ class ChatService {
       };
       this.commit('pushMessage', msg);
 
-      // In-app mention: show a toast + play a sound when the app is open.
-      // The OS-level notification for offline/background is handled server-side
-      // via the stored push subscription (server/services/pushService.ts).
+      // In-app mention notification (app is open and focused-ish)
       const myUsername: string = this.store?.state.chat?.myUsername ?? '';
       if (data.type === 'message' && data.username !== myUsername && myUsername) {
         const escaped = myUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -369,9 +365,16 @@ class ChatService {
             text: data.text.slice(0, 120),
           });
           this.playMentionSound();
-          // Only show an OS notification when the page is not focused
-          // (server-push handles the truly-offline / backgrounded case)
-          this.showFocusedPageNotification(data.username || 'Someone', data.text);
+
+          // Show OS notification only when the page isn't focused.
+          // (Truly offline/backgrounded is handled server-side via stored push subscription.)
+          if (!document.hasFocus() && Notification.permission === 'granted') {
+            showNotificationViaSwOrFallback(
+              `${data.username || 'Someone'} mentioned you`,
+              data.text.slice(0, 100),
+              `bar3-mention-${Date.now()}`
+            );
+          }
         }
       }
       return;
@@ -404,31 +407,6 @@ class ChatService {
       osc.onended = () => ctx.close();
     } catch {
       // AudioContext unavailable
-    }
-  }
-
-  /**
-   * Show a native OS notification when the page doesn't have focus.
-   * This covers the "app is open in another tab" case.
-   * The "app is completely closed / backgrounded on iOS" case is handled by
-   * the server sending a Web Push to the stored subscription.
-   */
-  private showFocusedPageNotification(from: string, text: string): void {
-    if (!('Notification' in window) || Notification.permission !== 'granted') return;
-    if (document.hasFocus()) return; // already visible — toast is enough
-
-    try {
-      const n = new Notification(`${from} mentioned you`, {
-        body: text.slice(0, 100),
-        icon: '/favicon.ico',
-        tag: `bar3-mention-${Date.now()}`,
-      });
-      n.onclick = () => {
-        window.focus();
-        n.close();
-      };
-    } catch {
-      // Notification constructor not available (e.g. SW-only contexts)
     }
   }
 }
