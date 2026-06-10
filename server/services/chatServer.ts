@@ -125,6 +125,22 @@ function broadcast(message: ChatPayload): void {
     timestamp: new Date(message.timestamp),
     isAdmin: message.isAdmin === true,
   }).catch(() => undefined);
+
+  // Server-push @mentions so offline users (and iOS home-screen app in background) still get notified
+  if (message.type === 'message' && message.text && message.username) {
+    const senderLower = (message.username || '').toLowerCase();
+    const mentioned = extractMentionedUsernames(message.text);
+    for (const mentionedUsername of mentioned) {
+      if (mentionedUsername === senderLower) continue;
+      sendToUsername(mentionedUsername, {
+        title: `${message.username} mentioned you`,
+        body: message.text.slice(0, 100),
+        tag: `bar3-mention-${mentionedUsername}-${message.timestamp}`,
+      }).catch((err) => {
+        console.warn('[chatServer] Server push failed for @' + mentionedUsername + ':', err?.message ?? err);
+      });
+    }
+  }
 }
 
 function broadcastReaction(payload: ReactionBroadcast, excludeClient?: ws.WebSocket): void {
