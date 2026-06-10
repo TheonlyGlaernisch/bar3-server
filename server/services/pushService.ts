@@ -29,6 +29,7 @@ function ensureVapid(): void {
   }
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
   vapidConfigured = true;
+  console.log('[pushService] VAPID configured, push notifications enabled');
 }
 
 export function getVapidPublicKey(): string {
@@ -57,6 +58,7 @@ export async function saveSubscription(
     { username: usernameLower, endpoint, keys, updatedAt: new Date() },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   ).exec();
+  console.log('[pushService] Subscription saved for user:', usernameLower);
 }
 
 /**
@@ -79,19 +81,32 @@ export async function sendToUsername(
   payload: PushPayload
 ): Promise<void> {
   ensureVapid();
-  if (!vapidConfigured) return;
+  if (!vapidConfigured) {
+    console.warn('[pushService] VAPID not configured, skipping push for:', username);
+    return;
+  }
 
   const usernameLower = username.toLowerCase();
+  console.log('[pushService] Attempting to send push for user:', usernameLower);
+
   const subs = await StoredPushSubscription.find({ username: usernameLower })
     .lean()
     .exec();
-  if (subs.length === 0) return;
+  
+  console.log('[pushService] Found', subs.length, 'subscriptions for', usernameLower);
+  
+  if (subs.length === 0) {
+    console.warn('[pushService] No subscriptions found for:', usernameLower);
+    return;
+  }
 
   const data = JSON.stringify({
     title: payload.title,
     body: payload.body,
     tag: payload.tag ?? `bar3-mention-${Date.now()}`,
   });
+
+  console.log('[pushService] Payload:', data);
 
   const results = await Promise.allSettled(
     subs.map(async (sub) => {
@@ -100,10 +115,14 @@ export async function sendToUsername(
         keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
       };
       try {
+        console.log('[pushService] Sending to endpoint:', sub.endpoint.slice(0, 50) + '...');
         await webpush.sendNotification(pushSub, data);
+        console.log('[pushService] Successfully sent push to:', sub.endpoint.slice(0, 50) + '...');
       } catch (err: any) {
         const status: number | undefined = err?.statusCode ?? err?.status;
+        console.error('[pushService] Push send error (status:', status, '):', err?.message ?? err);
         if (status === 404 || status === 410) {
+          console.log('[pushService] Removing stale subscription:', sub.endpoint.slice(0, 50) + '...');
           await StoredPushSubscription.deleteOne({ endpoint: sub.endpoint })
             .exec()
             .catch(() => undefined);
