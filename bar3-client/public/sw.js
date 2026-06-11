@@ -16,6 +16,15 @@ function isIOS() {
   return /iphone|ipad|ipod/.test(ua);
 }
 
+function requiresInteraction() {
+  const ua = navigator.userAgent.toLowerCase();
+  // Opera and some Chromium-based browsers silently drop notifications
+  // with requireInteraction: true
+  if (/iphone|ipad|ipod/.test(ua)) return false;
+  if (/opr\/|opera/.test(ua)) return false;
+  return true;
+}
+
 // ── Push event ────────────────────────────────────────────────────────────────
 self.addEventListener('push', (event) => {
   console.log('[sw] Push event received');
