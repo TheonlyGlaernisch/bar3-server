@@ -40,7 +40,10 @@ const knownAdminSchema = new mongoose.Schema(
 const KnownAdmin = mongoose.model('KnownAdmin', knownAdminSchema);
 
 /** In-memory cache so we don't hit the DB on every connect. */
-let knownAdminUsernamesCache: string[] = [];
+// Add getter below it:
+export function getKnownAdminUsernames(): string[] {
+  return knownAdminUsernamesCache;
+}
 let knownAdminCacheLoaded = false;
 
 async function loadKnownAdmins(): Promise<string[]> {
