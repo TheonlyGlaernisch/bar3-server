@@ -23,6 +23,7 @@ import { startAutomationLoop } from './services/v2AutomationRunner';
 import AccountService from './services/accountService';
 import superagent from 'superagent';
 import { attachChatServer, resolveChatAccess } from './services/chatServer';
+import { sendToAdmins } from './services/pushService';
 // Extend express-session SessionData with Discord fields
 import './interfaces/session';
 import './interfaces/sessionPnwNative';
@@ -384,12 +385,31 @@ app.post('/api/member/nation/counter-request', rateLimit({
     res.status(400).json({ error: 'Missing or invalid member identity' });
     return;
   }
+
+  // Capture the original json() so we can inspect the status after proxying
+  const originalJson = res.json.bind(res);
+  let proxiedStatus = 0;
+  res.json = function (body: any) {
+    proxiedStatus = res.statusCode;
+    return originalJson(body);
+  };
+
   await proxyBotApi(
     req,
     res,
     'post',
     `/api/member/nation/${encodeURIComponent(memberSelector)}/counter-request`
   );
+
+  if (proxiedStatus >= 200 && proxiedStatus < 300) {
+    const warId = req.body?.warId;
+    const requester = req.session?.discordUsername || memberSelector;
+    sendToAdmins({
+      title: 'Counter Requested',
+      body: `${requester} requested a counter${warId ? ` for war #${warId}` : ''}.`,
+      tag: `counter-request-${warId ?? Date.now()}`,
+    }).catch(() => undefined);
+  }
 });
 
 // PnW native auth and login UI routes must remain public and mounted before the auth guard.
