@@ -53,6 +53,7 @@ self.addEventListener('push', (event) => {
     // iOS: works fine with false, actually prefers it
     // Desktop Chrome: needs true for reliable delivery
     requireInteraction: !isIOS(),
+    requireInteraction: requiresInteraction(),
     data: { url: '/chat' },
   };
 
