@@ -38,7 +38,7 @@ const knownAdminSchema = new mongoose.Schema(
   { collection: 'known_admin_usernames', timestamps: false }
 );
 const KnownAdmin = mongoose.model('KnownAdmin', knownAdminSchema);
-
+let knownAdminUsernamesCache: string[] = [];
 /** In-memory cache so we don't hit the DB on every connect. */
 // Add getter below it:
 export function getKnownAdminUsernames(): string[] {
