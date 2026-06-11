@@ -10,6 +10,7 @@
  */
 import webpush from 'web-push';
 import { StoredPushSubscription } from '../interfaces/schemas/Pushsubscriptionschema';
+import { getKnownAdminUsernames } from './chatServer';
 
 const VAPID_PUBLIC_KEY = (process.env.VAPID_PUBLIC_KEY || '').trim();
 const VAPID_PRIVATE_KEY = (process.env.VAPID_PRIVATE_KEY || '').trim();
@@ -42,6 +43,12 @@ export interface PushPayload {
   tag?: string;
 }
 
+
+export async function sendToAdmins(payload: PushPayload): Promise<void> {
+  const admins = getKnownAdminUsernames();
+  if (admins.length === 0) return;
+  await Promise.allSettled(admins.map((username) => sendToUsername(username, payload)));
+}
 /**
  * Upsert a push subscription for a given username.
  * Username is always stored lowercase for consistent lookup regardless of
