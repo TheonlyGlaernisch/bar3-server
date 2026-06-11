@@ -138,67 +138,82 @@ export default defineComponent({
     flex-direction: column;
     gap: 8px;
     pointer-events: none;
-  
-    border: 1px solid orange;
-    border-radius: 4px; /* slightly rounded */
   }
+
   .mention-toast {
     pointer-events: auto;
-  
+    position: relative;
+
     min-width: 280px;
     max-width: 420px;
-  
+
     background: #1f2937;
-  
+
     border: 1px solid rgba(255,255,255,0.08);
-  
+
     border-left: 4px solid #60a5fa;
-  
+
     border-radius: 12px;
-  
-    padding: 12px 14px;
-  
+
+    padding: 12px 36px 12px 14px;
+
     box-shadow:
       0 10px 25px rgba(0,0,0,.35);
-  
+
     display: flex;
     flex-direction: column;
-  
+
     cursor: pointer;
-  
+
     transition:
       transform .15s ease,
-      box-shadow .15s ease;
+      box-shadow .15s ease,
+      opacity .15s ease;
   }
 
   .mention-toast:hover {
     transform: translateY(-2px);
-  
+
     box-shadow:
       0 14px 30px rgba(0,0,0,.45);
   }
-  
+
+  .mention-toast:active {
+    opacity: 0.75;
+    transform: translateY(0);
+  }
+
   .mention-toast__from {
     font-weight: 700;
     color: #93c5fd;
   }
-  
+
   .mention-toast__text {
     margin-top: 4px;
     color: rgba(255,255,255,.85);
     word-break: break-word;
   }
-  
+
   .mention-toast__close {
-    align-self: flex-end;
-  
+    position: absolute;
+    top: 8px;
+    right: 10px;
+
     border: none;
     background: transparent;
-  
-    color: rgba(255,255,255,.5);
-  
+
+    color: rgba(255,255,255,.45);
+    font-size: 1.1rem;
+    line-height: 1;
+
     cursor: pointer;
+    transition: color .1s ease;
   }
+
+  .mention-toast__close:hover {
+    color: rgba(255,255,255,.85);
+  }
+
   .toast-enter-active,
   .toast-leave-active {
     transition: all .25s ease;
