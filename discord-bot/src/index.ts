@@ -69,6 +69,10 @@ import {
 } from './pnw_api';
 import { renderCommandHelpSections } from './commandDocs';
 import { translateBetweenEnglishAndCroatian } from './translation';
+import {
+  TERRITORIAL_COMMANDS,
+  handleTerritorialCommand,
+} from './territorial_commands';
 
 let primaryGuild: Guild | null = null;
 
@@ -1813,6 +1817,7 @@ async function main(): Promise<void> {
         .addIntegerOption(o => o.setName('target').setDescription('Target number of cities (defaults to current + 1)').setMinValue(1))
         .addBooleanOption(o => o.setName('manifest_destiny').setDescription('Is the nation\'s domestic policy Manifest Destiny? (−5% cost)'))
         .addBooleanOption(o => o.setName('government_support_agency').setDescription('Does the nation have Government Support Agency? (additional −2.5%)'))),
+    ...TERRITORIAL_COMMANDS.map(command => command.toJSON()),
 
   ].map(c => c.toJSON());
 
@@ -3457,7 +3462,11 @@ Message: ${cfg.message}`)],
         );
         return void interaction.reply({ embeds, flags: MessageFlags.Ephemeral });
       }
+      const territorialResult = await handleTerritorialCommand(interaction, db);
+      if (territorialResult) return;
 
+
+      
       logWarn(`[commands] Unhandled slash command: ${commandName} (raw: ${interaction.commandName})`);
       return void interaction.reply({
         content: `This command is not handled yet (\`${commandName}\`). Please run \`/admin_sync_commands\` and try again.`,
