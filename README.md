@@ -1,30 +1,33 @@
 # TRF Tech
 
-Bar 3 is an automatic recruitment application created by bsnk-dev. It allows you to design and send a new message to every new player of the game Politics and War.
-Download the latest release to use it. More information can be found [on this website](https://TRF-tech.onrender.com).
+TRF Tech is a Politics and War operations platform that provides automation, alliance-management tooling, Discord integrations, territorial management systems, and supporting infrastructure for alliance administration.
+
+The project has expanded beyond its original recruitment-focused functionality and now serves as a broader operational toolkit.
+
+Download the latest release to use it. More information can be found at https://TRF-tech.onrender.com.
 
 # Running Source Files
 
-If you want to run the source files, download the repo and run the following:
+To run from source:
 
     npm i
-  
+
     npm run build
-  
+
     npm run start
-  
-To run these you will need node installed.
+
+Node.js must be installed before running the project.
 
 # Flags
 
-View the generated flag help
-    
+View generated help:
+
     --help
 
-Run the debugging logs
+Enable debug logging:
 
     --debug
 
-Run without opening the browser
+Run without opening a browser:
 
     --headless
