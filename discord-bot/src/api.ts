@@ -37,6 +37,10 @@
  *     Send a message to the configured welcome channel of every server the bot is in.
  *     Requires the X-API-Key request header.
  *
+ * POST /api/winlog
+ *     Receives a territorial.io win-log payload from the winlog worker.
+ *     Requires the X-Winlog-Secret request header.
+ *
  * Discord OAuth2 auth flow (requires DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET / DISCORD_REDIRECT_URI):
  * GET /auth/login
  *     Show the HTML login page. Accepts optional ?returnTo= and ?error= query params.
@@ -75,6 +79,7 @@ import {
   CLIENT_APP_URL,
   ADMIN_DISCORD_IDS,
 } from './config';
+import { WinlogPayload } from './winlog';
 
 export interface RoleConfig {
   verifiedRoleId?: string | bigint | null;
@@ -302,6 +307,65 @@ function _purgeExpired(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Winlog payload validation + route registration
+// ---------------------------------------------------------------------------
+
+function isValidWinlogPayload(body: unknown): body is WinlogPayload {
+  if (!body || typeof body !== 'object') return false;
+  const b = body as Record<string, unknown>;
+  return (
+    typeof b['winTime'] === 'string' &&
+    typeof b['map'] === 'string' &&
+    typeof b['playerCount'] === 'number' &&
+    typeof b['winningClan'] === 'string' &&
+    typeof b['isContest'] === 'boolean' &&
+    typeof b['points'] === 'number' &&
+    typeof b['prevPoints'] === 'string' &&
+    typeof b['currPoints'] === 'string' &&
+    Array.isArray(b['payoutAccounts']) &&
+    b['payoutAccounts'].every((a) => typeof a === 'string')
+  );
+}
+
+/**
+ * POST /api/winlog
+ *
+ * Body: WinlogPayload (see src/winlog.ts), JSON.
+ * Header: X-Winlog-Secret must equal `winlogSecret`.
+ *
+ * Responses: 200 {ok:true}, 401 Unauthorized (bad/missing secret),
+ * 400 Invalid payload, 503 Bot not ready (no handler configured).
+ */
+export function registerWinlogRoute(
+  app: Application,
+  winlogSecret: string | null,
+  winlogHandler?: (payload: WinlogPayload) => Promise<void>,
+): void {
+  app.post('/api/winlog', async (req: Request, res: Response) => {
+    if (!winlogSecret || req.headers['x-winlog-secret'] !== winlogSecret) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    if (!winlogHandler) {
+      res.status(503).json({ error: 'Bot not ready' });
+      return;
+    }
+    if (!isValidWinlogPayload(req.body)) {
+      res.status(400).json({ error: 'Invalid winlog payload' });
+      return;
+    }
+    try {
+      await winlogHandler(req.body);
+    } catch (err) {
+      console.error('[winlog] handler error:', (err as Error)?.message ?? err);
+      res.status(500).json({ error: 'Internal error processing winlog' });
+      return;
+    }
+    res.status(200).json({ ok: true });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Auth HTML pages
 // ---------------------------------------------------------------------------
 
@@ -432,60 +496,6 @@ export function createApp(options: CreateAppOptions): Application {
   } = options;
   const memberNationContextCache = new Map<string, { cachedAt: number; data: MemberNationContextData }>();
   const MEMBER_CONTEXT_CACHE_TTL_MS = 10 * 60 * 1000;
-  function isValidWinlogPayload(body: unknown): body is WinlogPayload {
-  if (!body || typeof body !== 'object') return false;
-  const b = body as Record<string, unknown>;
-  return (
-    typeof b['winTime'] === 'string' &&
-    typeof b['map'] === 'string' &&
-    typeof b['playerCount'] === 'number' &&
-    typeof b['winningClan'] === 'string' &&
-    typeof b['isContest'] === 'boolean' &&
-    typeof b['points'] === 'number' &&
-    typeof b['prevPoints'] === 'string' &&
-    typeof b['currPoints'] === 'string' &&
-    Array.isArray(b['payoutAccounts']) &&
-    b['payoutAccounts'].every((a) => typeof a === 'string')
-  );
-}
- 
-/**
- * POST /api/winlog
- *
- * Body: WinlogPayload (see src/winlog.ts), JSON.
- * Header: X-Winlog-Secret must equal `winlogSecret`.
- *
- * Responses: 200 {ok:true}, 401 Unauthorized (bad/missing secret),
- * 400 Invalid payload, 503 Bot not ready (no handler configured).
- */
-export function registerWinlogRoute(
-  app: import('express').Application,
-  winlogSecret: string | null,
-  winlogHandler?: (payload: WinlogPayload) => Promise<void>,
-): void {
-  app.post('/api/winlog', async (req: Request, res: Response) => {
-    if (!winlogSecret || req.headers['x-winlog-secret'] !== winlogSecret) {
-      res.status(401).json({ error: 'Unauthorized' });
-      return;
-    }
-    if (!winlogHandler) {
-      res.status(503).json({ error: 'Bot not ready' });
-      return;
-    }
-    if (!isValidWinlogPayload(req.body)) {
-      res.status(400).json({ error: 'Invalid winlog payload' });
-      return;
-    }
-    try {
-      await winlogHandler(req.body);
-    } catch (err) {
-      console.error('[winlog] handler error:', (err as Error)?.message ?? err);
-      res.status(500).json({ error: 'Internal error processing winlog' });
-      return;
-    }
-    res.status(200).json({ ok: true });
-  });
-}
 
   const app = express();
   app.use(express.json() as RequestHandler);
@@ -696,6 +706,9 @@ export function registerWinlogRoute(
     memberNationContextCache.delete(memberSelector);
     res.status(200).json(result);
   });
+
+  // POST /api/winlog — registered here, alongside the other /api/bot/* routes
+  registerWinlogRoute(app, winlogSecret, winlogHandler);
 
   // -------------------------------------------------------------------------
   // Discord OAuth2 auth flow
