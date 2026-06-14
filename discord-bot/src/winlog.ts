@@ -18,6 +18,7 @@ import {
   TextChannel,
 } from 'discord.js';
 import { Database } from './database';
+import { checkAndAssignRewards } from './rewards';
 
 export interface WinlogPayload {
   winTime: string;
@@ -128,6 +129,7 @@ export async function handleWinlogPayload(client: Client, db: Database, payload:
         guild.name,
         payload.points,
       );
+      await checkAndAssignRewards(guild, db, member.id);
       autoCredited.push(member.toString());
 
       try {
@@ -189,6 +191,7 @@ export async function handleWinlogPayload(client: Client, db: Database, payload:
         guild.name,
         payload.points * multiplier,
       );
+      await checkAndAssignRewards(guild, db, btn.user.id);
 
       const serverMultiplierDoc = await db.getActiveMultiplier(guild.id);
       const serverMultiplier = serverMultiplierDoc?.multiplier ?? 1.0;
