@@ -85,6 +85,10 @@ export const MONGODB_URI: string =
 // If API_KEY is not set the API server will not start.
 export const API_KEY: string | null = process.env['API_KEY'] || null;
 export const API_PORT: number = parseInt(process.env['API_PORT'] || '8080', 10);
+// Secret shared with the territorial.io-winlog-worker Cloudflare Worker.
+// The worker sends this value in the X-Winlog-Secret header when POSTing
+// to /api/winlog. If unset, /api/winlog rejects all requests with 401.
+export const WINLOG_POST_SECRET: string | null = process.env['WINLOG_POST_SECRET'] || null;
 
 // GUILD_ID is required when the bar3 HTTP API is enabled.
 if (API_KEY && GUILD_ID === null) {
