@@ -26,6 +26,7 @@ import {
   StringSelectMenuInteraction,
 } from 'discord.js';
 import { Database } from './database';
+import { checkAndAssignRewards } from './rewards';
 
 const MONTH_NAMES = [
   '', 'January', 'February', 'March', 'April', 'May', 'June',
@@ -203,6 +204,10 @@ async function handleAdd(interaction: ChatInputCommandInteraction, db: Database)
     user_id: interaction.user.id, user_name: interaction.user.tag, guild_id: guildId, guild_name: guildName,
     amount: 1, type: 'add', timestamp: now,
   });
+  if (interaction.guild) {
+    await checkAndAssignRewards(interaction.guild, db, interaction.user.id);
+  }
+
 
   const userPoints = await db.getUserTotal('points', guildId, interaction.user.id);
   const userWins = await db.getUserTotal('wins', guildId, interaction.user.id);
@@ -279,6 +284,7 @@ async function handleAddScore(interaction: ChatInputCommandInteraction, db: Data
     amount: points, base_amount: points, multiplier_used: 1.0, type: 'admin_add', added_by: interaction.user.id,
     timestamp: new Date(),
   });
+  await checkAndAssignRewards(interaction.guild, db, user.id);
   const embed = new EmbedBuilder()
     .setTitle('✅ Points Added')
     .setDescription(`Added ${points.toLocaleString(undefined, { maximumFractionDigits: 1 })} points to ${user.toString()}`)
@@ -326,6 +332,7 @@ async function handleAddWin(interaction: ChatInputCommandInteraction, db: Databa
     user_id: user.id, user_name: user.tag, guild_id: interaction.guildId, guild_name: interaction.guild.name,
     amount: wins, type: 'admin_add', added_by: interaction.user.id, timestamp: new Date(),
   });
+  await checkAndAssignRewards(interaction.guild, db, user.id);
   const embed = new EmbedBuilder()
     .setTitle('✅ Wins Added')
     .setDescription(`Added ${wins.toLocaleString()} wins to ${user.toString()}`)
