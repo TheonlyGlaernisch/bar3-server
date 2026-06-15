@@ -87,6 +87,12 @@ export const TERRITORIAL_COMMANDS = [
     .addUserOption((o) => o.setName('user').setDescription('User to remove wins from').setRequired(true))
     .addIntegerOption((o) => o.setName('wins').setDescription('Wins to remove').setRequired(true)),
 
+  new SlashCommandBuilder().setName('adminpoints').setDescription('Add points from a leaderboard message (Admin only)')
+    .addStringOption((o) => o.setName('message_id').setDescription('Message ID of the leaderboard').setRequired(true)),
+
+  new SlashCommandBuilder().setName('adminwins').setDescription('Add wins from a leaderboard message (Admin only)')
+    .addStringOption((o) => o.setName('message_id').setDescription('Message ID of the leaderboard').setRequired(true)),
+
   new SlashCommandBuilder().setName('leaderboard').setDescription('Show server leaderboard')
     .addIntegerOption((o) => o.setName('days').setDescription('Days to look back (0=today, 1=yesterday+today, etc. Leave empty for all time)')),
 
@@ -362,6 +368,249 @@ async function handleRemoveWin(interaction: ChatInputCommandInteraction, db: Dat
     .setColor(0xff0000)
     .addFields({ name: 'Removed by', value: interaction.user.toString(), inline: true });
   await interaction.reply({ embeds: [embed] });
+}
+
+// ---------------------------------------------------------------------------
+// /adminpoints, /adminwins
+// ---------------------------------------------------------------------------
+
+/**
+ * Matches lines like "1. <@123456789012345678> • 1,234" (mentions only —
+ * the Python version also tried a username/display-name match against
+ * "@username • points", but discord.js doesn't give us a cheap guild-wide
+ * username index the way discord.py's member cache does, so only the
+ * mention pattern is ported here).
+ */
+const ADMIN_LEDGER_LINE_RE = /<@!?(\d+)>\s*•\s*([\d.,]+)/;
+
+interface ParsedLedgerEntry {
+  userId: string;
+  amount: number;
+}
+
+function parseLedgerLines(content: string): { entries: ParsedLedgerEntry[]; failed: number } {
+  const entries: ParsedLedgerEntry[] = [];
+  let failed = 0;
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('Leaderboard') || line.startsWith('Showing') || line === '⠀') continue;
+    if (!line.includes('•')) continue;
+
+    const match = ADMIN_LEDGER_LINE_RE.exec(line);
+    if (!match) {
+      failed += 1;
+      continue;
+    }
+    const userId = match[1]!;
+    // adminpoints allows decimals and strips both thousands separators and
+    // decimal points (matching the Python bot's int-like parsing); adminwins
+    // does the same but the caller treats the result as an integer.
+    const amountStr = match[2]!.replace(/,/g, '').replace(/\./g, '');
+    const amount = Number(amountStr);
+    if (!Number.isFinite(amount)) {
+      failed += 1;
+      continue;
+    }
+    entries.push({ userId, amount });
+  }
+  return { entries, failed };
+}
+
+async function findMessageInGuild(interaction: ChatInputCommandInteraction, messageId: string) {
+  const guild = interaction.guild!;
+  for (const channel of guild.channels.cache.values()) {
+    if (!('messages' in channel) || typeof (channel as { messages?: { fetch?: unknown } }).messages?.fetch !== 'function') continue;
+    try {
+      const message = await (channel as unknown as { messages: { fetch: (id: string) => Promise<import('discord.js').Message> } }).messages.fetch(messageId);
+      if (message) return message;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function extractLedgerContent(message: import('discord.js').Message): string | null {
+  if (message.embeds.length && message.embeds[0]?.description) return message.embeds[0].description;
+  if (message.content) return message.content;
+  return null;
+}
+
+async function handleAdminPoints(interaction: ChatInputCommandInteraction, db: Database): Promise<void> {
+  const member = interaction.member as GuildMember | null;
+  if (!member?.permissions.has('Administrator')) {
+    await interaction.reply({ content: "❌ You don't have permission to use this command!", flags: MessageFlags.Ephemeral });
+    return;
+  }
+  if (!interaction.inGuild() || !interaction.guildId || !interaction.guild) {
+    await interaction.reply({ content: GUILD_ONLY, flags: MessageFlags.Ephemeral });
+    return;
+  }
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const messageId = interaction.options.getString('message_id', true).trim();
+  if (!/^\d+$/.test(messageId)) {
+    await interaction.followUp({ content: '❌ Invalid message ID format!', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const message = await findMessageInGuild(interaction, messageId);
+  if (!message) {
+    await interaction.followUp({ content: '❌ Message not found in any channel!', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const content = extractLedgerContent(message);
+  if (!content) {
+    await interaction.followUp({ content: '❌ Message has no content to process!', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const { entries, failed: parseFailed } = parseLedgerLines(content);
+  const guildId = interaction.guildId;
+  const guildName = interaction.guild.name;
+  const multiplier = await getActiveMultiplierValue(db, guildId);
+
+  let processed = 0;
+  let failed = parseFailed;
+  const successDetails: string[] = [];
+
+  for (const entry of entries) {
+    let target = interaction.guild.members.cache.get(entry.userId);
+    if (!target) {
+      try {
+        target = await interaction.guild.members.fetch(entry.userId);
+      } catch {
+        failed += 1;
+        continue;
+      }
+    }
+    const finalPoints = entry.amount * multiplier;
+    await db.addPoints({
+      user_id: target.id,
+      user_name: target.user.tag,
+      guild_id: guildId,
+      guild_name: guildName,
+      amount: finalPoints,
+      base_amount: entry.amount,
+      multiplier_used: multiplier,
+      type: 'adminpoints',
+      timestamp: new Date(),
+    });
+    processed += 1;
+    successDetails.push(`${target.displayName}: ${finalPoints.toLocaleString(undefined, { maximumFractionDigits: 0 })} points`);
+    await checkAndAssignRewards(interaction.guild, db, target.id);
+  }
+
+  if (processed > 0) {
+    const embed = new EmbedBuilder()
+      .setTitle('✅ Admin Points Added')
+      .setDescription(`Successfully processed **${processed}** users\nFailed: **${failed}** entries`)
+      .setColor(0x00ff00);
+    if (successDetails.length) {
+      let detailsText = successDetails.slice(0, 10).join('\n');
+      if (successDetails.length > 10) detailsText += `\n...and ${successDetails.length - 10} more`;
+      embed.addFields({ name: 'Details', value: detailsText, inline: false });
+    }
+    embed.addFields(
+      { name: 'Processed by', value: interaction.user.toString(), inline: true },
+      { name: 'Server', value: guildName, inline: true },
+    );
+    await interaction.followUp({ embeds: [embed], flags: MessageFlags.Ephemeral });
+  } else {
+    const embed = new EmbedBuilder()
+      .setTitle('❌ No Points Added')
+      .setDescription(`Failed to process any users from the message\nFailed entries: ${failed}`)
+      .setColor(0xff0000);
+    await interaction.followUp({ embeds: [embed], flags: MessageFlags.Ephemeral });
+  }
+}
+
+async function handleAdminWins(interaction: ChatInputCommandInteraction, db: Database): Promise<void> {
+  const member = interaction.member as GuildMember | null;
+  if (!member?.permissions.has('Administrator')) {
+    await interaction.reply({ content: "❌ You don't have permission to use this command!", flags: MessageFlags.Ephemeral });
+    return;
+  }
+  if (!interaction.inGuild() || !interaction.guildId || !interaction.guild) {
+    await interaction.reply({ content: GUILD_ONLY, flags: MessageFlags.Ephemeral });
+    return;
+  }
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const messageId = interaction.options.getString('message_id', true).trim();
+  if (!/^\d+$/.test(messageId)) {
+    await interaction.followUp({ content: '❌ Invalid message ID format!', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const message = await findMessageInGuild(interaction, messageId);
+  if (!message) {
+    await interaction.followUp({ content: '❌ Message not found in any channel!', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const content = extractLedgerContent(message);
+  if (!content) {
+    await interaction.followUp({ content: '❌ Message has no content to process!', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const { entries, failed: parseFailed } = parseLedgerLines(content);
+  const guildId = interaction.guildId;
+  const guildName = interaction.guild.name;
+
+  let processed = 0;
+  let failed = parseFailed;
+  const successDetails: string[] = [];
+
+  for (const entry of entries) {
+    let target = interaction.guild.members.cache.get(entry.userId);
+    if (!target) {
+      try {
+        target = await interaction.guild.members.fetch(entry.userId);
+      } catch {
+        failed += 1;
+        continue;
+      }
+    }
+    const wins = Math.trunc(entry.amount);
+    await db.addWins({
+      user_id: target.id,
+      user_name: target.user.tag,
+      guild_id: guildId,
+      guild_name: guildName,
+      amount: wins,
+      type: 'adminwins',
+      timestamp: new Date(),
+    });
+    processed += 1;
+    successDetails.push(`${target.displayName}: ${wins.toLocaleString()} wins`);
+    await checkAndAssignRewards(interaction.guild, db, target.id);
+  }
+
+  if (processed > 0) {
+    const embed = new EmbedBuilder()
+      .setTitle('✅ Admin Wins Added')
+      .setDescription(`Successfully processed **${processed}** users\nFailed: **${failed}** entries`)
+      .setColor(0x00ff00);
+    if (successDetails.length) {
+      let detailsText = successDetails.slice(0, 10).join('\n');
+      if (successDetails.length > 10) detailsText += `\n...and ${successDetails.length - 10} more`;
+      embed.addFields({ name: 'Details', value: detailsText, inline: false });
+    }
+    embed.addFields(
+      { name: 'Processed by', value: interaction.user.toString(), inline: true },
+      { name: 'Server', value: guildName, inline: true },
+    );
+    await interaction.followUp({ embeds: [embed], flags: MessageFlags.Ephemeral });
+  } else {
+    const embed = new EmbedBuilder()
+      .setTitle('❌ No Wins Added')
+      .setDescription(`Failed to process any users from the message\nFailed entries: ${failed}`)
+      .setColor(0xff0000);
+    await interaction.followUp({ embeds: [embed], flags: MessageFlags.Ephemeral });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -984,7 +1233,6 @@ async function handleForceRefreshRewards(interaction: ChatInputCommandInteractio
   for (const [type, typeRewards] of [['points', pointsRewards], ['wins', winsRewards]] as const) {
     if (!typeRewards.length) continue;
 
-    // Guild-wide totals, one pass (ranking aggregation is per-collection, not per-reward).
     const rows = await db.getGuildRanking(type, guildId, { pageSize: 100000 });
     const totals = new Map<string, number>(rows.map((r) => [r.userId, r.total]));
 
@@ -1171,7 +1419,7 @@ async function handleSetWinlog(interaction: ChatInputCommandInteraction, db: Dat
 
 const TERRITORIAL_COMMAND_NAMES = new Set([
   'bot_manager', 'add', 'remove', 'addscore', 'removescore', 'addwin', 'removewin',
-  'leaderboard', 'leaderboard_week', 'profile',
+  'adminpoints', 'adminwins', 'leaderboard', 'leaderboard_week', 'profile',
   'set_multiplier', 'edit_multiplier', 'end_multiplier', 'multiplier_info',
   'rewardrole', 'deletereward', 'editrewardrole', 'listrewards', 'rolelist',
   'force_refresh_rewards', 'cleanup_roles',
@@ -1193,6 +1441,8 @@ export async function handleTerritorialCommand(interaction: ChatInputCommandInte
     case 'removescore': await handleRemoveScore(interaction, db); break;
     case 'addwin': await handleAddWin(interaction, db); break;
     case 'removewin': await handleRemoveWin(interaction, db); break;
+    case 'adminpoints': await handleAdminPoints(interaction, db); break;
+    case 'adminwins': await handleAdminWins(interaction, db); break;
     case 'leaderboard': await handleLeaderboard(interaction, db); break;
     case 'leaderboard_week': await handleLeaderboardWeek(interaction, db); break;
     case 'profile': await handleProfile(interaction, db); break;
