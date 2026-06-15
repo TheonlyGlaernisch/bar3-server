@@ -1223,7 +1223,7 @@ async function handleForceRefreshRewards(interaction: ChatInputCommandInteractio
   const guildId = interaction.guildId;
   const rewards = await db.getRewardRoles(guildId);
   if (!rewards.length) {
-    await interaction.followup.send('❌ No reward roles configured!');
+    await interaction.followUp.send('❌ No reward roles configured!');
     return;
   }
   const pointsRewards = rewards.filter((r) => r.type === 'points');
@@ -1269,7 +1269,7 @@ async function handleForceRefreshRewards(interaction: ChatInputCommandInteractio
     .setTitle('✅ Reward Refresh Complete')
     .setDescription(`Processed ${processed} role assignments`)
     .setColor(0x00ff00);
-  await interaction.followup.send({ embeds: [embed] });
+  await interaction.followUp.send({ embeds: [embed] });
 }
 
 async function handleCleanupRoles(interaction: ChatInputCommandInteraction, db: Database): Promise<void> {
@@ -1286,7 +1286,7 @@ async function handleCleanupRoles(interaction: ChatInputCommandInteraction, db: 
   const guild = interaction.guild;
   const rewards = (await db.getRewardRoles(interaction.guildId)).sort((a, b) => b.amount - a.amount);
   if (!rewards.length) {
-    await interaction.followup.send('❌ No reward roles found!');
+    await interaction.followUp.send('❌ No reward roles found!');
     return;
   }
   const pointsRewards = rewards.filter((r) => r.type === 'points');
@@ -1317,7 +1317,7 @@ async function handleCleanupRoles(interaction: ChatInputCommandInteraction, db: 
     .setTitle('✅ Role Cleanup Complete')
     .setDescription(`Cleaned up milestone roles for ${cleaned} users.\nEach user now has only their highest points role and highest wins role.`)
     .setColor(0x00ff00);
-  await interaction.followup.send({ embeds: [embed] });
+  await interaction.followUp.send({ embeds: [embed] });
 }
 
 // ---------------------------------------------------------------------------
