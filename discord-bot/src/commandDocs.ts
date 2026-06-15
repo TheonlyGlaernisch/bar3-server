@@ -1,7 +1,7 @@
 export interface CommandDoc {
   name: string;
   summary: string;
-  category: 'core' | 'alliance' | 'gov' | 'admin' | 'fun' | 'setup';
+  category: 'core' | 'alliance' | 'gov' | 'admin' | 'fun' | 'setup' | 'territorial';
 }
 
 export const COMMAND_DOCS: CommandDoc[] = [
@@ -59,6 +59,33 @@ export const COMMAND_DOCS: CommandDoc[] = [
   { name: '/fun_quote', summary: 'Return a random legacy quote.', category: 'fun' },
   { name: '/suggestion <content>', summary: 'Submit suggestion for bot development.', category: 'fun' },
   { name: '/help', summary: 'Display command help by category.', category: 'core' },
+
+  // Territorial.io points / leaderboard / rewards system
+  { name: '/bot_manager <role>', summary: 'Configure the bot manager role for territorial commands (Admin only).', category: 'territorial' },
+  { name: '/add <points>', summary: 'Add points (and 1 win) to your own balance, multiplied by any active server multiplier.', category: 'territorial' },
+  { name: '/remove <points>', summary: 'Remove points (and 1 win) from your own balance.', category: 'territorial' },
+  { name: '/addscore <user> <points>', summary: 'Add points to a user (Bot Manager only).', category: 'territorial' },
+  { name: '/removescore <user> <points>', summary: 'Remove points from a user (Bot Manager only).', category: 'territorial' },
+  { name: '/addwin <user> <wins>', summary: 'Add wins to a user (Bot Manager only).', category: 'territorial' },
+  { name: '/removewin <user> <wins>', summary: 'Remove wins from a user (Bot Manager only).', category: 'territorial' },
+  { name: '/adminpoints <message_id>', summary: 'Bulk-credit points to users by parsing an existing leaderboard message (Admin only).', category: 'territorial' },
+  { name: '/adminwins <message_id>', summary: 'Bulk-credit wins to users by parsing an existing leaderboard message (Admin only).', category: 'territorial' },
+  { name: '/leaderboard [days]', summary: 'Show the points/wins leaderboard, with month filter and points/wins toggle.', category: 'territorial' },
+  { name: '/leaderboard_week', summary: 'Show the points/wins leaderboard for the last 7 days.', category: 'territorial' },
+  { name: '/profile [user]', summary: 'Show points, wins, ranks, and next reward progress for a user.', category: 'territorial' },
+  { name: '/set_multiplier <multiplier> <description>', summary: 'Set the server-wide points multiplier (Bot Manager only).', category: 'territorial' },
+  { name: '/edit_multiplier <multiplier> <description>', summary: 'Edit the active server multiplier (Bot Manager only).', category: 'territorial' },
+  { name: '/end_multiplier', summary: 'Deactivate the server multiplier (Bot Manager only).', category: 'territorial' },
+  { name: '/multiplier_info', summary: 'Show the currently active server multiplier, if any.', category: 'territorial' },
+  { name: '/rewardrole <channel> <reward_type> <amount> <role>', summary: 'Set a milestone role reward for points or wins (Bot Manager only).', category: 'territorial' },
+  { name: '/deletereward <role_id>', summary: 'Delete a configured reward role (Bot Manager only).', category: 'territorial' },
+  { name: '/editrewardrole <role> <new_amount> [new_channel]', summary: 'Edit a configured reward role (Bot Manager only).', category: 'territorial' },
+  { name: '/listrewards', summary: 'List all configured reward roles (Bot Manager only).', category: 'territorial' },
+  { name: '/rolelist', summary: 'Show all reward roles and the points/wins required for each.', category: 'territorial' },
+  { name: '/force_refresh_rewards', summary: 'Re-evaluate every member against reward roles and assign/upgrade as needed (Admin only).', category: 'territorial' },
+  { name: '/cleanup_roles', summary: 'Remove duplicate milestone roles, keeping only the highest per type (Admin only).', category: 'territorial' },
+  { name: '/account_linking <account_name> <user>', summary: 'Link a territorial.io account (5-char name) to a Discord user for auto-credit (Admin only).', category: 'territorial' },
+  { name: '/set_winlog <channel> <clan_name>', summary: 'Configure the win-log channel and clan filter (server owner / authorized only).', category: 'territorial' },
 ];
 
 export interface CommandHelpSection {
@@ -67,10 +94,11 @@ export interface CommandHelpSection {
 }
 
 export function renderCommandHelpSections(): CommandHelpSection[] {
-  const categories: CommandDoc['category'][] = ['core', 'alliance', 'gov', 'setup', 'admin', 'fun'];
+  const categories: CommandDoc['category'][] = ['core', 'alliance', 'gov', 'setup', 'admin', 'territorial', 'fun'];
   return categories.map((category) => {
     const docs = COMMAND_DOCS.filter((doc) => doc.category === category);
     const body = docs.map((d) => `• ${d.name} — ${d.summary}`).join('\n');
     return { category, body: body || '*(none)*' };
   });
 }
+
