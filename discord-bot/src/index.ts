@@ -3656,7 +3656,17 @@ Message: ${cfg.message}`)],
     httpServer = createServer(app);
     httpServer.listen(API_PORT, () => logInfo(`API listening on :${API_PORT}`));
   }
-
+    process.on('unhandledRejection', (reason, promise) => {
+    console.error('[unhandledRejection]', reason);
+  });
+  
+  process.on('uncaughtException', (error) => {
+    console.error('[uncaughtException]', error);
+  });
+  
+  process.on('uncaughtExceptionMonitor', (error, origin) => {
+    console.error('[uncaughtExceptionMonitor]', origin, error);
+  });
   logInfo('[startup] Attempting Discord client login...');
   await client.login(DISCORD_TOKEN);
   logInfo('[startup] Discord client login call resolved; waiting for ready event.');
