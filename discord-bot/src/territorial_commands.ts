@@ -1393,7 +1393,7 @@ async function handleSetWinlog(interaction: ChatInputCommandInteraction, db: Dat
     guild_id: interaction.guildId,
     guild_name: interaction.guild.name,
     channel_id: channel.id,
-    channel_name: channel.name,
+    channel_name: channel.name ?? '',
     clan_name: clanName,
     set_by: interaction.user.id,
     set_by_name: interaction.user.tag,
