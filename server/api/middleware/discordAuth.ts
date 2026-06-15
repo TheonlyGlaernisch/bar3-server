@@ -26,6 +26,7 @@ const PUBLIC_PREFIXES = [
   '/analytics/v2/p',
   '/health',
   '/favicon.ico',
+  '/api/winlog',
 ];
 
 /**
