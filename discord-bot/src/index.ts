@@ -1817,7 +1817,7 @@ async function main(): Promise<void> {
         .addIntegerOption(o => o.setName('target').setDescription('Target number of cities (defaults to current + 1)').setMinValue(1))
         .addBooleanOption(o => o.setName('manifest_destiny').setDescription('Is the nation\'s domestic policy Manifest Destiny? (−5% cost)'))
         .addBooleanOption(o => o.setName('government_support_agency').setDescription('Does the nation have Government Support Agency? (additional −2.5%)'))),
-    ...TERRITORIAL_COMMANDS.map(command => command.toJSON()),
+    ...TERRITORIAL_COMMANDS,
 
   ].map(c => c.toJSON());
 
