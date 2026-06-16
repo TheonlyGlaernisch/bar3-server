@@ -660,7 +660,79 @@ export class Database {
       .map((s) => s.split('-').map(Number) as [number, number])
       .sort((a, b) => (b[0] - a[0]) || (b[1] - a[1]));
   }
-
+  /**
+   * Global leaderboard across all guilds. Aggregates the `points` or `wins`
+   * collection (depending on `type`), grouping by user_id and summing totals
+   * with no guild_id filter. The companion totals (for the other collection)
+   * are also computed so the response can include both total_points and
+   * total_wins regardless of which `type` was requested for ranking.
+   */
+  async getGlobalRanking(
+    type: 'points' | 'wins',
+    limit: number,
+  ): Promise<Array<{ userId: string; userName: string; totalPoints: number; totalWins: number }>> {
+    const primaryCol = type === 'points' ? this._points : this._wins;
+  
+    const ranked = await primaryCol
+      .aggregate([
+        {
+          $group: {
+            _id: '$user_id',
+            total: { $sum: '$amount' },
+            user_name: { $last: '$user_name' },
+          },
+        },
+        { $sort: { total: -1 } },
+        { $limit: limit },
+      ])
+      .toArray() as Array<{
+        _id: string;
+        total: number;
+        user_name: string;
+      }>;
+  
+    if (!ranked.length) return [];
+  
+    const userIds = ranked.map((r) => r._id);
+  
+    const otherCol = type === 'points' ? this._wins : this._points;
+  
+    const otherTotals = await otherCol
+      .aggregate([
+        {
+          $match: {
+            user_id: { $in: userIds },
+          },
+        },
+        {
+          $group: {
+            _id: '$user_id',
+            total: { $sum: '$amount' },
+          },
+        },
+      ])
+      .toArray() as Array<{
+        _id: string;
+        total: number;
+      }>;
+  
+    const otherTotalsMap = new Map(
+      otherTotals.map((r) => [r._id, r.total]),
+    );
+  
+    return ranked.map((r) => ({
+      userId: r._id,
+      userName: r.user_name,
+      totalPoints:
+        type === 'points'
+          ? r.total
+          : (otherTotalsMap.get(r._id) ?? 0),
+      totalWins:
+        type === 'wins'
+          ? r.total
+          : (otherTotalsMap.get(r._id) ?? 0),
+    }));
+  }
   // ------------------------------------------------------------------
   // Territorial.io: Multipliers
   // ------------------------------------------------------------------
