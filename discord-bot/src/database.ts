@@ -3,6 +3,7 @@
  * plus territorial.io points/winlog/rewards system.
  */
 import { MongoClient, Db, Collection, IndexSpecification } from 'mongodb';
+import { createHash } from 'crypto';
 
 export interface RegistrationDoc {
   discord_id: string;
@@ -129,6 +130,42 @@ export interface AccountLinkDoc {
   linked_by: string;
   timestamp: Date;
 }
+// ---------------------------------------------------------------------------
+// Global win deduplication
+// ---------------------------------------------------------------------------
+
+export interface ProcessedWinDoc {
+  win_id: string;
+  winTime: string;
+  map: string;
+  winningClan: string;
+  processedAt: Date;
+}
+
+export interface WinClaimDoc {
+  win_id: string;
+  user_id: string;
+  user_name: string;
+  claimed_at: Date;
+  points_awarded: number;
+  claim_type: string;
+}
+
+export interface WinlogLikePayload {
+  winTime: string;
+  map: string;
+  winningClan: string;
+}
+
+function computeWinId(payload: WinlogLikePayload): string {
+  const normalized = `${payload.winTime}|${payload.map}|${payload.winningClan}`
+    .trim()
+    .toLowerCase();
+
+  return createHash("sha256")
+    .update(normalized)
+    .digest("hex");
+}
 
 export interface BotManagerSettingsDoc {
   guild_id: string;
@@ -160,6 +197,8 @@ export class Database {
   private _winlogSettings: Collection<WinlogSettingsDoc>;
   private _accountLinks: Collection<AccountLinkDoc>;
   private _botManagerSettings: Collection<BotManagerSettingsDoc>;
+  private _processedWins: Collection<ProcessedWinDoc>;
+  private _winClaims: Collection<WinClaimDoc>;
 
   constructor(uri: string, client?: MongoClient) {
     this._client = client ?? new MongoClient(uri);
@@ -176,6 +215,8 @@ export class Database {
     this._winlogSettings = db.collection<WinlogSettingsDoc>('winlog_settings');
     this._accountLinks = db.collection<AccountLinkDoc>('account_links');
     this._botManagerSettings = db.collection<BotManagerSettingsDoc>('bot_settings');
+    this._processedWins = db.collection<ProcessedWinDoc>('processed_wins');
+    this._winClaims = db.collection<WinClaimDoc>('win_claims');
   }
 
   async connect(): Promise<void> {
@@ -183,6 +224,8 @@ export class Database {
     await this._col.createIndex({ discord_id: 1 }, { unique: true });
     await this._col.createIndex({ nation_id: 1 }, { unique: true });
     await this._guilds.createIndex({ guild_id: 1 }, { unique: true });
+    await this._processedWins.createIndex({ win_id: 1 }, { unique: true });
+    await this._winClaims.createIndex({ win_id: 1, user_id: 1 }, { unique: true });
   }
 
   // ------------------------------------------------------------------
@@ -740,7 +783,70 @@ export class Database {
   async getAccountLinksForGuild(guildId: string): Promise<AccountLinkDoc[]> {
     return this._accountLinks.find({ guild_id: guildId }, { projection: { _id: 0 } }).toArray();
   }
-
+  // ------------------------------------------------------------------
+  // Territorial.io: Global win deduplication
+  // ------------------------------------------------------------------
+  
+  /**
+   * Generate (or retrieve) a deterministic win_id for the given winlog
+   * payload, and ensure a processed_wins record exists for it. The win_id
+   * is derived from winTime + map + winningClan so the same physical win
+   * always maps to the same record, regardless of how many guilds receive
+   * the winlog broadcast.
+   */
+  async getOrCreateProcessedWin(payload: { winTime: string; map: string; winningClan: string }): Promise<string> {
+    const winId = computeWinId(payload);
+  
+    await this._processedWins.updateOne(
+      { win_id: winId },
+      {
+        $setOnInsert: {
+          win_id: winId,
+          winTime: payload.winTime,
+          map: payload.map,
+          winningClan: payload.winningClan,
+          processedAt: new Date(),
+        },
+      },
+      { upsert: true },
+    );
+  
+    return winId;
+  }
+  
+  /** Check whether a given user has already claimed/been credited for this win. */
+  async hasUserClaimedWin(winId: string, userId: string): Promise<boolean> {
+    const doc = await this._winClaims.findOne(
+      { win_id: winId, user_id: userId },
+      { projection: { _id: 1 } },
+    );
+  
+    return doc !== null;
+  }
+  
+  /** Persist a new win claim record. Safe to call once per (win_id, user_id) pair. */
+  async recordWinClaim(
+    winId: string,
+    userId: string,
+    userName: string,
+    pointsAwarded: number,
+    claimType: string,
+  ): Promise<void> {
+    await this._winClaims.updateOne(
+      { win_id: winId, user_id: userId },
+      {
+        $setOnInsert: {
+          win_id: winId,
+          user_id: userId,
+          user_name: userName,
+          claimed_at: new Date(),
+          points_awarded: pointsAwarded,
+          claim_type: claimType,
+        },
+      },
+      { upsert: true },
+    );
+  }
   // ------------------------------------------------------------------
   // Territorial.io: Bot manager role
   // ------------------------------------------------------------------
