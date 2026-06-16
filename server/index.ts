@@ -343,6 +343,29 @@ app.get('/api/bot/servers', botRouteLimiter, requireDiscordAuth, requireDiscordA
   proxyBotApi(req, res, 'get', '/api/bot/servers'));
 app.get('/api/bot/commands/usage', botRouteLimiter, requireDiscordAuth, requireDiscordAdmin, async (req: Request, res: Response) =>
   proxyBotApi(req, res, 'get', '/api/bot/commands/usage'));
+app.get('/api/leaderboard', botRouteLimiter, async (req: Request, res: Response) => {
+  const params = new URLSearchParams();
+
+  const limit = req.query['limit'];
+  const type = req.query['type'];
+
+  if (typeof limit === 'string') {
+    params.set('limit', limit);
+  }
+
+  if (typeof type === 'string') {
+    params.set('type', type);
+  }
+
+  const qs = params.toString();
+
+  await proxyBotApi(
+    req,
+    res,
+    'get',
+    `/api/leaderboard${qs ? `?${qs}` : ''}`,
+  );
+});
 app.post('/api/bot/send', botRouteLimiter, botWriteRouteLimiter, requireDiscordAuth, requireTrustedOriginForUnsafeMethod, requireDiscordAdmin, async (req: Request, res: Response) =>
   proxyBotApi(req, res, 'post', '/api/bot/send'));
 app.post('/api/bot/config', botRouteLimiter, botWriteRouteLimiter, requireDiscordAuth, requireTrustedOriginForUnsafeMethod, requireDiscordAdmin, (_req: Request, res: Response) =>
