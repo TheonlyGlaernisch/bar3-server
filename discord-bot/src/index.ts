@@ -3500,6 +3500,7 @@ Message: ${cfg.message}`)],
     const app = createApp({
       guildGetter: () => getPrimaryGuild(client),
       apiKey: API_KEY,
+      db,
       roleConfig: {
         verifiedRoleId: VERIFIED_ROLE_ID,
         bar3ClientRoleId: BAR3_CLIENT_ROLE_ID,
