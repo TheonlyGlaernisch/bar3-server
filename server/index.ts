@@ -347,6 +347,30 @@ app.post('/api/bot/send', botRouteLimiter, botWriteRouteLimiter, requireDiscordA
   proxyBotApi(req, res, 'post', '/api/bot/send'));
 app.post('/api/bot/config', botRouteLimiter, botWriteRouteLimiter, requireDiscordAuth, requireTrustedOriginForUnsafeMethod, requireDiscordAdmin, (_req: Request, res: Response) =>
   res.status(204).end());
+app.post('/api/winlog', botRouteLimiter, async (req: Request, res: Response) => {
+  try {
+    let requestBuilder = superagent.post(`${FLAME_BOT_INTERNAL_URL}/api/winlog`);
+    const winlogSecret = req.header('X-Winlog-Secret');
+    if (winlogSecret) requestBuilder = requestBuilder.set('X-Winlog-Secret', winlogSecret);
+    requestBuilder = requestBuilder.set('Content-Type', 'application/json');
+    const upstream = await requestBuilder
+      .send(req.body)
+      .timeout({ response: 10000, deadline: 15000 })
+      .ok(() => true);
+    res.status(upstream.status).json(upstream.body);
+  } catch (err: any) {
+    const status = err?.status;
+    const body = err?.response?.body;
+    if (status && body) {
+      res.status(status).json(body);
+      return;
+    }
+    res.status(503).json({
+      error: 'Bot API unavailable',
+      hint: 'flame_bot may not be reachable on its internal API port',
+    });
+  }
+});
 app.get('/api/chat/status', rateLimit({
   windowMs: BOT_ROUTE_WINDOW_MS,
   limit: BOT_ROUTE_MAX_REQUESTS,
