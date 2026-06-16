@@ -191,6 +191,7 @@ export interface CreateAppOptions {
   memberNationCounterRequestHandler?: MemberNationCounterRequestHandler;
   winlogSecret?: string | null;
   winlogHandler?: (payload: WinlogPayload) => Promise<void>;
+  db?: Database;
 }
 
 function checkApiKey(req: Request, apiKey: string): boolean {
@@ -443,6 +444,7 @@ export function createApp(options: CreateAppOptions): Application {
     memberNationCounterRequestHandler,
     winlogSecret = null,
     winlogHandler,
+    db,
   } = options;
   const memberNationContextCache = new Map<string, { cachedAt: number; data: MemberNationContextData }>();
   const MEMBER_CONTEXT_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -659,6 +661,10 @@ export function createApp(options: CreateAppOptions): Application {
 
   // POST /api/winlog — registered here, alongside the other /api/bot/* routes
   registerWinlogRoute(app, winlogSecret, winlogHandler);
+  // GET /api/leaderboard — global cross-guild leaderboard
+  if (db) {
+    registerLeaderboardRoute(app, db);
+  }
 
   // -------------------------------------------------------------------------
   // Discord OAuth2 auth flow
