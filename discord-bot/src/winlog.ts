@@ -86,6 +86,13 @@ function buildWinlogDescription(payload: WinlogPayload, autoCredited: string[]):
 export async function handleWinlogPayload(client: Client, db: Database, payload: WinlogPayload): Promise<void> {
   const settingsList = await db.getActiveWinlogSettings();
   const winningClanLower = payload.winningClan.trim().toLowerCase();
+  // Resolve (or create) the global win record up front so all guilds that
+  // process this payload share the same win_id for deduplication.
+  const winId = await db.getOrCreateProcessedWin({
+    winTime: payload.winTime,
+    map: payload.map,
+    winningClan: payload.winningClan,
+  });
 
   for (const setting of settingsList) {
     const clanFilter = (setting.clan_name || '').trim().toLowerCase();
@@ -121,6 +128,25 @@ export async function handleWinlogPayload(client: Client, db: Database, payload:
       }
       if (!member) continue;
 
+      if (await db.hasUserClaimedWin(winId, member.id)) {
+        try {
+          await member.send({
+            embeds: [
+              new EmbedBuilder()
+                .setTitle('ℹ️ Win Already Claimed')
+                .setDescription(
+                  `You've already been credited for [${payload.winningClan}] win on ${payload.map}.`,
+                )
+                .setColor(0x808080),
+            ],
+          });
+        } catch {
+          /* ignore DM failures */
+        }
+      
+        continue;
+      }
+
       const finalPoints = await addWinlogPoints(
         db,
         member.id,
@@ -130,6 +156,7 @@ export async function handleWinlogPayload(client: Client, db: Database, payload:
         payload.points,
       );
       await checkAndAssignRewards(guild, db, member.id);
+      await db.recordWinClaim(winId, member.id, member.user.tag, finalPoints, 'auto_credit');
       autoCredited.push(member.toString());
 
       try {
@@ -181,6 +208,14 @@ export async function handleWinlogPayload(client: Client, db: Database, payload:
         await btn.reply({ content: '❌ You already claimed points from this log!', ephemeral: true });
         return;
       }
+      if (await db.hasUserClaimedWin(winId, btn.user.id)) {
+        await btn.reply({
+          content: '❌ This win has already been claimed (you were already credited for it).',
+          ephemeral: true,
+        });
+      
+        return;
+      }
       claimedUsers.set(btn.user.id, multiplier);
 
       const finalPoints = await addWinlogPoints(
@@ -192,6 +227,7 @@ export async function handleWinlogPayload(client: Client, db: Database, payload:
         payload.points * multiplier,
       );
       await checkAndAssignRewards(guild, db, btn.user.id);
+      await db.recordWinClaim(winId, btn.user.id, btn.user.tag, finalPoints, 'button_claim');
 
       const serverMultiplierDoc = await db.getActiveMultiplier(guild.id);
       const serverMultiplier = serverMultiplierDoc?.multiplier ?? 1.0;
