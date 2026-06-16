@@ -40,7 +40,9 @@ import {
   PNW_TEST_API_KEY,
   PW_SCAN_API_KEY,
   VERIFIED_ROLE_ID,
+  WINLOG_POST_SECRET,
 } from './config';
+import { handleWinlogPayload } from './winlog';
 import { createApp } from './api';
 import { Database } from './database';
 import {
@@ -3652,6 +3654,8 @@ Message: ${cfg.message}`)],
         }, ...withoutWar]);
         return { ok: true as const, warId, requestedAt };
       },
+        winlogSecret: WINLOG_POST_SECRET,
+        winlogHandler: (payload) => handleWinlogPayload(client, db, payload),
     });
     httpServer = createServer(app);
     httpServer.listen(API_PORT, () => logInfo(`API listening on :${API_PORT}`));
