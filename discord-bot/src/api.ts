@@ -71,6 +71,8 @@
  */
 import express, { Application, NextFunction, Request, RequestHandler, Response } from 'express';
 import rateLimit from 'express-rate-limit';
+import { registerLeaderboardRoute } from './api_leaderboard_route';
+import { Database } from './database';
 import { Guild, GuildMember } from 'discord.js';
 import {
   DISCORD_CLIENT_ID,
