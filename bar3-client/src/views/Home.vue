@@ -105,6 +105,7 @@ export default defineComponent({
   .dashboard-cards-container {
     display: flex;
     flex-wrap: wrap;
+    gap: 16px;
   }
 
   .dashboard-card {
@@ -116,11 +117,26 @@ export default defineComponent({
     right: 24px;
     bottom: 24px;
     z-index: 10;
+    box-shadow: 0 0 20px rgba(255, 107, 0, 0.35) !important;
+    transition: box-shadow 0.25s ease, transform 0.2s ease !important;
+  }
+  
+  .dashboard-refresh-button:hover {
+    box-shadow: 0 0 32px rgba(255, 107, 0, 0.55) !important;
+    transform: scale(1.08) rotate(15deg);
+  }
+  .home {
+    background: linear-gradient(
+      160deg,
+      rgba(26, 26, 26, 0) 0%,
+      rgba(255, 107, 0, 0.025) 100%
+    );
+    min-height: 100%;
   }
 
   @media only screen and (min-width: 450px) {
     .dashboard-card {
-      margin-right: 16px;
+      margin-right: 0px;
     }
   }
 </style>
