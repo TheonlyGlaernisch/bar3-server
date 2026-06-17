@@ -23,6 +23,8 @@ interface ChatState {
   onlineUsers: { username: string; isAdmin: boolean }[];
   /** Admins who have ever connected — includes currently-offline admins. */
   knownAdmins: string[];
+  /** All users who have ever connected — for @mention autocomplete. */
+  knownUsers: string[];
   typingUsers: string[];
   myUsername: string;
   mentionToasts: MentionToast[];
@@ -40,6 +42,7 @@ export default {
     statusType: 'info',
     onlineUsers: [],
     knownAdmins: [],
+    knownUsers: [],
     typingUsers: [],
     myUsername: '',
     mentionToasts: [],
@@ -65,6 +68,7 @@ export default {
     onlineUsers: (state: ChatState) => state.onlineUsers,
     /** All known admins including offline ones, for @mention autocomplete. */
     knownAdmins: (state: ChatState) => state.knownAdmins,
+    knownUsers: (state: ChatState) => state.knownUsers,
     typingUsers: (state: ChatState) => state.typingUsers,
     myUsername: (state: ChatState) => state.myUsername,
     mentionToasts: (state: ChatState) => state.mentionToasts,
@@ -95,6 +99,9 @@ export default {
     },
     setKnownAdmins(state: ChatState, admins: string[]) {
       state.knownAdmins = Array.isArray(admins) ? admins : [];
+    },
+    setKnownUsers(state: ChatState, users: string[]) {
+      state.knownUsers = Array.isArray(users) ? users : [];
     },
     setTypingUsers(state: ChatState, users: string[]) {
       state.typingUsers = users;
