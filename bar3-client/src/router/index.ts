@@ -35,7 +35,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/constitution', name: 'Constitution', component: ConstitutionView, meta: { requiresMemberAccess: true } },
   { path: '/auth/discord/callback', name: 'Discord Callback', component: DiscordCallback, meta: { public: true } },
   { path: '/bot', name: 'Bot Panel', component: BotPanel, meta: { requiresBotAuth: true } },
-  { path: '/leaderboard', name: 'Leaderboard', component: Leaderboard },
+  { path: '/leaderboard', name: 'Leaderboard', component: Leaderboard, meta: { public: true } },
 ];
 
 const router = createRouter({
