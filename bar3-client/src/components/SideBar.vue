@@ -148,6 +148,11 @@ export default defineComponent({
           path: '/about',
         },
         {
+          title: 'Leaderboard',
+          icon: 'mdi-podium',
+          path: '/leaderboard',
+        },
+        {
           title: 'Help',
           icon: 'mdi-help-circle',
           path: '/help',
