@@ -101,6 +101,11 @@ export default defineComponent({
 .leaderboard-table {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
+  background: rgba(26, 26, 26, 0.6) !important;
+}
+.leaderboard-table tbody tr:hover td {
+  background: rgba(255, 107, 0, 0.05) !important;
+  transition: background 0.2s ease;
 }
 
 .rank-badge {
@@ -118,17 +123,30 @@ export default defineComponent({
   background: rgba(255, 215, 0, 0.2);
   color: #ffd700;
   border: 1px solid rgba(255, 215, 0, 0.4);
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
 }
 
 .rank-badge--silver {
   background: rgba(192, 192, 192, 0.2);
   color: #c0c0c0;
   border: 1px solid rgba(192, 192, 192, 0.4);
+  box-shadow: 0 0 10px rgba(192, 192, 192, 0.25);
 }
 
 .rank-badge--bronze {
   background: rgba(205, 127, 50, 0.2);
   color: #cd7f32;
   border: 1px solid rgba(205, 127, 50, 0.4);
+  box-shadow: 0 0 10px rgba(205, 127, 50, 0.3);
+}
+/* v-btn-toggle segmented styling */
+:deep(.v-btn-toggle) {
+  background: rgba(26, 26, 26, 0.7) !important;
+  border: 1px solid rgba(255, 107, 0, 0.2) !important;
+  border-radius: 8px !important;
+}
+
+:deep(.v-btn-toggle .v-btn--active) {
+  box-shadow: inset 0 0 12px rgba(255, 107, 0, 0.15) !important;
 }
 </style>
