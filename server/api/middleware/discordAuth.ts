@@ -28,6 +28,7 @@ const PUBLIC_PREFIXES = [
   '/favicon.ico',
   '/api/winlog',
   '/api/leaderboard',
+  '/leaderboard'
 ];
 
 /**
