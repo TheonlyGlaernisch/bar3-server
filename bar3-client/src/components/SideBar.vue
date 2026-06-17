@@ -183,4 +183,53 @@ export default defineComponent({
   },
 });
 </script>
+<style scoped>
+/* Nav item base transition */
+:deep(.v-list-item) {
+  transition: background 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  border-left: 3px solid transparent;
+  margin-left: 4px;
+  border-radius: 0 8px 8px 0 !important;
+}
 
+/* Hover glow */
+:deep(.v-list-item:hover) {
+  background: rgba(255, 107, 0, 0.07) !important;
+  border-left-color: rgba(255, 107, 0, 0.4);
+}
+
+/* Active / selected state */
+:deep(.v-list-item--active) {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 107, 0, 0.14) 0%,
+    rgba(255, 107, 0, 0.04) 100%
+  ) !important;
+  border-left-color: #FF6B00;
+  box-shadow: inset 0 0 12px rgba(255, 107, 0, 0.08);
+}
+
+/* Icon glow on hover */
+:deep(.v-list-item:hover .v-icon) {
+  filter: drop-shadow(0 0 6px rgba(255, 107, 0, 0.6));
+  transition: filter 0.25s ease;
+}
+
+/* Active icon glow */
+:deep(.v-list-item--active .v-icon) {
+  filter: drop-shadow(0 0 8px rgba(255, 107, 0, 0.7));
+}
+
+/* Gradient divider */
+:deep(.v-divider) {
+  border: none !important;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 107, 0, 0.45) 50%,
+    transparent 100%
+  ) !important;
+}
+</style>
