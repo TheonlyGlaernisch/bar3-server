@@ -163,6 +163,7 @@ export default defineComponent({
     const myUsername = computed(() => store.getters['chat/myUsername'] ?? '');
     const mentionToasts = computed(() => store.getters['chat/mentionToasts'] ?? []);
     const knownAdmins = computed(() => store.getters['chat/knownAdmins'] ?? []);
+    const knownUsers = computed(() => store.getters['chat/knownUsers'] ?? []);
 
     const canSend = computed(() => connected.value && store.getters.isDiscordAuthed);
 
