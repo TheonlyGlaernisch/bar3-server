@@ -46,6 +46,17 @@ export function getKnownAdminUsernames(): string[] {
 }
 let knownAdminCacheLoaded = false;
 
+// ─── Known-user persistence ───────────────────────────────────────────────────
+const knownUserSchema = new mongoose.Schema(
+  { username: { type: String, required: true, unique: true } },
+  { collection: 'known_usernames', timestamps: false }
+);
+
+const KnownUser = mongoose.model('KnownUser', knownUserSchema);
+
+let knownUsernamesCache: string[] = [];
+let knownUsersCacheLoaded = false;
+
 async function loadKnownAdmins(): Promise<string[]> {
   if (knownAdminCacheLoaded) return knownAdminUsernamesCache;
   try {
@@ -71,6 +82,44 @@ async function persistAdminUsername(username: string): Promise<void> {
     // Non-fatal — admin is still in memory for this session
   }
 }
+
+
+async function loadKnownUsers(): Promise<string[]> {
+  if (knownUsersCacheLoaded) return knownUsernamesCache;
+
+  try {
+    const docs = await KnownUser.find({}).lean().exec();
+    knownUsernamesCache = docs.map((d: any) => d.username as string);
+    knownUsersCacheLoaded = true;
+  } catch {
+    // DB not ready yet — return whatever we have in memory
+  }
+
+  return knownUsernamesCache;
+}
+
+async function persistUsername(username: string): Promise<boolean> {
+  const isNew = !knownUsernamesCache.includes(username);
+
+  if (!isNew) return false;
+
+  try {
+    await KnownUser.findOneAndUpdate(
+      { username },
+      { username },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).exec();
+
+    knownUsernamesCache = [...new Set([...knownUsernamesCache, username])];
+  } catch {
+    // Non-fatal — user is still in memory for this session
+  }
+
+  return isNew;
+}
+
+
+
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -215,7 +264,12 @@ function resolveCanonicalUsername(lowerUsername: string): string {
   for (const adminUsername of knownAdminUsernamesCache) {
     if (adminUsername.toLowerCase() === lowerUsername) return adminUsername;
   }
+
+  for (const u of knownUsernamesCache) {
+    if (u.toLowerCase() === lowerUsername) return u;
+  }
   return lowerUsername;
+  
 }
 
 function broadcastReaction(payload: ReactionBroadcast, excludeClient?: ws.WebSocket): void {
@@ -317,6 +371,22 @@ function sendAdminList(target: ws.WebSocket | null): void {
     if (target.readyState === ws.WebSocket.OPEN) target.send(payload);
     return;
   }
+  for (const [client] of clients) {
+    if (client.readyState === ws.WebSocket.OPEN) client.send(payload);
+  }
+}
+
+
+async function sendKnownUsersList(target: ws.WebSocket | null): Promise<void> {
+  await loadKnownUsers();
+
+  const payload = JSON.stringify({ type: 'known_users', users: knownUsernamesCache });
+
+  if (target) {
+    if (target.readyState === ws.WebSocket.OPEN) target.send(payload);
+    return;
+  }
+
   for (const [client] of clients) {
     if (client.readyState === ws.WebSocket.OPEN) client.send(payload);
   }
@@ -555,6 +625,7 @@ export function attachChatServer(
 ): void {
   // Pre-load known admins so the first client to connect gets the full list
   loadKnownAdmins().catch(() => undefined);
+  loadKnownUsers().catch(() => undefined);
 
   const chatWss = new ws.WebSocketServer({ noServer: true });
 
@@ -581,6 +652,7 @@ export function attachChatServer(
 
     chatWss.handleUpgrade(req, socket, head, async (client) => {
       const username = access.username;
+      const isNewUser = await persistUsername(username);
 
       // If this is an admin we haven't seen before, persist and broadcast
       if (access.isAdmin) {
@@ -619,6 +691,9 @@ export function attachChatServer(
       // Send the known-admin list so the client can show offline admins in autocomplete
       await loadKnownAdmins();
       sendAdminList(client);
+      // Send the known-users list for @mention autocomplete
+      await sendKnownUsersList(client);
+      if (isNewUser) sendKnownUsersList(null);
 
       broadcastOnlineUsers();
 
