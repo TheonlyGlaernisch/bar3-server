@@ -355,6 +355,11 @@ class ChatService {
       return;
     }
 
+    if (data.type === 'known_users' && Array.isArray(data.users)) {
+      this.commit('setKnownUsers', data.users);
+      return;
+    }
+    
     if (data.type === 'reaction_update') {
       this.commit('applyReactionDelta', {
         messageKey: data.messageKey,
