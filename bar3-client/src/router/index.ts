@@ -15,6 +15,7 @@ import Alliance from '@/views/Alliance.vue';
 import Chat from '@/components/Chat.vue';
 import { discordAuth } from '@/utilities/discordAuth';
 import { normalizeReturnTo } from '@/utilities/serverUrls';
+import Leaderboard from '@/views/Leaderboard.vue';
 
 const DISCORD_PUBLIC_PATHS = ['/auth/discord/callback'];
 
@@ -34,6 +35,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/constitution', name: 'Constitution', component: ConstitutionView, meta: { requiresMemberAccess: true } },
   { path: '/auth/discord/callback', name: 'Discord Callback', component: DiscordCallback, meta: { public: true } },
   { path: '/bot', name: 'Bot Panel', component: BotPanel, meta: { requiresBotAuth: true } },
+  { path: '/leaderboard', name: 'Leaderboard', component: Leaderboard },
 ];
 
 const router = createRouter({
