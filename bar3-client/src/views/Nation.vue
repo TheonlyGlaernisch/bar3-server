@@ -153,3 +153,29 @@ export default defineComponent({
   },
 });
 </script>
+
+<style scoped>
+/* Info cards glassmorphism */
+:deep(.v-card[color="#1A1A1A"]) {
+  background: rgba(26, 26, 26, 0.85) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 107, 0, 0.12) !important;
+  transition: border-color 0.3s ease;
+}
+
+:deep(.v-card[color="#1A1A1A"]:hover) {
+  border-color: rgba(255, 107, 0, 0.25) !important;
+}
+
+/* Wars table row hover glow */
+:deep(.v-table tbody tr:hover td) {
+  background: rgba(255, 107, 0, 0.05) !important;
+  transition: background 0.2s ease;
+}
+
+/* Table semi-transparent */
+:deep(.v-table) {
+  background: rgba(26, 26, 26, 0.5) !important;
+}
+</style>
