@@ -3,7 +3,7 @@
     variant="outlined"
     min-height="500px"
   >
-    <v-row class="bg-blue-darken-2 text-white ma-0 align-center pb-4">
+    <v-row class="analytics-header text-white ma-0 align-center pb-4">
       <v-col cols="12" sm="6">
         <div class="text-h6">
           {{ campaign.name }}
@@ -190,3 +190,27 @@ export default defineComponent({
   },
 });
 </script>
+<style scoped>
+/* Gradient header replacing bg-blue-darken-2 */
+.analytics-header {
+  background: linear-gradient(
+    135deg,
+    #1f1f1f 0%,
+    rgba(255, 107, 0, 0.18) 100%
+  );
+  border-bottom: 1px solid rgba(255, 107, 0, 0.2);
+}
+
+/* Stat number glow */
+.analytics-header .text-md-h5 {
+  text-shadow: 0 0 14px rgba(255, 107, 0, 0.45);
+}
+
+/* Card glassmorphism */
+:deep(.v-card) {
+  background: rgba(26, 26, 26, 0.85) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 107, 0, 0.12) !important;
+}
+</style>
