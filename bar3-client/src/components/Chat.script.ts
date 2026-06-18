@@ -403,7 +403,7 @@ export default defineComponent({
       renderText,
       dismissToast,
       requestNotificationPermission,
-      knownAdmins
+      knownAdmins,
       knownUsers,
     };
   },
