@@ -404,6 +404,7 @@ export default defineComponent({
       dismissToast,
       requestNotificationPermission,
       knownAdmins
+      knownUsers,
     };
   },
 });
