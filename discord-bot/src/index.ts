@@ -1638,9 +1638,6 @@ async function main(): Promise<void> {
     new SlashCommandBuilder().setName('test_alliance_info').setDescription('Lookup alliance on test API').addStringOption(o => o.setName('query').setDescription('Alliance ID or name').setRequired(true)),
     new SlashCommandBuilder().setName('alliance_members').setDescription('List alliance members').addStringOption(o => o.setName('query').setDescription('Alliance ID or name').setRequired(true)),
     new SlashCommandBuilder().setName('test_alliance_members').setDescription('List alliance members (test API)').addStringOption(o => o.setName('query').setDescription('Alliance ID or name').setRequired(true)),
-    new SlashCommandBuilder().setName('config_slots_set').setDescription('Set slot alliance IDs (comma-separated)').addStringOption(o => o.setName('alliance_ids').setDescription('e.g. 790,1234').setRequired(true)),
-    new SlashCommandBuilder().setName('config_slots_show').setDescription('Show configured slot alliance IDs'),
-    new SlashCommandBuilder().setName('config_slots_clear').setDescription('Clear configured slot alliance IDs'),
     new SlashCommandBuilder().setName('slots').setDescription('Show open defensive slots for configured alliances'),
     new SlashCommandBuilder().setName('setup_war_alerts_add').setDescription('Add war alerts subscription').addChannelOption(o => o.setName('channel').setDescription('Target text channel').setRequired(true)).addIntegerOption(o => o.setName('min_cities').setDescription('Minimum cities')).addIntegerOption(o => o.setName('max_cities').setDescription('Maximum cities')),
     new SlashCommandBuilder().setName('setup_war_alerts_remove').setDescription('Remove war alerts subscription').addChannelOption(o => o.setName('channel').setDescription('Target text channel').setRequired(true)),
@@ -1662,23 +1659,16 @@ async function main(): Promise<void> {
     new SlashCommandBuilder().setName('gov').setDescription('Show server members who hold a configured government role.'),
     new SlashCommandBuilder().setName('verify_alliance_server').setDescription('Create an in-game verification message for the configured alliance leader'),
     new SlashCommandBuilder().setName('verify_alliance_server_confirm').setDescription('Open a popup to confirm alliance verification code'),
-    new SlashCommandBuilder().setName('request_grant').setDescription('Request a grant').addStringOption(o => o.setName('note').setDescription('Grant reason').setRequired(true)).addNumberOption(o => o.setName('money').setDescription('Requested money')).addNumberOption(o => o.setName('food').setDescription('Food amount')).addNumberOption(o => o.setName('coal').setDescription('Coal amount')).addNumberOption(o => o.setName('oil').setDescription('Oil amount')).addNumberOption(o => o.setName('uranium').setDescription('Uranium amount')).addNumberOption(o => o.setName('iron').setDescription('Iron amount')).addNumberOption(o => o.setName('bauxite').setDescription('Bauxite amount')).addNumberOption(o => o.setName('lead').setDescription('Lead amount')).addNumberOption(o => o.setName('gasoline').setDescription('Gasoline amount')).addNumberOption(o => o.setName('munitions').setDescription('Munitions amount')).addNumberOption(o => o.setName('steel').setDescription('Steel amount')).addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount')),
-    new SlashCommandBuilder().setName('admin_alliance_set').setDescription('Set guild primary alliance ID').addIntegerOption(o => o.setName('alliance_id').setDescription('Alliance ID').setRequired(true)),
-    new SlashCommandBuilder().setName('admin_alliance_show').setDescription('Show guild primary alliance ID'),
     new SlashCommandBuilder().setName('color').setDescription('Check alliance color compliance'),
     new SlashCommandBuilder().setName('damage_leaderboard').setDescription('Show 7-day alliance damage leaderboard'),
     new SlashCommandBuilder().setName('alliance_lots_of_info').setDescription('Detailed alliance briefing').addStringOption(o => o.setName('query').setDescription('Alliance ID or name').setRequired(true)),
     new SlashCommandBuilder().setName('test_alliance_lots_of_info').setDescription('Detailed alliance briefing (test API)').addStringOption(o => o.setName('query').setDescription('Alliance ID or name').setRequired(true)),
     new SlashCommandBuilder().setName('fun_quote').setDescription('Get a random quote'),
 
-    new SlashCommandBuilder().setName('welcome_set').setDescription('Set welcome message text').addStringOption(o => o.setName('message').setDescription('Welcome template').setRequired(true)),
-    new SlashCommandBuilder().setName('welcome_enable').setDescription('Enable welcome messages'),
-    new SlashCommandBuilder().setName('welcome_disable').setDescription('Disable welcome messages'),
     new SlashCommandBuilder().setName('setup_recruiter_add').setDescription('Add recruiter subscription channel').addChannelOption(o => o.setName('channel').setDescription('Text channel').setRequired(true)),
     new SlashCommandBuilder().setName('setup_recruiter_remove').setDescription('Remove recruiter subscription channel').addChannelOption(o => o.setName('channel').setDescription('Text channel').setRequired(true)),
     new SlashCommandBuilder().setName('setup_recruiter_list').setDescription('List recruiter subscription channels'),
     new SlashCommandBuilder().setName('translation_enable').setDescription('Enable channel translation (English ↔ Croatian)').addChannelOption(o => o.setName('channel').setDescription('Channel to enable translation for').setRequired(true)),
-    new SlashCommandBuilder().setName('admin_api_key_set').setDescription('Set runtime PnW API key').addStringOption(o => o.setName('api_key').setDescription('PnW API key').setRequired(true)),
     new SlashCommandBuilder().setName('help').setDescription('Show bot command help'),
     new SlashCommandBuilder().setName('infra').setDescription('Calculate infra purchase cost')
       .addNumberOption(o => o.setName('from').setDescription('Current infra level per city').setRequired(true))
@@ -1706,7 +1696,6 @@ async function main(): Promise<void> {
     new SlashCommandBuilder().setName('missile_targets_find').setDescription('Top 20 nations in /slots alliances with open defensive slots, sorted by avg infra')
       .addBooleanOption(o => o.setName('ignore_score_range').setDescription('If true, do not mark nations in your personal score range')),
     new SlashCommandBuilder().setName('admin_sync_commands').setDescription('Sync slash commands now'),
-    new SlashCommandBuilder().setName('admin_clear_guild_commands').setDescription('Clear guild-scoped commands'),
 
     // Legacy grouped command compatibility paths (Python-style).
     new SlashCommandBuilder().setName('alliance').setDescription('Politics and War alliance commands')
