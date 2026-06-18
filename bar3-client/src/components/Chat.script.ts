@@ -257,7 +257,25 @@ export default defineComponent({
             )
             .map((adminUsername: string) => ({ username: adminUsername, isAdmin: true, offline: true }));
           
-          mentionSuggestions.value = [...onlineSuggestions, ...offlineAdminSuggestions];
+           const offlineUserSuggestions = (knownUsers.value ?? [])
+            .filter((u: string) =>
+              u.toLowerCase().startsWith(query) &&
+              !onlineSet.has(u.toLowerCase()) &&
+              !(knownAdmins.value ?? []).some(
+                (a: string) => a.toLowerCase() === u.toLowerCase()
+              )
+            )
+            .map((u: string) => ({
+              username: u,
+              isAdmin: false,
+              offline: true,
+            }));
+          
+          mentionSuggestions.value = [
+            ...onlineSuggestions,
+            ...offlineAdminSuggestions,
+            ...offlineUserSuggestions,
+          ];
           mentionIndex.value = 0;
           return;
         }
