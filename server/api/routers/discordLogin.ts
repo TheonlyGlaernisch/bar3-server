@@ -175,7 +175,7 @@ function buildDiscordLoginHtml(errorText: string, returnTo: string): string {
         <p class="sub">Use your Discord account for standard Bar3 authentication.</p>
         <a class="discord-btn" href="${escapeHtml(discordHref)}">Login with Discord</a>
         <div class="public-link">
-          Looking for the public charter? <a href="/constitution">Read the TRF Constitution</a>.
+          Looking for the territorial.io [ro] leaderboard?? <a href="/leaderboard">Here it is.</a>.
         </div>
       </section>
 
