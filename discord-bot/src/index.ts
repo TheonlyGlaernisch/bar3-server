@@ -1725,9 +1725,6 @@ async function main(): Promise<void> {
         .addSubcommand(sc => sc.setName('remove').setDescription('Remove recruiter subscription channel')
           .addChannelOption(o => o.setName('channel').setDescription('Text channel').setRequired(true)))
         .addSubcommand(sc => sc.setName('list').setDescription('List recruiter subscription channels'))),
-    new SlashCommandBuilder().setName('translation').setDescription('Translation configuration commands')
-      .addSubcommand(sc => sc.setName('enable').setDescription('Enable channel translation (English ↔ Croatian)')
-        .addChannelOption(o => o.setName('channel').setDescription('Channel to enable translation for').setRequired(true))),
     new SlashCommandBuilder().setName('chanel_set').setDescription('Set, clear, or show configured channels')
       .addStringOption(o => o.setName('type').setDescription('Which channel config to manage').setRequired(true)
         .addChoices({ name: 'counter', value: 'counter' }, { name: 'grant', value: 'grant' }, { name: 'welcome', value: 'welcome' }))
