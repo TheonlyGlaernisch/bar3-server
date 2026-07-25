@@ -27,6 +27,11 @@ function _optionalInt(key: string): number | null {
   return parsed;
 }
 
+function _optionalString(key: string): string | null {
+  const value = (process.env[key] || '').trim();
+  return value ? value : null;
+}
+
 function _optionalSnowflake(key: string): string | null {
   const value = (process.env[key] || '').trim();
   if (!value) return null;
@@ -113,6 +118,14 @@ export const PNW_SUBSCRIPTION_GATEWAY_RESET_MINUTES: number = _optionalInt('PNW_
 
 export const LOG_LEVEL: 'DEBUG' | 'INFO' =
   (process.env['LOG_LEVEL'] || '').toUpperCase() === 'DEBUG' ? 'DEBUG' : 'INFO';
+
+export const BANKING_ENABLED: boolean = _optionalBool('BANKING_ENABLED', true);
+export const BANKING_SYNC_INTERVAL_SECONDS: number = _optionalInt('BANKING_SYNC_INTERVAL_SECONDS') ?? 120;
+export const OFFSHORE_ALLIANCE_ID: number | null = _optionalInt('OFFSHORE_ALLIANCE_ID');
+export const ALLIANCE_BANK_ALLIANCE_ID: number | null = _optionalInt('ALLIANCE_BANK_ALLIANCE_ID');
+export const ALLIANCE_BANK_API_KEY_REF: string | null = _optionalString('ALLIANCE_BANK_API_KEY_REF');
+export const OFFSHORE_API_KEY_REF: string | null = _optionalString('OFFSHORE_API_KEY_REF');
+export const BOT_KEY: string | null = _optionalString('bot_key');
 
 // Discord OAuth2 config — required for the /auth/* endpoints.
 // Leave unset to disable the OAuth2 flow entirely.
