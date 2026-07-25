@@ -3,7 +3,7 @@
  * plus territorial.io points/winlog/rewards system.
  */
 import { MongoClient, Db, Collection, IndexSpecification } from 'mongodb';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
 export interface RegistrationDoc {
   discord_id: string;
@@ -38,6 +38,70 @@ export interface GuildDoc {
 export interface BotConfigDoc {
   key: string;
   value: string;
+}
+
+export type BankingResourceKey =
+  | 'money' | 'food' | 'coal' | 'oil' | 'uranium' | 'iron' | 'bauxite' | 'lead'
+  | 'gasoline' | 'munitions' | 'steel' | 'aluminum';
+
+export type BankingResourceBalance = Record<BankingResourceKey, number>;
+
+export interface BankingConfigDoc {
+  guild_id: string;
+  enabled: boolean;
+  offshore_alliance_id: number | null;
+  alliance_bank_alliance_id: number | null;
+  alliance_bank_api_key_ref: string | null;
+  offshore_api_key_ref: string | null;
+  bot_key: string | null;
+  last_sync_cursor: string | null;
+  last_sync_at: string | null;
+  updated_at: string;
+}
+
+export interface NationBankBalanceDoc {
+  guild_id: string;
+  nation_id: number;
+  balances: BankingResourceBalance;
+  updated_at: string;
+}
+
+export interface AllianceBankPoolDoc {
+  guild_id: string;
+  balances: BankingResourceBalance;
+  updated_at: string;
+}
+
+export type BankingLedgerType =
+  | 'deposit'
+  | 'forward'
+  | 'withdraw'
+  | 'manual-offshore'
+  | 'reconcile';
+export type BankingLedgerStatus = 'pending' | 'completed' | 'failed';
+
+export interface BankingLedgerDoc {
+  ledger_id: string;
+  guild_id: string;
+  nation_id: number | null;
+  type: BankingLedgerType;
+  status: BankingLedgerStatus;
+  resources: BankingResourceBalance;
+  source_transaction_id: string | null;
+  idempotency_key: string | null;
+  note: string | null;
+  actor_discord_id: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BankingIdempotencyDoc {
+  guild_id: string;
+  idempotency_key: string;
+  source_transaction_id: string | null;
+  ledger_id: string | null;
+  imported_at: string;
 }
 
 export interface WarAlertSubscriptionDoc {
@@ -188,6 +252,11 @@ export class Database {
   private _guildConfig: Collection<GuildConfigDoc>;
   private _guilds: Collection<GuildDoc>;
   private _botConfig: Collection<BotConfigDoc>;
+  private _bankingConfig: Collection<BankingConfigDoc>;
+  private _nationBankBalances: Collection<NationBankBalanceDoc>;
+  private _allianceBankPools: Collection<AllianceBankPoolDoc>;
+  private _bankingLedger: Collection<BankingLedgerDoc>;
+  private _bankingIdempotency: Collection<BankingIdempotencyDoc>;
 
   // Territorial.io collections
   private _points: Collection<PointsDoc>;
@@ -207,6 +276,11 @@ export class Database {
     this._guildConfig = db.collection<GuildConfigDoc>('guild_config');
     this._guilds = db.collection<GuildDoc>('guilds');
     this._botConfig = db.collection<BotConfigDoc>('bot_config');
+    this._bankingConfig = db.collection<BankingConfigDoc>('banking_config');
+    this._nationBankBalances = db.collection<NationBankBalanceDoc>('banking_nation_balances');
+    this._allianceBankPools = db.collection<AllianceBankPoolDoc>('banking_alliance_pools');
+    this._bankingLedger = db.collection<BankingLedgerDoc>('banking_ledger');
+    this._bankingIdempotency = db.collection<BankingIdempotencyDoc>('banking_idempotency');
 
     this._points = db.collection<PointsDoc>('points');
     this._wins = db.collection<WinsDoc>('wins');
@@ -226,6 +300,15 @@ export class Database {
     await this._guilds.createIndex({ guild_id: 1 }, { unique: true });
     await this._processedWins.createIndex({ win_id: 1 }, { unique: true });
     await this._winClaims.createIndex({ win_id: 1, user_id: 1 }, { unique: true });
+    await this._bankingConfig.createIndex({ guild_id: 1 }, { unique: true });
+    await this._nationBankBalances.createIndex({ guild_id: 1, nation_id: 1 }, { unique: true });
+    await this._allianceBankPools.createIndex({ guild_id: 1 }, { unique: true });
+    await this._bankingLedger.createIndex({ guild_id: 1, created_at: -1 });
+    await this._bankingLedger.createIndex({ guild_id: 1, nation_id: 1, created_at: -1 });
+    await this._bankingLedger.createIndex({ guild_id: 1, source_transaction_id: 1 });
+    await this._bankingLedger.createIndex({ guild_id: 1, status: 1, updated_at: -1 });
+    await this._bankingIdempotency.createIndex({ guild_id: 1, idempotency_key: 1 }, { unique: true });
+    await this._bankingIdempotency.createIndex({ guild_id: 1, source_transaction_id: 1 });
   }
 
   // ------------------------------------------------------------------
@@ -493,6 +576,285 @@ export class Database {
       { $set: { key: 'pnw_api_key', value: apiKey } },
       { upsert: true }
     );
+  }
+
+  // Banking helpers ----------------------------------------------------------
+
+  private _emptyBankingBalance(): BankingResourceBalance {
+    return {
+      money: 0,
+      food: 0,
+      coal: 0,
+      oil: 0,
+      uranium: 0,
+      iron: 0,
+      bauxite: 0,
+      lead: 0,
+      gasoline: 0,
+      munitions: 0,
+      steel: 0,
+      aluminum: 0,
+    };
+  }
+
+  private _normalizeBankingBalance(
+    partial: Partial<BankingResourceBalance> | null | undefined
+  ): BankingResourceBalance {
+    const base = this._emptyBankingBalance();
+    if (!partial) return base;
+    for (const key of Object.keys(base) as BankingResourceKey[]) {
+      const value = partial[key];
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        base[key] = value;
+      }
+    }
+    return base;
+  }
+
+  async getBankingConfig(guildId: string): Promise<BankingConfigDoc> {
+    const doc = await this._bankingConfig.findOne({ guild_id: guildId }, { projection: { _id: 0 } });
+    if (doc) {
+      return {
+        ...doc,
+        enabled: Boolean(doc.enabled),
+        updated_at: doc.updated_at || new Date().toISOString(),
+      };
+    }
+    return {
+      guild_id: guildId,
+      enabled: true,
+      offshore_alliance_id: null,
+      alliance_bank_alliance_id: null,
+      alliance_bank_api_key_ref: null,
+      offshore_api_key_ref: null,
+      bot_key: null,
+      last_sync_cursor: null,
+      last_sync_at: null,
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  async setBankingConfig(
+    guildId: string,
+    patch: Partial<Omit<BankingConfigDoc, 'guild_id' | 'updated_at'>>
+  ): Promise<BankingConfigDoc> {
+    const current = await this.getBankingConfig(guildId);
+    const next: BankingConfigDoc = {
+      ...current,
+      ...patch,
+      guild_id: guildId,
+      updated_at: new Date().toISOString(),
+    };
+    await this._bankingConfig.updateOne(
+      { guild_id: guildId },
+      { $set: next },
+      { upsert: true }
+    );
+    return next;
+  }
+
+  async getBankingEnabled(guildId: string): Promise<boolean> {
+    const cfg = await this.getBankingConfig(guildId);
+    return Boolean(cfg.enabled);
+  }
+
+  async setBankingEnabled(guildId: string, enabled: boolean): Promise<BankingConfigDoc> {
+    return this.setBankingConfig(guildId, { enabled: Boolean(enabled) });
+  }
+
+  async getNationBankBalance(guildId: string, nationId: number): Promise<BankingResourceBalance> {
+    const doc = await this._nationBankBalances.findOne(
+      { guild_id: guildId, nation_id: nationId },
+      { projection: { _id: 0 } }
+    );
+    return this._normalizeBankingBalance(doc?.balances);
+  }
+
+  async creditNationBankBalance(
+    guildId: string,
+    nationId: number,
+    delta: Partial<BankingResourceBalance>
+  ): Promise<BankingResourceBalance> {
+    const current = await this.getNationBankBalance(guildId, nationId);
+    const change = this._normalizeBankingBalance(delta);
+    const next = this._emptyBankingBalance();
+    for (const key of Object.keys(current) as BankingResourceKey[]) {
+      next[key] = current[key] + change[key];
+    }
+    await this._nationBankBalances.updateOne(
+      { guild_id: guildId, nation_id: nationId },
+      {
+        $set: {
+          guild_id: guildId,
+          nation_id: nationId,
+          balances: next,
+          updated_at: new Date().toISOString(),
+        },
+      },
+      { upsert: true }
+    );
+    return next;
+  }
+
+  async debitNationBankBalance(
+    guildId: string,
+    nationId: number,
+    delta: Partial<BankingResourceBalance>
+  ): Promise<{ ok: boolean; balance: BankingResourceBalance }> {
+    const current = await this.getNationBankBalance(guildId, nationId);
+    const change = this._normalizeBankingBalance(delta);
+    const next = this._emptyBankingBalance();
+    for (const key of Object.keys(current) as BankingResourceKey[]) {
+      const remaining = current[key] - change[key];
+      if (remaining < 0) return { ok: false, balance: current };
+      next[key] = remaining;
+    }
+    await this._nationBankBalances.updateOne(
+      { guild_id: guildId, nation_id: nationId },
+      {
+        $set: {
+          guild_id: guildId,
+          nation_id: nationId,
+          balances: next,
+          updated_at: new Date().toISOString(),
+        },
+      },
+      { upsert: true }
+    );
+    return { ok: true, balance: next };
+  }
+
+  async getAlliancePoolBalance(guildId: string): Promise<BankingResourceBalance> {
+    const doc = await this._allianceBankPools.findOne({ guild_id: guildId }, { projection: { _id: 0 } });
+    return this._normalizeBankingBalance(doc?.balances);
+  }
+
+  async creditAlliancePoolBalance(
+    guildId: string,
+    delta: Partial<BankingResourceBalance>
+  ): Promise<BankingResourceBalance> {
+    const current = await this.getAlliancePoolBalance(guildId);
+    const change = this._normalizeBankingBalance(delta);
+    const next = this._emptyBankingBalance();
+    for (const key of Object.keys(current) as BankingResourceKey[]) {
+      next[key] = current[key] + change[key];
+    }
+    await this._allianceBankPools.updateOne(
+      { guild_id: guildId },
+      {
+        $set: {
+          guild_id: guildId,
+          balances: next,
+          updated_at: new Date().toISOString(),
+        },
+      },
+      { upsert: true }
+    );
+    return next;
+  }
+
+  async debitAlliancePoolBalance(
+    guildId: string,
+    delta: Partial<BankingResourceBalance>
+  ): Promise<{ ok: boolean; balance: BankingResourceBalance }> {
+    const current = await this.getAlliancePoolBalance(guildId);
+    const change = this._normalizeBankingBalance(delta);
+    const next = this._emptyBankingBalance();
+    for (const key of Object.keys(current) as BankingResourceKey[]) {
+      const remaining = current[key] - change[key];
+      if (remaining < 0) return { ok: false, balance: current };
+      next[key] = remaining;
+    }
+    await this._allianceBankPools.updateOne(
+      { guild_id: guildId },
+      {
+        $set: {
+          guild_id: guildId,
+          balances: next,
+          updated_at: new Date().toISOString(),
+        },
+      },
+      { upsert: true }
+    );
+    return { ok: true, balance: next };
+  }
+
+  async createBankingLedgerEntry(
+    entry: Omit<BankingLedgerDoc, 'ledger_id' | 'created_at' | 'updated_at'>
+  ): Promise<BankingLedgerDoc> {
+    const now = new Date().toISOString();
+    const doc: BankingLedgerDoc = {
+      ...entry,
+      ledger_id: randomUUID(),
+      created_at: now,
+      updated_at: now,
+      resources: this._normalizeBankingBalance(entry.resources),
+    };
+    await this._bankingLedger.updateOne(
+      { ledger_id: doc.ledger_id },
+      { $set: doc },
+      { upsert: true }
+    );
+    return doc;
+  }
+
+  async updateBankingLedgerStatus(
+    ledgerId: string,
+    status: BankingLedgerStatus,
+    error: string | null = null
+  ): Promise<void> {
+    await this._bankingLedger.updateOne(
+      { ledger_id: ledgerId },
+      {
+        $set: {
+          status,
+          error,
+          updated_at: new Date().toISOString(),
+        },
+      }
+    );
+  }
+
+  async getLatestBankingActivity(guildId: string, nationId?: number): Promise<BankingLedgerDoc | null> {
+    const filter: Record<string, unknown> = { guild_id: guildId };
+    if (typeof nationId === 'number') filter['nation_id'] = nationId;
+    const rows = await this._bankingLedger.find(filter, { projection: { _id: 0 } }).toArray();
+    rows.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+    return rows[0] ?? null;
+  }
+
+  async getBankingLedgerByStatus(
+    guildId: string,
+    status: BankingLedgerStatus,
+    limit = 50
+  ): Promise<BankingLedgerDoc[]> {
+    const rows = await this._bankingLedger
+      .find({ guild_id: guildId, status }, { projection: { _id: 0 } })
+      .toArray();
+    rows.sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
+    return rows.slice(0, Math.max(0, Math.floor(limit)));
+  }
+
+  async markImportedBankTransaction(
+    guildId: string,
+    idempotencyKey: string,
+    sourceTransactionId: string | null,
+    ledgerId: string | null
+  ): Promise<boolean> {
+    const result = await this._bankingIdempotency.updateOne(
+      { guild_id: guildId, idempotency_key: idempotencyKey },
+      {
+        $set: {
+          guild_id: guildId,
+          idempotency_key: idempotencyKey,
+          source_transaction_id: sourceTransactionId,
+          ledger_id: ledgerId,
+          imported_at: new Date().toISOString(),
+        },
+      },
+      { upsert: true }
+    );
+    return (result as { upsertedCount?: number }).upsertedCount === 1;
   }
 
   // War alert subscription helpers -----------------------------------------
