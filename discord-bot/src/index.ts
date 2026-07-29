@@ -472,7 +472,11 @@ type AllianceScoreHistoryChartPoint = {
   score: number | null;
 };
 
-function buildAllianceScoreHistoryChartPoints(points: AllianceScoreHistoryPoint[], maxSourcePoints = 120): AllianceScoreHistoryChartPoint[] {
+function buildAllianceScoreHistoryChartPoints(
+  points: AllianceScoreHistoryPoint[],
+  maxSourcePoints = 365,
+  maxChartPoints = 160,
+): AllianceScoreHistoryChartPoint[] {
   if (!points.length) return [];
   const source = points.slice(-maxSourcePoints);
   if (!source.length) return [];
@@ -490,7 +494,10 @@ function buildAllianceScoreHistoryChartPoints(points: AllianceScoreHistoryPoint[
 
   const out: AllianceScoreHistoryChartPoint[] = [];
   const dayMs = 24 * 60 * 60 * 1000;
-  for (let ts = start.getTime(); ts <= end.getTime(); ts += dayMs) {
+  const totalDays = Math.floor((end.getTime() - start.getTime()) / dayMs) + 1;
+  const dayStride = Math.max(1, Math.ceil(totalDays / maxChartPoints));
+  for (let dayOffset = 0; dayOffset < totalDays; dayOffset += dayStride) {
+    const ts = start.getTime() + dayOffset * dayMs;
     const cur = new Date(ts);
     const key = cur.toISOString().slice(0, 10);
     const point = byDate.get(key);
@@ -498,6 +505,11 @@ function buildAllianceScoreHistoryChartPoints(points: AllianceScoreHistoryPoint[
       fetchDate: key,
       score: point ? point.score : null,
     });
+  }
+  const lastKey = lastPoint.fetchDate;
+  if (lastKey && out[out.length - 1]?.fetchDate !== lastKey) {
+    const point = byDate.get(lastKey);
+    out.push({ fetchDate: lastKey, score: point ? point.score : null });
   }
   return out;
 }
@@ -724,6 +736,16 @@ function hasAdminCommandAccess(i: ChatInputCommandInteraction): boolean {
   if (ADMIN_DISCORD_IDS.has(BigInt(i.user.id))) return true;
   const member = i.member;
   return 'permissions' in member && typeof member.permissions !== 'string' && member.permissions.has('Administrator');
+}
+
+function parseDiscordUserLookupId(query: string): string | null {
+  const trimmed = query.trim();
+  const mentionMatch = /^<@!?(\d+)>$/.exec(trimmed);
+  if (mentionMatch?.[1]) return mentionMatch[1];
+  // Let users paste/copy a raw Discord snowflake when slash-command string
+  // mention parsing is awkward; PnW alliance IDs are far shorter in practice.
+  if (/^\d{17,20}$/.test(trimmed)) return trimmed;
+  return null;
 }
 
 /** Check whether the caller may use member-gated commands.
@@ -993,12 +1015,18 @@ async function resolveMentionedNationViaApi(
       try { member = await i.guild.members.fetch(discordId); } catch { member = null; }
     }
   }
-  if (!member) return null;
 
-  const candidateTags: string[] = [member.user.username, member.displayName];
-  if (member.user.globalName) candidateTags.push(member.user.globalName);
-  if (member.user.discriminator && member.user.discriminator !== '0') {
-    candidateTags.push(`${member.user.username}#${member.user.discriminator}`);
+  let user = member?.user ?? null;
+  if (!user) {
+    try { user = await i.client.users.fetch(discordId); } catch { user = null; }
+  }
+  if (!user) return null;
+
+  const candidateTags: string[] = [user.username];
+  if (member?.displayName) candidateTags.push(member.displayName);
+  if (user.globalName) candidateTags.push(user.globalName);
+  if (user.discriminator && user.discriminator !== '0') {
+    candidateTags.push(`${user.username}#${user.discriminator}`);
   }
 
   for (const tag of candidateTags) {
@@ -1225,13 +1253,12 @@ async function handleAllianceInfo(i: ChatInputCommandInteraction, db: Database, 
   const query = i.options.getString('query', true).trim();
   const client = useTest ? new PnWClient(PNW_TEST_API_KEY, { restUrl: PNW_TEST_REST_URL }) : pnw;
   const baseUrl = useTest ? PNW_TEST_BASE_URL : PNW_BASE_URL;
-  const MENTION_RE = /^<@!?(\d+)>$/;
-  const mentionMatch = MENTION_RE.exec(query);
+  const discordLookupId = parseDiscordUserLookupId(query);
 
   let alliance: AllianceInfo | null = null;
   try {
-    if (mentionMatch) {
-      const targetId = mentionMatch[1]!;
+    if (discordLookupId) {
+      const targetId = discordLookupId;
       // Try local DB first, then PnW tag lookup
       const row = await db.getByDiscordId(BigInt(targetId));
       let nation: Nation | null = null;
@@ -1303,13 +1330,12 @@ async function handleAllianceMembers(i: ChatInputCommandInteraction, db: Databas
   const query = i.options.getString('query', true).trim();
   const client = useTest ? new PnWClient(PNW_TEST_API_KEY, { restUrl: PNW_TEST_REST_URL }) : pnw;
   const baseUrl = useTest ? PNW_TEST_BASE_URL : PNW_BASE_URL;
-  const MENTION_RE = /^<@!?(\d+)>$/;
-  const mentionMatch = MENTION_RE.exec(query);
+  const discordLookupId = parseDiscordUserLookupId(query);
 
   let alliance: AllianceInfo | null = null;
   try {
-    if (mentionMatch) {
-      const targetId = mentionMatch[1]!;
+    if (discordLookupId) {
+      const targetId = discordLookupId;
       const row = await db.getByDiscordId(BigInt(targetId));
       let nation: Nation | null = null;
       if (row) { try { nation = await client.getNation(Number(row.nation_id)); } catch { nation = null; } }
