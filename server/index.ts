@@ -343,6 +343,8 @@ app.get('/api/bot/servers', botRouteLimiter, requireDiscordAuth, requireDiscordA
   proxyBotApi(req, res, 'get', '/api/bot/servers'));
 app.get('/api/bot/commands/usage', botRouteLimiter, requireDiscordAuth, requireDiscordAdmin, async (req: Request, res: Response) =>
   proxyBotApi(req, res, 'get', '/api/bot/commands/usage'));
+app.get('/api/bot/banking/enabled', botRouteLimiter, requireDiscordAuth, requireDiscordAdmin, async (req: Request, res: Response) =>
+  proxyBotApi(req, res, 'get', '/api/bot/banking/enabled'));
 app.get('/api/leaderboard', botRouteLimiter, async (req: Request, res: Response) => {
   const params = new URLSearchParams();
 
@@ -368,6 +370,8 @@ app.get('/api/leaderboard', botRouteLimiter, async (req: Request, res: Response)
 });
 app.post('/api/bot/send', botRouteLimiter, botWriteRouteLimiter, requireDiscordAuth, requireTrustedOriginForUnsafeMethod, requireDiscordAdmin, async (req: Request, res: Response) =>
   proxyBotApi(req, res, 'post', '/api/bot/send'));
+app.post('/api/bot/banking/enabled', botRouteLimiter, botWriteRouteLimiter, requireDiscordAuth, requireTrustedOriginForUnsafeMethod, requireDiscordAdmin, async (req: Request, res: Response) =>
+  proxyBotApi(req, res, 'post', '/api/bot/banking/enabled'));
 app.post('/api/bot/config', botRouteLimiter, botWriteRouteLimiter, requireDiscordAuth, requireTrustedOriginForUnsafeMethod, requireDiscordAdmin, (_req: Request, res: Response) =>
   res.status(204).end());
 app.post('/api/winlog', botRouteLimiter, async (req: Request, res: Response) => {

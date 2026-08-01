@@ -26,6 +26,8 @@ export const COMMAND_DOCS: CommandDoc[] = [
   { name: '/loot <days> <nation>', summary: 'Summarize ground and victory loot from a nation\'s wars opened in the past N days.', category: 'core' },
   { name: '/send ...resources', summary: 'Compose Locutus transfer command with full resource payload.', category: 'core' },
   { name: '/request grant <note> [resources]', summary: 'Submit grant request to configured grant channel.', category: 'gov' },
+  { name: '/banking withdraw [resources]', summary: 'Withdraw resources from offshore to your registered nation balance.', category: 'core' },
+  { name: '/banking manual_offshore [resources]', summary: 'Gov/admin command to manually send alliance-bank funds offshore.', category: 'gov' },
   { name: '/slots', summary: 'Show open defensive slots for configured alliances.', category: 'alliance' },
   { name: '/config slots set <ids>', summary: 'Set slot-tracked alliance list for this guild.', category: 'setup' },
   { name: '/config slots show', summary: 'Display configured slot alliance list.', category: 'setup' },
@@ -101,4 +103,3 @@ export function renderCommandHelpSections(): CommandHelpSection[] {
     return { category, body: body || '*(none)*' };
   });
 }
-

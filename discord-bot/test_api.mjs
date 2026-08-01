@@ -90,6 +90,43 @@ test('/api/bot/servers and /api/bot/commands/usage', async () => {
   } finally { server.close(); }
 });
 
+test('/api/bot/banking/enabled get/set endpoints enforce auth and payloads', async () => {
+  let enabled = true;
+  const app = createApp({
+    guildGetter: () => null,
+    apiKey: API_KEY,
+    bankingEnabledGetter: async () => ({ enabledByGuild: { '1': enabled } }),
+    bankingEnabledSetter: async (next) => {
+      enabled = next;
+      return { enabledByGuild: { '1': enabled } };
+    },
+  });
+  const { server, base } = await start(app);
+  try {
+    const unauthorized = await req(base, '/api/bot/banking/enabled');
+    assert.equal(unauthorized.status, 401);
+
+    const read = await req(base, '/api/bot/banking/enabled', { headers: { 'X-API-Key': API_KEY } });
+    assert.equal(read.status, 200);
+    assert.equal(read.body.enabledByGuild['1'], true);
+
+    const badPayload = await req(base, '/api/bot/banking/enabled', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+      body: JSON.stringify({ enabled: 'nope' }),
+    });
+    assert.equal(badPayload.status, 400);
+
+    const write = await req(base, '/api/bot/banking/enabled', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+      body: JSON.stringify({ enabled: false }),
+    });
+    assert.equal(write.status, 200);
+    assert.equal(write.body.enabledByGuild['1'], false);
+  } finally { server.close(); }
+});
+
 test('/api/bot/send auth/body/permission matrix', async () => {
   const adminId = BigInt('123');
   const sentMessages = [];

@@ -26,9 +26,14 @@ import { createServer, Server } from 'http';
 import {
   API_KEY,
   API_PORT,
+  ALLIANCE_BANK_ALLIANCE_ID,
+  ALLIANCE_BANK_API_KEY_REF,
   ADMIN_DISCORD_IDS,
+  BANKING_ENABLED,
+  BANKING_SYNC_INTERVAL_SECONDS,
   BAR3_CLIENT_ROLE_ID,
   BAR3_SERVER_ROLE_ID,
+  BOT_KEY,
   DISCORD_TOKEN,
   DISCORD_ENABLE_GUILD_MEMBERS_INTENT,
   GUILD_ID,
@@ -36,6 +41,8 @@ import {
   MEMBER_GUILD_ID,
   MEMBER_ROLE_ID,
   MONGODB_URI,
+  OFFSHORE_ALLIANCE_ID,
+  OFFSHORE_API_KEY_REF,
   PNW_API_KEY,
   PNW_TEST_API_KEY,
   PW_SCAN_API_KEY,
@@ -44,7 +51,8 @@ import {
 } from './config';
 import { handleWinlogPayload } from './winlog';
 import { createApp } from './api';
-import { Database } from './database';
+import { BANKING_RESOURCE_KEYS, BankingResourceBalance, Database } from './database';
+import { BankingService } from './banking';
 import {
   PNW_TEST_REST_URL,
   PnWClient,
@@ -176,6 +184,10 @@ function resolveCanonicalCommandNameFromInteraction(i: ChatInputCommandInteracti
     if (field === 'api_key') return 'admin_api_key_set';
   }
   if (i.commandName === 'request' && sub === 'grant') return 'request_grant';
+  if (i.commandName === 'banking') {
+    if (sub === 'withdraw') return 'banking_withdraw';
+    if (sub === 'manual_offshore') return 'banking_manual_offshore';
+  }
   if (i.commandName === 'roles') {
     if (sub === 'setup') return 'roles_setup';
     if (sub === 'show') return 'roles_show';
@@ -768,6 +780,26 @@ async function hasMemberAccess(i: ChatInputCommandInteraction, _db: Database): P
     if (isSnowflakeId(roleId) && roleSet.has(roleId)) return true;
   }
   return false;
+}
+
+function getResourceOptionsFromInteraction(i: ChatInputCommandInteraction): BankingResourceBalance {
+  const resources = {} as BankingResourceBalance;
+  for (const key of BANKING_RESOURCE_KEYS) {
+    const value = i.options.getNumber(key) ?? 0;
+    resources[key] = value > 0 ? value : 0;
+  }
+  return resources;
+}
+
+function hasPositiveResourceInput(resources: BankingResourceBalance): boolean {
+  return BANKING_RESOURCE_KEYS.some((key) => resources[key] > 0);
+}
+
+function formatResourceSummary(resources: BankingResourceBalance): string {
+  const lines = BANKING_RESOURCE_KEYS
+    .filter((key) => resources[key] > 0)
+    .map((key) => `${key}: ${Math.trunc(resources[key]).toLocaleString()}`);
+  return lines.join('\n') || 'none';
 }
 
 function formatMentionsForEmbed(memberIds: string[]): string {
@@ -1628,6 +1660,18 @@ async function main(): Promise<void> {
   logDebug(`LOG_LEVEL=${LOG_LEVEL}`);
   const pnw = new PnWClient(effectivePnwApiKey);
   const pnwTest = new PnWClient(PNW_TEST_API_KEY, { restUrl: PNW_TEST_REST_URL });
+  const banking = new BankingService(
+    db,
+    {
+      enabled: BANKING_ENABLED,
+      offshoreAllianceId: OFFSHORE_ALLIANCE_ID,
+      allianceBankAllianceId: ALLIANCE_BANK_ALLIANCE_ID,
+      allianceBankApiKeyRef: ALLIANCE_BANK_API_KEY_REF,
+      offshoreApiKeyRef: OFFSHORE_API_KEY_REF,
+      botKey: BOT_KEY,
+    },
+    effectivePnwApiKey
+  );
 
   const intents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent];
   if (DISCORD_ENABLE_GUILD_MEMBERS_INTENT) intents.push(GatewayIntentBits.GuildMembers);
@@ -1733,6 +1777,34 @@ async function main(): Promise<void> {
       .addSubcommand(sc => sc.setName('grant').setDescription('Request a grant')
         .addStringOption(o => o.setName('note').setDescription('Grant reason').setRequired(true))
         .addNumberOption(o => o.setName('money').setDescription('Requested money'))
+        .addNumberOption(o => o.setName('food').setDescription('Food amount'))
+        .addNumberOption(o => o.setName('coal').setDescription('Coal amount'))
+        .addNumberOption(o => o.setName('oil').setDescription('Oil amount'))
+        .addNumberOption(o => o.setName('uranium').setDescription('Uranium amount'))
+        .addNumberOption(o => o.setName('iron').setDescription('Iron amount'))
+        .addNumberOption(o => o.setName('bauxite').setDescription('Bauxite amount'))
+        .addNumberOption(o => o.setName('lead').setDescription('Lead amount'))
+        .addNumberOption(o => o.setName('gasoline').setDescription('Gasoline amount'))
+        .addNumberOption(o => o.setName('munitions').setDescription('Munitions amount'))
+        .addNumberOption(o => o.setName('steel').setDescription('Steel amount'))
+        .addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount'))),
+    new SlashCommandBuilder().setName('banking').setDescription('Banking commands')
+      .addSubcommand(sc => sc.setName('withdraw').setDescription('Withdraw from offshore to your nation balance')
+        .addNumberOption(o => o.setName('money').setDescription('Money amount'))
+        .addNumberOption(o => o.setName('food').setDescription('Food amount'))
+        .addNumberOption(o => o.setName('coal').setDescription('Coal amount'))
+        .addNumberOption(o => o.setName('oil').setDescription('Oil amount'))
+        .addNumberOption(o => o.setName('uranium').setDescription('Uranium amount'))
+        .addNumberOption(o => o.setName('iron').setDescription('Iron amount'))
+        .addNumberOption(o => o.setName('bauxite').setDescription('Bauxite amount'))
+        .addNumberOption(o => o.setName('lead').setDescription('Lead amount'))
+        .addNumberOption(o => o.setName('gasoline').setDescription('Gasoline amount'))
+        .addNumberOption(o => o.setName('munitions').setDescription('Munitions amount'))
+        .addNumberOption(o => o.setName('steel').setDescription('Steel amount'))
+        .addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount')))
+      .addSubcommand(sc => sc.setName('manual_offshore').setDescription('Manually send alliance-bank funds to offshore')
+        .addStringOption(o => o.setName('note').setDescription('Optional transfer note'))
+        .addNumberOption(o => o.setName('money').setDescription('Money amount'))
         .addNumberOption(o => o.setName('food').setDescription('Food amount'))
         .addNumberOption(o => o.setName('coal').setDescription('Coal amount'))
         .addNumberOption(o => o.setName('oil').setDescription('Oil amount'))
@@ -1920,6 +1992,18 @@ async function main(): Promise<void> {
   };
 
   let inviteRefreshTimer: NodeJS.Timeout | null = null;
+  let bankSyncTimer: NodeJS.Timeout | null = null;
+  const syncAllGuildBanking = async (): Promise<void> => {
+    if (!BANKING_ENABLED) return;
+    const guildIds = client.guilds.cache.map((guild) => guild.id);
+    for (const guildId of guildIds) {
+      try {
+        await banking.syncGuildDeposits(guildId);
+      } catch (error) {
+        logWarn(`[banking] sync failed for guild ${guildId}:`, error);
+      }
+    }
+  };
 
   client.once('ready', async () => {
     logInfo(`Logged in as ${client.user?.tag ?? 'unknown'}`);
@@ -1929,12 +2013,19 @@ async function main(): Promise<void> {
     const syncSummary = await syncSlashCommands(rest, appId);
     for (const guild of client.guilds.cache.values()) {
       await persistGuildMetadata(guild);
+      await banking.ensureGuildConfig(guild.id);
     }
     await refreshDeletedGuildInvitesOnce();
     if (!inviteRefreshTimer) {
       inviteRefreshTimer = setInterval(() => {
         void refreshDeletedGuildInvitesOnce();
       }, INVITE_REFRESH_INTERVAL_MS);
+    }
+    if (!bankSyncTimer && BANKING_ENABLED) {
+      bankSyncTimer = setInterval(() => {
+        void syncAllGuildBanking();
+      }, Math.max(30, BANKING_SYNC_INTERVAL_SECONDS) * 1000);
+      void syncAllGuildBanking();
     }
     logInfo(
       `Slash commands synced. count=${syncSummary.count}, gov=${syncSummary.hasGov}, verify=${syncSummary.hasVerify}, verify_alliance_server=${syncSummary.hasVerifyAllianceServer}`
@@ -1943,6 +2034,7 @@ async function main(): Promise<void> {
 
   client.on('guildCreate', async (guild) => {
     await persistGuildMetadata(guild);
+    await banking.ensureGuildConfig(guild.id);
     const appId = client.application?.id;
     if (!appId) return;
     const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
@@ -2532,6 +2624,66 @@ ${resourceLines}
 \`\`\`${transferCmd}\`\`\``)],
         });
         return void interaction.reply({ content: `Grant request submitted in <#${grantChannelId}>.`, flags: MessageFlags.Ephemeral });
+      }
+      if (commandName === 'banking_manual_offshore') {
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['econ', 'econ_gov', 'leader', '2ic'])) {
+          return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        }
+        const enabled = await banking.getBankingEnabled(interaction.guildId);
+        if (!enabled) return void interaction.reply({ content: 'Banking is currently disabled.', flags: MessageFlags.Ephemeral });
+        const resources = getResourceOptionsFromInteraction(interaction);
+        if (!hasPositiveResourceInput(resources)) {
+          return void interaction.reply({ content: 'Provide at least one resource amount greater than zero.', flags: MessageFlags.Ephemeral });
+        }
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const note = interaction.options.getString('note');
+        const sent = await banking.manualSendToOffshore(
+          interaction.guildId,
+          resources,
+          interaction.user.id,
+          note
+        );
+        if (!sent.ok) {
+          return void interaction.followUp({ content: `Manual offshore send failed: ${sent.error}`, flags: MessageFlags.Ephemeral });
+        }
+        return void interaction.followUp({
+          content:
+            `Manual offshore transfer sent.\nResources:\n${formatResourceSummary(resources)}\n\n` +
+            `Alliance pool (unassigned):\n${formatResourceSummary(sent.pool)}`,
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+      if (commandName === 'banking_withdraw') {
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        const enabled = await banking.getBankingEnabled(interaction.guildId);
+        if (!enabled) return void interaction.reply({ content: 'Banking is currently disabled.', flags: MessageFlags.Ephemeral });
+        const registration = await db.getByDiscordId(BigInt(interaction.user.id));
+        if (!registration) {
+          return void interaction.reply({ content: 'You must register your nation before using withdrawals.', flags: MessageFlags.Ephemeral });
+        }
+        const resources = getResourceOptionsFromInteraction(interaction);
+        if (!hasPositiveResourceInput(resources)) {
+          return void interaction.reply({ content: 'Provide at least one resource amount greater than zero.', flags: MessageFlags.Ephemeral });
+        }
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const result = await banking.withdrawToNation(
+          interaction.guildId,
+          registration.nation_id,
+          resources,
+          interaction.user.id
+        );
+        if (!result.ok) {
+          return void interaction.followUp({ content: `Withdrawal failed: ${result.error}`, flags: MessageFlags.Ephemeral });
+        }
+        return void interaction.followUp({
+          content:
+            `Withdrawal completed for nation **${registration.nation_id}**.\nRequested:\n${formatResourceSummary(resources)}\n\n` +
+            `Remaining balance:\n${formatResourceSummary(result.remaining)}`,
+          flags: MessageFlags.Ephemeral,
+        });
       }
 
       if (commandName === 'admin_alliance_set') {
@@ -3486,6 +3638,20 @@ Message: ${cfg.message}`)],
       sendToWelcomeFn: sendToAllWelcomeChannels,
       commandUsageGetter: () => Object.fromEntries(commandUsage.entries()),
       adminIds: ADMIN_DISCORD_IDS,
+      bankingEnabledGetter: async () => {
+        const enabledByGuild: Record<string, boolean> = {};
+        for (const guild of client.guilds.cache.values()) {
+          enabledByGuild[guild.id] = await banking.getBankingEnabled(guild.id);
+        }
+        return { enabledByGuild };
+      },
+      bankingEnabledSetter: async (enabled: boolean) => {
+        const enabledByGuild: Record<string, boolean> = {};
+        for (const guild of client.guilds.cache.values()) {
+          enabledByGuild[guild.id] = await banking.setBankingEnabled(guild.id, enabled);
+        }
+        return { enabledByGuild };
+      },
       memberNationContextGetter: async (discordIdStr: string) => {
         const emptyContext = {
           registered: false,
@@ -3494,6 +3660,7 @@ Message: ${cfg.message}`)],
           activeDefensiveWars: [],
           nationDefensiveWars: [],
           counterRequests: [],
+          banking: undefined,
         };
         const registration = await resolveRegistrationByMemberSelector(discordIdStr);
         if (!registration) return emptyContext;
@@ -3530,6 +3697,10 @@ Message: ${cfg.message}`)],
           .filter((request) => activeWarIds.has(request.warId))
           .sort((a, b) => Date.parse(b.requestedAt) - Date.parse(a.requestedAt));
         const counterRequestedAtByWarId = new Map(counterRequests.map((request) => [request.warId, request.requestedAt]));
+        const memberGuildId = getPrimaryGuild(client)?.id ?? null;
+        const bankingVisibility = memberGuildId
+          ? await banking.getMemberVisibility(memberGuildId, nation.nationId).catch(() => null)
+          : null;
 
         const nationDefensiveWars = activeDefensiveWars
           .filter((war) => war.defenderId === nation!.nationId)
@@ -3593,6 +3764,18 @@ Message: ${cfg.message}`)],
           })),
           nationDefensiveWars,
           counterRequests,
+          banking: bankingVisibility ? {
+            nationBalance: bankingVisibility.nationBalance,
+            alliancePool: bankingVisibility.alliancePool,
+            lastActivity: bankingVisibility.lastActivity ? {
+              ledgerId: bankingVisibility.lastActivity.ledger_id,
+              type: bankingVisibility.lastActivity.type,
+              status: bankingVisibility.lastActivity.status,
+              createdAt: bankingVisibility.lastActivity.created_at,
+              updatedAt: bankingVisibility.lastActivity.updated_at,
+              error: bankingVisibility.lastActivity.error,
+            } : null,
+          } : undefined,
         };
       },
       memberNationCounterRequestHandler: async (discordIdStr: string, warId: number) => {

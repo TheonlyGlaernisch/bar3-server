@@ -402,3 +402,79 @@ test('removeRecruiterSubscription returns true then false', async () => {
   assert.equal(await db.removeRecruiterSubscription(BigInt(901), BigInt(951)), true);
   assert.equal(await db.removeRecruiterSubscription(BigInt(901), BigInt(951)), false);
 });
+
+// ---------------------------------------------------------------------------
+// Banking helpers
+// ---------------------------------------------------------------------------
+
+test('banking config defaults and toggle round-trip', async () => {
+  const db = await makeDb();
+  const guildId = '1100';
+  const defaults = await db.getBankingConfig(guildId);
+  assert.equal(defaults.enabled, true);
+  assert.equal(defaults.bot_key, null);
+
+  const updated = await db.setBankingConfig(guildId, {
+    enabled: false,
+    bot_key: 'offshore-key',
+    offshore_alliance_id: 42,
+    alliance_bank_alliance_id: 77,
+  });
+  assert.equal(updated.enabled, false);
+  assert.equal(updated.bot_key, 'offshore-key');
+  assert.equal(await db.getBankingEnabled(guildId), false);
+  await db.setBankingEnabled(guildId, true);
+  assert.equal(await db.getBankingEnabled(guildId), true);
+});
+
+test('nation and alliance banking balances enforce debit bounds', async () => {
+  const db = await makeDb();
+  const guildId = '1101';
+  const nationId = 555;
+
+  await db.creditNationBankBalance(guildId, nationId, { money: 1000, steel: 20 });
+  const nation = await db.getNationBankBalance(guildId, nationId);
+  assert.equal(nation.money, 1000);
+  assert.equal(nation.steel, 20);
+
+  const okDebit = await db.debitNationBankBalance(guildId, nationId, { money: 250, steel: 10 });
+  assert.equal(okDebit.ok, true);
+  assert.equal(okDebit.balance.money, 750);
+  assert.equal(okDebit.balance.steel, 10);
+  const failedDebit = await db.debitNationBankBalance(guildId, nationId, { steel: 100 });
+  assert.equal(failedDebit.ok, false);
+
+  await db.creditAlliancePoolBalance(guildId, { money: 500, food: 50 });
+  const pool = await db.getAlliancePoolBalance(guildId);
+  assert.equal(pool.money, 500);
+  assert.equal(pool.food, 50);
+  const poolDebit = await db.debitAlliancePoolBalance(guildId, { food: 20 });
+  assert.equal(poolDebit.ok, true);
+  assert.equal(poolDebit.balance.food, 30);
+});
+
+test('banking ledger + idempotency entries support dedupe semantics', async () => {
+  const db = await makeDb();
+  const guildId = '1102';
+  const ledger = await db.createBankingLedgerEntry({
+    guild_id: guildId,
+    nation_id: 1,
+    type: 'deposit',
+    status: 'pending',
+    resources: { money: 10 },
+    source_transaction_id: 'tx-1',
+    idempotency_key: 'idem-1',
+    note: null,
+    actor_discord_id: null,
+    error: null,
+  });
+  await db.updateBankingLedgerStatus(ledger.ledger_id, 'completed');
+  const latest = await db.getLatestBankingActivity(guildId, 1);
+  assert.ok(latest);
+  assert.equal(latest.status, 'completed');
+
+  const inserted = await db.markImportedBankTransaction(guildId, 'idem-1', 'tx-1', ledger.ledger_id);
+  const duplicate = await db.markImportedBankTransaction(guildId, 'idem-1', 'tx-1', ledger.ledger_id);
+  assert.equal(inserted, true);
+  assert.equal(duplicate, false);
+});

@@ -207,6 +207,69 @@ test('getAllianceDamage requests inactive wars like Locutus', async () => {
   assert.ok(queries[0].includes('active: false'), 'alliance damage war query should opt into inactive war fetching');
 });
 
+test('getAllianceBankTransactions maps bankrec payloads', async () => {
+  const client = new PnWClient('test-key');
+  client._query = async (_query, variables) => {
+    assert.deepEqual(variables.or_id, [321]);
+    return {
+      data: {
+        bankrecs: {
+          data: [{
+            id: 999,
+            date: '2026-01-01T00:00:00Z',
+            sender_id: 11,
+            sender_type: 1,
+            receiver_id: 321,
+            receiver_type: 2,
+            banker_id: 44,
+            note: 'deposit',
+            money: 1234,
+            steel: 20,
+          }],
+        },
+      },
+    };
+  };
+  const rows = await client.getAllianceBankTransactions(321, { minId: 500, limit: 50 });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, '999');
+  assert.equal(rows[0].resources.money, 1234);
+  assert.equal(rows[0].resources.steel, 20);
+  assert.equal(rows[0].resources.food, 0);
+});
+
+test('bankWithdraw maps returned transfer and enforces transaction id', async () => {
+  const client = new PnWClient('test-key');
+  client._query = async (query, variables) => {
+    assert.match(query, /mutation BankWithdraw/);
+    assert.equal(variables.receiver, 77);
+    assert.equal(variables.receiver_type, 1);
+    assert.equal(variables.money, 500);
+    return {
+      data: {
+        bankWithdraw: {
+          id: 12345,
+          date: '2026-01-01T00:00:00Z',
+          sender_id: 99,
+          sender_type: 2,
+          receiver_id: 77,
+          receiver_type: 1,
+          money: 500,
+        },
+      },
+    };
+  };
+  const row = await client.bankWithdraw({
+    receiverId: 77,
+    receiverType: 1,
+    resources: { money: 500 },
+    note: 'test',
+  });
+  assert.equal(row.id, '12345');
+  assert.equal(row.receiverId, 77);
+  assert.equal(row.resources.money, 500);
+});
+
 test('parseResourceLoot returns zeros when resource not mentioned', () => {
   const [money, gas, mun, alu, stl] = parseResourceLoot('stole 500 money');
   assert.equal(money, 500);

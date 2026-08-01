@@ -63,6 +63,18 @@ export interface MemberNationContextResponse {
     defenderNationId: number;
     defenderDiscordId: string;
   }>;
+  banking?: {
+    nationBalance: Record<string, number>;
+    alliancePool: Record<string, number> | null;
+    lastActivity: {
+      ledgerId: string;
+      type: string;
+      status: string;
+      createdAt: string;
+      updatedAt: string;
+      error: string | null;
+    } | null;
+  };
   cache?: {
     source: 'cache' | 'upstream';
     cachedAt: string;
@@ -96,6 +108,7 @@ export async function getMemberNationContext(refresh = false): Promise<MemberNat
     activeDefensiveWars: Array.isArray(data?.activeDefensiveWars) ? data.activeDefensiveWars : [],
     nationDefensiveWars: Array.isArray(data?.nationDefensiveWars) ? data.nationDefensiveWars : [],
     counterRequests: Array.isArray(data?.counterRequests) ? data.counterRequests : [],
+    banking: data?.banking ?? undefined,
     cache: data?.cache ?? undefined,
   };
 }

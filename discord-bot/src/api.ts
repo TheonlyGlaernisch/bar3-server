@@ -170,6 +170,18 @@ export interface MemberNationContextData {
     url: string;
   }>;
   counterRequests: MemberNationCounterRequest[];
+  banking?: {
+    nationBalance: Record<string, number>;
+    alliancePool: Record<string, number> | null;
+    lastActivity: {
+      ledgerId: string;
+      type: string;
+      status: string;
+      createdAt: string;
+      updatedAt: string;
+      error: string | null;
+    } | null;
+  };
 }
 export type MemberNationContextGetter = (discordId: string) => Promise<MemberNationContextData>;
 export type MemberNationCounterRequestResult =
@@ -189,6 +201,8 @@ export interface CreateAppOptions {
   adminIds?: Set<bigint>;
   memberNationContextGetter?: MemberNationContextGetter;
   memberNationCounterRequestHandler?: MemberNationCounterRequestHandler;
+  bankingEnabledGetter?: () => Promise<{ enabled: boolean } | { enabledByGuild: Record<string, boolean> }>;
+  bankingEnabledSetter?: (enabled: boolean) => Promise<{ enabled: boolean } | { enabledByGuild: Record<string, boolean> }>;
   winlogSecret?: string | null;
   winlogHandler?: (payload: WinlogPayload) => Promise<void>;
   db?: Database;
@@ -442,6 +456,8 @@ export function createApp(options: CreateAppOptions): Application {
     adminIds = new Set<bigint>(),
     memberNationContextGetter,
     memberNationCounterRequestHandler,
+    bankingEnabledGetter,
+    bankingEnabledSetter,
     winlogSecret = null,
     winlogHandler,
     db,
@@ -570,6 +586,35 @@ export function createApp(options: CreateAppOptions): Application {
 
     const result = await sendToWelcomeFn(message, customMessage || undefined);
     res.status(200).json(result);
+  });
+  app.get('/api/bot/banking/enabled', async (req: Request, res: Response) => {
+    if (!checkApiKey(req, apiKey)) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    if (!bankingEnabledGetter) {
+      res.status(503).json({ error: 'Banking control unavailable' });
+      return;
+    }
+    const state = await bankingEnabledGetter();
+    res.status(200).json(state);
+  });
+  app.post('/api/bot/banking/enabled', async (req: Request, res: Response) => {
+    if (!checkApiKey(req, apiKey)) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    if (!bankingEnabledSetter) {
+      res.status(503).json({ error: 'Banking control unavailable' });
+      return;
+    }
+    const enabledRaw = (req.body as Record<string, unknown> | undefined)?.['enabled'];
+    if (typeof enabledRaw !== 'boolean') {
+      res.status(400).json({ error: 'enabled must be a boolean' });
+      return;
+    }
+    const state = await bankingEnabledSetter(enabledRaw);
+    res.status(200).json(state);
   });
 
   app.get('/api/member/nation/:discord_id', async (req: Request, res: Response) => {
