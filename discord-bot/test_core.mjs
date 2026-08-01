@@ -171,7 +171,7 @@ test('parseResourceLoot returns zeros for empty string', () => {
   assert.equal(stl, 0);
 });
 
-test('getNationWarLoot requests inactive wars like Locutus', async () => {
+test('getNationWarLoot uses supported war query fields', async () => {
   const client = new PnWClient('test-key');
   const queries = [];
   client._query = async (query) => {
@@ -186,7 +186,7 @@ test('getNationWarLoot requests inactive wars like Locutus', async () => {
   const summary = await client.getNationWarLoot(123, 7);
   assert.equal(summary.warsChecked, 0);
   assert.equal(queries.length, 2);
-  assert.ok(queries.every((query) => query.includes('active: false')), 'wars queries should opt into inactive war fetching');
+  assert.ok(queries.every((query) => !query.includes('active:')), 'wars queries should avoid unsupported active filter');
 });
 
 test('getAllianceDamage requests inactive wars like Locutus', async () => {
@@ -268,6 +268,34 @@ test('bankWithdraw maps returned transfer and enforces transaction id', async ()
   assert.equal(row.id, '12345');
   assert.equal(row.receiverId, 77);
   assert.equal(row.resources.money, 500);
+});
+
+
+test('PnWClient automatically sends bot_key env header when present', async () => {
+  const previousBotKey = process.env.bot_key;
+  const previousFetch = globalThis.fetch;
+  process.env.bot_key = 'env-bot-key';
+  let capturedHeaders = null;
+  globalThis.fetch = async (_url, init) => {
+    capturedHeaders = init.headers;
+    return {
+      ok: true,
+      json: async () => ({ data: { ok: true } }),
+    };
+  };
+  try {
+    const client = new PnWClient('api-key', { graphqlUrl: 'https://example.invalid/graphql' });
+    await client._query('query Test { ok }', {});
+    assert.equal(capturedHeaders['X-Api-Key'], 'api-key');
+    assert.equal(capturedHeaders['X-Bot-Key'], 'env-bot-key');
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousBotKey === undefined) {
+      delete process.env.bot_key;
+    } else {
+      process.env.bot_key = previousBotKey;
+    }
+  }
 });
 
 test('parseResourceLoot returns zeros when resource not mentioned', () => {
