@@ -74,15 +74,20 @@ import rateLimit from 'express-rate-limit';
 import { registerLeaderboardRoute } from './api_leaderboard_route';
 import { Database } from './database';
 import { Guild, GuildMember } from 'discord.js';
-import {
-  DISCORD_CLIENT_ID,
-  DISCORD_CLIENT_SECRET,
-  DISCORD_REDIRECT_URI,
-  CLIENT_APP_URL,
-  ADMIN_DISCORD_IDS,
-} from './config';
 import { registerWinlogRoute } from './api_winlog_route';
 import { WinlogPayload } from './winlog';
+
+const DISCORD_CLIENT_ID = process.env['DISCORD_CLIENT_ID'] || '';
+const DISCORD_CLIENT_SECRET = process.env['DISCORD_CLIENT_SECRET'] || '';
+const DISCORD_REDIRECT_URI = process.env['DISCORD_REDIRECT_URI'] || 'http://localhost:8080/auth/discord/callback';
+const CLIENT_APP_URL = (process.env['CLIENT_APP_URL'] || '').replace(/\/$/, '');
+const ADMIN_DISCORD_IDS = new Set(
+  (process.env['ADMIN_DISCORD_IDS'] || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => /^\d+$/.test(id))
+    .map((id) => BigInt(id))
+);
 
 
 export interface RoleConfig {

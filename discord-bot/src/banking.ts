@@ -207,7 +207,7 @@ export class BankingService {
           receiverId: cfg.offshore_alliance_id,
           receiverType: 2,
           resources,
-          note: `bar3-auto-forward deposit:${tx.id} bot_key:${cfg.bot_key}`,
+          note: `bar3-auto-forward deposit:${tx.id}`,
         });
         await this._db.updateBankingLedgerStatus(forwardLedger.ledger_id, 'completed');
         result.forwarded += 1;
@@ -246,7 +246,7 @@ export class BankingService {
           receiverId: cfg.offshore_alliance_id,
           receiverType: 2,
           resources: row.resources,
-          note: row.note ?? `bar3-forward-retry ${row.source_transaction_id ?? row.ledger_id} bot_key:${cfg.bot_key}`,
+          note: row.note ?? `bar3-forward-retry ${row.source_transaction_id ?? row.ledger_id}`,
         });
         await this._db.updateBankingLedgerStatus(row.ledger_id, 'completed');
         retried += 1;
@@ -295,7 +295,7 @@ export class BankingService {
         receiverId: nationId,
         receiverType: 1,
         resources,
-        note: `bar3-withdraw nation:${nationId} bot_key:${cfg.bot_key}`,
+        note: `bar3-withdraw nation:${nationId}`,
       });
       const debited = await this._db.debitNationBankBalance(guildId, nationId, resources);
       if (!debited.ok) {
@@ -347,7 +347,7 @@ export class BankingService {
         receiverId: cfg.offshore_alliance_id,
         receiverType: 2,
         resources,
-        note: `${note ?? 'bar3-manual-offshore'} bot_key:${cfg.bot_key}`,
+        note: note ?? 'bar3-manual-offshore',
       });
       const pool = await this._db.creditAlliancePoolBalance(guildId, resources);
       await this._db.updateBankingLedgerStatus(ledger.ledger_id, 'completed');

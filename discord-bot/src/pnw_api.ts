@@ -755,126 +755,25 @@ export class PnWClient {
   // GraphQL helpers
   // ------------------------------------------------------------------
 
-  private async _query(query: string, variables: Record<string, unknown>): Promise<Record<string, unknown>> {
+  private async _query(
+    query: string,
+    variables: Record<string, unknown>,
+    opts: { botKey?: string | null } = {}
+  ): Promise<Record<string, unknown>> {
     const url = `${this._graphqlUrl}?api_key=${this._apiKey}`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Api-Key': this._apiKey,
+    };
+    const botKey = (opts.botKey ?? process.env['bot_key'] ?? '').trim();
+    if (botKey) headers['X-Bot-Key'] = botKey;
     const resp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ query, variables }),
     });
     if (!resp.ok) {
       throw new Error(`PnW API HTTP error: ${resp.status} ${resp.statusText}`);
-    }
-
-    async getAllianceBankTransactions(
-      allianceId: number,
-      opts: { minId?: number; limit?: number; page?: number } = {}
-    ): Promise<BankTransactionRecord[]> {
-      if (allianceId <= 0) return [];
-      const query = `query GetAllianceBankTransactions($or_id: [Int], $or_type: [Int], $min_id: Int, $first: Int, $page: Int) {
-        bankrecs(or_id: $or_id, or_type: $or_type, min_id: $min_id, first: $first, page: $page, orderBy: { column: ID, order: ASC }) {
-          data {
-            id date sender_id sender_type receiver_id receiver_type banker_id note
-            money food coal oil uranium iron bauxite lead gasoline munitions steel aluminum
-          }
-        }
-      }`;
-      const first = Math.max(1, Math.min(1000, Math.floor(opts.limit ?? 100)));
-      const data = await this._query(query, {
-        or_id: [allianceId],
-        or_type: [2],
-        min_id: opts.minId,
-        first,
-        page: opts.page ?? 1,
-      });
-      const payload = (data['data'] as Record<string, unknown>) ?? {};
-      const paginator = (payload['bankrecs'] as Record<string, unknown>) ?? {};
-      const rows = Array.isArray(paginator['data'])
-        ? paginator['data'] as Array<Record<string, unknown>>
-        : Array.isArray(payload['bankrecs'])
-          ? payload['bankrecs'] as Array<Record<string, unknown>>
-          : [];
-      return rows.map((raw) => ({
-        id: String(raw['id'] ?? ''),
-        date: s(raw['date']),
-        senderId: n(raw['sender_id'] ?? raw['sid']),
-        senderType: n(raw['sender_type'] ?? raw['stype']),
-        receiverId: n(raw['receiver_id'] ?? raw['rid']),
-        receiverType: n(raw['receiver_type'] ?? raw['rtype']),
-        bankerId: n(raw['banker_id'] ?? raw['pid']),
-        note: s(raw['note']),
-        resources: {
-          money: n(raw['money']),
-          food: n(raw['food']),
-          coal: n(raw['coal']),
-          oil: n(raw['oil']),
-          uranium: n(raw['uranium']),
-          iron: n(raw['iron']),
-          bauxite: n(raw['bauxite']),
-          lead: n(raw['lead']),
-          gasoline: n(raw['gasoline']),
-          munitions: n(raw['munitions']),
-          steel: n(raw['steel']),
-          aluminum: n(raw['aluminum']),
-        },
-      })).filter((row) => row.id.length > 0);
-    }
-
-    async bankWithdraw(request: BankTransferRequest): Promise<BankTransactionRecord> {
-      const query = `mutation BankWithdraw($receiver: Int!, $receiver_type: Int!, $note: String, $money: Float, $food: Float, $coal: Float, $oil: Float, $uranium: Float, $iron: Float, $bauxite: Float, $lead: Float, $gasoline: Float, $munitions: Float, $steel: Float, $aluminum: Float) {
-        bankWithdraw(receiver: $receiver, receiver_type: $receiver_type, note: $note, money: $money, food: $food, coal: $coal, oil: $oil, uranium: $uranium, iron: $iron, bauxite: $bauxite, lead: $lead, gasoline: $gasoline, munitions: $munitions, steel: $steel, aluminum: $aluminum) {
-          id date sender_id sender_type receiver_id receiver_type banker_id note
-          money food coal oil uranium iron bauxite lead gasoline munitions steel aluminum
-        }
-      }`;
-      const resources = {
-        money: request.resources.money ?? 0,
-        food: request.resources.food ?? 0,
-        coal: request.resources.coal ?? 0,
-        oil: request.resources.oil ?? 0,
-        uranium: request.resources.uranium ?? 0,
-        iron: request.resources.iron ?? 0,
-        bauxite: request.resources.bauxite ?? 0,
-        lead: request.resources.lead ?? 0,
-        gasoline: request.resources.gasoline ?? 0,
-        munitions: request.resources.munitions ?? 0,
-        steel: request.resources.steel ?? 0,
-        aluminum: request.resources.aluminum ?? 0,
-      };
-      const data = await this._query(query, {
-        receiver: request.receiverId,
-        receiver_type: request.receiverType,
-        note: request.note ?? null,
-        ...resources,
-      });
-      const payload = (data['data'] as Record<string, unknown>) ?? {};
-      const raw = (payload['bankWithdraw'] as Record<string, unknown>) ?? {};
-      const id = String(raw['id'] ?? '');
-      if (!id) throw new Error('PnW bankWithdraw returned no transaction ID.');
-      return {
-        id,
-        date: s(raw['date']),
-        senderId: n(raw['sender_id'] ?? raw['sid']),
-        senderType: n(raw['sender_type'] ?? raw['stype']),
-        receiverId: n(raw['receiver_id'] ?? raw['rid']),
-        receiverType: n(raw['receiver_type'] ?? raw['rtype']),
-        bankerId: n(raw['banker_id'] ?? raw['pid']),
-        note: s(raw['note']),
-        resources: {
-          money: n(raw['money']),
-          food: n(raw['food']),
-          coal: n(raw['coal']),
-          oil: n(raw['oil']),
-          uranium: n(raw['uranium']),
-          iron: n(raw['iron']),
-          bauxite: n(raw['bauxite']),
-          lead: n(raw['lead']),
-          gasoline: n(raw['gasoline']),
-          munitions: n(raw['munitions']),
-          steel: n(raw['steel']),
-          aluminum: n(raw['aluminum']),
-        },
-      };
     }
     const data = await resp.json() as Record<string, unknown>;
     if (data['errors']) {
@@ -882,6 +781,117 @@ export class PnWClient {
       throw new Error('PnW API returned errors: ' + errors.map((e) => s(e['message'])).join('; '));
     }
     return data;
+  }
+
+  async getAllianceBankTransactions(
+    allianceId: number,
+    opts: { minId?: number; limit?: number; page?: number } = {}
+  ): Promise<BankTransactionRecord[]> {
+    if (allianceId <= 0) return [];
+    const query = `query GetAllianceBankTransactions($or_id: [Int], $or_type: [Int], $min_id: Int, $first: Int, $page: Int) {
+      bankrecs(or_id: $or_id, or_type: $or_type, min_id: $min_id, first: $first, page: $page, orderBy: { column: ID, order: ASC }) {
+        data {
+          id date sender_id sender_type receiver_id receiver_type banker_id note
+          money food coal oil uranium iron bauxite lead gasoline munitions steel aluminum
+        }
+      }
+    }`;
+    const first = Math.max(1, Math.min(1000, Math.floor(opts.limit ?? 100)));
+    const data = await this._query(query, {
+      or_id: [allianceId],
+      or_type: [2],
+      min_id: opts.minId,
+      first,
+      page: opts.page ?? 1,
+    });
+    const payload = (data['data'] as Record<string, unknown>) ?? {};
+    const paginator = (payload['bankrecs'] as Record<string, unknown>) ?? {};
+    const rows = Array.isArray(paginator['data'])
+      ? paginator['data'] as Array<Record<string, unknown>>
+      : Array.isArray(payload['bankrecs'])
+        ? payload['bankrecs'] as Array<Record<string, unknown>>
+        : [];
+    return rows.map((raw) => ({
+      id: String(raw['id'] ?? ''),
+      date: s(raw['date']),
+      senderId: n(raw['sender_id'] ?? raw['sid']),
+      senderType: n(raw['sender_type'] ?? raw['stype']),
+      receiverId: n(raw['receiver_id'] ?? raw['rid']),
+      receiverType: n(raw['receiver_type'] ?? raw['rtype']),
+      bankerId: n(raw['banker_id'] ?? raw['pid']),
+      note: s(raw['note']),
+      resources: {
+        money: n(raw['money']),
+        food: n(raw['food']),
+        coal: n(raw['coal']),
+        oil: n(raw['oil']),
+        uranium: n(raw['uranium']),
+        iron: n(raw['iron']),
+        bauxite: n(raw['bauxite']),
+        lead: n(raw['lead']),
+        gasoline: n(raw['gasoline']),
+        munitions: n(raw['munitions']),
+        steel: n(raw['steel']),
+        aluminum: n(raw['aluminum']),
+      },
+    })).filter((row) => row.id.length > 0);
+  }
+
+  async bankWithdraw(request: BankTransferRequest): Promise<BankTransactionRecord> {
+    const query = `mutation BankWithdraw($receiver: Int!, $receiver_type: Int!, $note: String, $money: Float, $food: Float, $coal: Float, $oil: Float, $uranium: Float, $iron: Float, $bauxite: Float, $lead: Float, $gasoline: Float, $munitions: Float, $steel: Float, $aluminum: Float) {
+      bankWithdraw(receiver: $receiver, receiver_type: $receiver_type, note: $note, money: $money, food: $food, coal: $coal, oil: $oil, uranium: $uranium, iron: $iron, bauxite: $bauxite, lead: $lead, gasoline: $gasoline, munitions: $munitions, steel: $steel, aluminum: $aluminum) {
+        id date sender_id sender_type receiver_id receiver_type banker_id note
+        money food coal oil uranium iron bauxite lead gasoline munitions steel aluminum
+      }
+    }`;
+    const resources = {
+      money: request.resources.money ?? 0,
+      food: request.resources.food ?? 0,
+      coal: request.resources.coal ?? 0,
+      oil: request.resources.oil ?? 0,
+      uranium: request.resources.uranium ?? 0,
+      iron: request.resources.iron ?? 0,
+      bauxite: request.resources.bauxite ?? 0,
+      lead: request.resources.lead ?? 0,
+      gasoline: request.resources.gasoline ?? 0,
+      munitions: request.resources.munitions ?? 0,
+      steel: request.resources.steel ?? 0,
+      aluminum: request.resources.aluminum ?? 0,
+    };
+    const data = await this._query(query, {
+      receiver: request.receiverId,
+      receiver_type: request.receiverType,
+      note: request.note ?? null,
+      ...resources,
+    });
+    const payload = (data['data'] as Record<string, unknown>) ?? {};
+    const raw = (payload['bankWithdraw'] as Record<string, unknown>) ?? {};
+    const id = String(raw['id'] ?? '');
+    if (!id) throw new Error('PnW bankWithdraw returned no transaction ID.');
+    return {
+      id,
+      date: s(raw['date']),
+      senderId: n(raw['sender_id'] ?? raw['sid']),
+      senderType: n(raw['sender_type'] ?? raw['stype']),
+      receiverId: n(raw['receiver_id'] ?? raw['rid']),
+      receiverType: n(raw['receiver_type'] ?? raw['rtype']),
+      bankerId: n(raw['banker_id'] ?? raw['pid']),
+      note: s(raw['note']),
+      resources: {
+        money: n(raw['money']),
+        food: n(raw['food']),
+        coal: n(raw['coal']),
+        oil: n(raw['oil']),
+        uranium: n(raw['uranium']),
+        iron: n(raw['iron']),
+        bauxite: n(raw['bauxite']),
+        lead: n(raw['lead']),
+        gasoline: n(raw['gasoline']),
+        munitions: n(raw['munitions']),
+        steel: n(raw['steel']),
+        aluminum: n(raw['aluminum']),
+      },
+    };
   }
 
   // ------------------------------------------------------------------
@@ -944,7 +954,7 @@ export class PnWClient {
       let page = 1;
       while (true) {
         const query = `query GetNationLootWars($nationId: [Int], $page: Int) {
-          wars(${role}: $nationId, page: $page, first: 100, active: false) {
+          wars(${role}: $nationId, page: $page, first: 100) {
             data {
               id date end_date att_id def_id
               attacker { nation_name }
