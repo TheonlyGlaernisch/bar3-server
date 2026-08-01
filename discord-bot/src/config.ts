@@ -126,6 +126,17 @@ export const ALLIANCE_BANK_ALLIANCE_ID: number | null = _optionalInt('ALLIANCE_B
 export const ALLIANCE_BANK_API_KEY_REF: string | null = _optionalString('ALLIANCE_BANK_API_KEY_REF');
 export const OFFSHORE_API_KEY_REF: string | null = _optionalString('OFFSHORE_API_KEY_REF');
 export const BOT_KEY: string | null = _optionalString('bot_key');
+if (BANKING_ENABLED) {
+  if (!BOT_KEY) {
+    throw new Error("Environment variable 'bot_key' is required when banking is enabled.");
+  }
+  if (!OFFSHORE_ALLIANCE_ID) {
+    throw new Error("Environment variable 'OFFSHORE_ALLIANCE_ID' is required when banking is enabled.");
+  }
+  if (!ALLIANCE_BANK_ALLIANCE_ID) {
+    throw new Error("Environment variable 'ALLIANCE_BANK_ALLIANCE_ID' is required when banking is enabled.");
+  }
+}
 
 // Discord OAuth2 config — required for the /auth/* endpoints.
 // Leave unset to disable the OAuth2 flow entirely.

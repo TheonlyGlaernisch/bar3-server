@@ -45,6 +45,10 @@ export type BankingResourceKey =
   | 'gasoline' | 'munitions' | 'steel' | 'aluminum';
 
 export type BankingResourceBalance = Record<BankingResourceKey, number>;
+export const BANKING_RESOURCE_KEYS: BankingResourceKey[] = [
+  'money', 'food', 'coal', 'oil', 'uranium', 'iron',
+  'bauxite', 'lead', 'gasoline', 'munitions', 'steel', 'aluminum',
+];
 
 export interface BankingConfigDoc {
   guild_id: string;
@@ -305,10 +309,16 @@ export class Database {
     await this._allianceBankPools.createIndex({ guild_id: 1 }, { unique: true });
     await this._bankingLedger.createIndex({ guild_id: 1, created_at: -1 });
     await this._bankingLedger.createIndex({ guild_id: 1, nation_id: 1, created_at: -1 });
-    await this._bankingLedger.createIndex({ guild_id: 1, source_transaction_id: 1 });
+    await this._bankingLedger.createIndex(
+      { guild_id: 1, source_transaction_id: 1 },
+      { unique: true, partialFilterExpression: { source_transaction_id: { $type: 'string' } } }
+    );
     await this._bankingLedger.createIndex({ guild_id: 1, status: 1, updated_at: -1 });
     await this._bankingIdempotency.createIndex({ guild_id: 1, idempotency_key: 1 }, { unique: true });
-    await this._bankingIdempotency.createIndex({ guild_id: 1, source_transaction_id: 1 });
+    await this._bankingIdempotency.createIndex(
+      { guild_id: 1, source_transaction_id: 1 },
+      { unique: true, partialFilterExpression: { source_transaction_id: { $type: 'string' } } }
+    );
   }
 
   // ------------------------------------------------------------------
@@ -581,20 +591,11 @@ export class Database {
   // Banking helpers ----------------------------------------------------------
 
   private _emptyBankingBalance(): BankingResourceBalance {
-    return {
-      money: 0,
-      food: 0,
-      coal: 0,
-      oil: 0,
-      uranium: 0,
-      iron: 0,
-      bauxite: 0,
-      lead: 0,
-      gasoline: 0,
-      munitions: 0,
-      steel: 0,
-      aluminum: 0,
-    };
+    const base = {} as BankingResourceBalance;
+    for (const key of BANKING_RESOURCE_KEYS) {
+      base[key] = 0;
+    }
+    return base;
   }
 
   private _normalizeBankingBalance(
@@ -602,7 +603,7 @@ export class Database {
   ): BankingResourceBalance {
     const base = this._emptyBankingBalance();
     if (!partial) return base;
-    for (const key of Object.keys(base) as BankingResourceKey[]) {
+    for (const key of BANKING_RESOURCE_KEYS) {
       const value = partial[key];
       if (typeof value === 'number' && Number.isFinite(value)) {
         base[key] = value;
@@ -678,7 +679,7 @@ export class Database {
     const current = await this.getNationBankBalance(guildId, nationId);
     const change = this._normalizeBankingBalance(delta);
     const next = this._emptyBankingBalance();
-    for (const key of Object.keys(current) as BankingResourceKey[]) {
+    for (const key of BANKING_RESOURCE_KEYS) {
       next[key] = current[key] + change[key];
     }
     await this._nationBankBalances.updateOne(
@@ -704,7 +705,7 @@ export class Database {
     const current = await this.getNationBankBalance(guildId, nationId);
     const change = this._normalizeBankingBalance(delta);
     const next = this._emptyBankingBalance();
-    for (const key of Object.keys(current) as BankingResourceKey[]) {
+    for (const key of BANKING_RESOURCE_KEYS) {
       const remaining = current[key] - change[key];
       if (remaining < 0) return { ok: false, balance: current };
       next[key] = remaining;
@@ -736,7 +737,7 @@ export class Database {
     const current = await this.getAlliancePoolBalance(guildId);
     const change = this._normalizeBankingBalance(delta);
     const next = this._emptyBankingBalance();
-    for (const key of Object.keys(current) as BankingResourceKey[]) {
+    for (const key of BANKING_RESOURCE_KEYS) {
       next[key] = current[key] + change[key];
     }
     await this._allianceBankPools.updateOne(
@@ -760,7 +761,7 @@ export class Database {
     const current = await this.getAlliancePoolBalance(guildId);
     const change = this._normalizeBankingBalance(delta);
     const next = this._emptyBankingBalance();
-    for (const key of Object.keys(current) as BankingResourceKey[]) {
+    for (const key of BANKING_RESOURCE_KEYS) {
       const remaining = current[key] - change[key];
       if (remaining < 0) return { ok: false, balance: current };
       next[key] = remaining;
