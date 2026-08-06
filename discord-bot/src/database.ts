@@ -70,6 +70,10 @@ export interface NationBankBalanceDoc {
   updated_at: string;
 }
 
+export interface NationBankBalanceWithRegistrationDoc extends NationBankBalanceDoc {
+  registration: RegistrationDoc | null;
+}
+
 export interface AllianceBankPoolDoc {
   guild_id: string;
   balances: BankingResourceBalance;
@@ -684,6 +688,23 @@ export class Database {
       { projection: { _id: 0 } }
     );
     return this._normalizeBankingBalance(doc?.balances);
+  }
+
+  async getAllNationBankBalances(guildId: string): Promise<NationBankBalanceWithRegistrationDoc[]> {
+    const docs = await this._nationBankBalances.find(
+      { guild_id: guildId },
+      { projection: { _id: 0 } }
+    ).toArray();
+    docs.sort((a, b) => a.nation_id - b.nation_id);
+    const rows: NationBankBalanceWithRegistrationDoc[] = [];
+    for (const doc of docs) {
+      rows.push({
+        ...doc,
+        balances: this._normalizeBankingBalance(doc.balances),
+        registration: await this.getByNationId(doc.nation_id),
+      });
+    }
+    return rows;
   }
 
   async creditNationBankBalance(
