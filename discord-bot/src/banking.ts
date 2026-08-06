@@ -16,6 +16,7 @@ export interface BankingRuntimeDefaults {
   allianceBankApiKeyRef: string | null;
   offshoreApiKeyRef: string | null;
   botKey: string | null;
+  depositRequiredWords: string[];
 }
 
 export interface SyncResult {
@@ -80,6 +81,10 @@ function isDuplicateKeyError(error: unknown): boolean {
   return (error as { code?: unknown }).code === 11000;
 }
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export class BankingService {
   private readonly _db: Database;
   private readonly _defaults: BankingRuntimeDefaults;
@@ -87,10 +92,12 @@ export class BankingService {
 
   constructor(db: Database, defaults: BankingRuntimeDefaults, fallbackPnwApiKey: string) {
     this._db = db;
-    this._defaults = defaults;
+    this._defaults = {
+      ...defaults,
+      depositRequiredWords: defaults.depositRequiredWords.map((word) => word.trim().toLowerCase()).filter(Boolean),
+    };
     this._fallbackPnwApiKey = fallbackPnwApiKey;
   }
-
 
   private async _creditOffshoredDeposits(
     guildId: string,
@@ -125,6 +132,13 @@ export class BankingService {
     }
     const alliancePool = await this._db.getAlliancePoolBalance(guildId);
     return { credited, alliancePool };
+  }
+
+  private _depositHasRequiredWord(note: string | null | undefined): boolean {
+    const requiredWords = this._defaults.depositRequiredWords;
+    if (requiredWords.length === 0) return true;
+    const normalizedNote = (note ?? '').toLowerCase();
+    return requiredWords.some((word) => new RegExp(`(^|\\W)${escapeRegex(word)}($|\\W)`, 'i').test(normalizedNote));
   }
 
   private _resolveApiKey(apiKeyRef: string | null): string {
@@ -277,6 +291,11 @@ export class BankingService {
       const isDeposit = tx.senderType === 1 && tx.receiverType === 2 && tx.receiverId === cfg.alliance_bank_alliance_id;
       if (isDeposit) {
         const idempotencyKey = `deposit:${cfg.alliance_bank_alliance_id}:${tx.id}`;
+        if (!this._depositHasRequiredWord(tx.note)) {
+          await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, null);
+          result.skipped += 1;
+          continue;
+        }
         let depositLedger: BankingLedgerDoc;
         try {
           depositLedger = await this._db.createBankingLedgerEntry({

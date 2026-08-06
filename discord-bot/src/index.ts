@@ -29,6 +29,7 @@ import {
   ALLIANCE_BANK_ALLIANCE_ID,
   ALLIANCE_BANK_API_KEY_REF,
   ADMIN_DISCORD_IDS,
+  BANKING_DEPOSIT_REQUIRED_WORDS,
   BANKING_ENABLED,
   BANKING_SYNC_INTERVAL_SECONDS,
   BAR3_CLIENT_ROLE_ID,
@@ -1682,6 +1683,7 @@ async function main(): Promise<void> {
       allianceBankApiKeyRef: ALLIANCE_BANK_API_KEY_REF,
       offshoreApiKeyRef: OFFSHORE_API_KEY_REF,
       botKey: BOT_KEY,
+      depositRequiredWords: BANKING_DEPOSIT_REQUIRED_WORDS,
     },
     effectivePnwApiKey
   );
@@ -2685,8 +2687,18 @@ ${resourceLines}
         const registration = await db.getByDiscordId(BigInt(interaction.user.id));
         if (!registration) return void interaction.reply({ content: 'You do not have a registered nation.', flags: MessageFlags.Ephemeral });
         const view = await banking.getMemberVisibility(interaction.guildId, registration.nation_id);
-        return void interaction.reply({ content: `Deposit balance for nation **${registration.nation_id}**:
-${formatResourceSummary(view.nationBalance)}`, flags: MessageFlags.Ephemeral });
+        const embed = new EmbedBuilder()
+          .setTitle('Deposit balance')
+          .setDescription(`Offshored deposit balance for nation **${registration.nation_id}**`)
+          .addFields({ name: 'Resources', value: formatResourceSummary(view.nationBalance) })
+          .setColor(0x2ECC71);
+        if (view.lastActivity) {
+          embed.addFields({
+            name: 'Latest activity',
+            value: `${view.lastActivity.type} • ${view.lastActivity.status} • ${view.lastActivity.updated_at}`,
+          });
+        }
+        return void interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'banking_alliance_balance') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
