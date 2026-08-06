@@ -28,6 +28,8 @@ export const COMMAND_DOCS: CommandDoc[] = [
   { name: '/request grant <note> [resources]', summary: 'Submit grant request to configured grant channel.', category: 'gov' },
   { name: '/banking withdraw [resources]', summary: 'Withdraw resources from offshore to your registered nation balance.', category: 'core' },
   { name: '/banking manual_offshore [resources]', summary: 'Gov/admin command to manually send alliance-bank funds offshore.', category: 'gov' },
+  { name: '/banking set_offshore <alliance_id>', summary: 'Set the single global offshore alliance ID (ADMIN_DISCORD_IDS only).', category: 'admin' },
+  { name: '/banking show_offshore', summary: 'Show the configured global offshore alliance ID.', category: 'admin' },
   { name: '/slots', summary: 'Show open defensive slots for configured alliances.', category: 'alliance' },
   { name: '/config slots set <ids>', summary: 'Set slot-tracked alliance list for this guild.', category: 'setup' },
   { name: '/config slots show', summary: 'Display configured slot alliance list.', category: 'setup' },

@@ -78,9 +78,10 @@ export interface AllianceBankPoolDoc {
 
 export type BankingLedgerType =
   | 'deposit'
-  | 'forward'
+  | 'external-withdrawal'
   | 'withdraw'
   | 'manual-offshore'
+  | 'offshore-migration'
   | 'reconcile';
 export type BankingLedgerStatus = 'pending' | 'completed' | 'failed';
 
@@ -584,6 +585,20 @@ export class Database {
     await this._botConfig.updateOne(
       { key: 'pnw_api_key' },
       { $set: { key: 'pnw_api_key', value: apiKey } },
+      { upsert: true }
+    );
+  }
+
+  async getGlobalOffshoreAllianceId(defaultValue: number | null = null): Promise<number | null> {
+    const doc = await this._botConfig.findOne({ key: 'banking_offshore_alliance_id' }, { projection: { _id: 0 } });
+    const parsed = Number.parseInt(doc?.value ?? '', 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultValue;
+  }
+
+  async setGlobalOffshoreAllianceId(allianceId: number): Promise<void> {
+    await this._botConfig.updateOne(
+      { key: 'banking_offshore_alliance_id' },
+      { $set: { key: 'banking_offshore_alliance_id', value: String(allianceId) } },
       { upsert: true }
     );
   }

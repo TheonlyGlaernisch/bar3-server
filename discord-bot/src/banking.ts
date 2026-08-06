@@ -20,8 +20,6 @@ export interface BankingRuntimeDefaults {
 export interface SyncResult {
   processed: number;
   skipped: number;
-  forwarded: number;
-  failedForwards: number;
 }
 
 function emptyBalance(): BankingResourceBalance {
@@ -91,9 +89,6 @@ export class BankingService {
   async ensureGuildConfig(guildId: string): Promise<void> {
     const cfg = await this._db.getBankingConfig(guildId);
     const patch: Record<string, unknown> = {};
-    if (cfg.offshore_alliance_id == null && this._defaults.offshoreAllianceId != null) {
-      patch['offshore_alliance_id'] = this._defaults.offshoreAllianceId;
-    }
     if (cfg.alliance_bank_alliance_id == null && this._defaults.allianceBankAllianceId != null) {
       patch['alliance_bank_alliance_id'] = this._defaults.allianceBankAllianceId;
     }
@@ -123,97 +118,174 @@ export class BankingService {
     return row.enabled;
   }
 
+  async getOffshoreAllianceId(): Promise<number | null> {
+    return this._db.getGlobalOffshoreAllianceId(this._defaults.offshoreAllianceId);
+  }
+
+  async setOffshoreAllianceId(
+    allianceId: number,
+    guildId: string | null = null,
+    actorDiscordId: string | null = null
+  ): Promise<{ offshoreAllianceId: number; migrated: boolean; resources: BankingResourceBalance | null }> {
+    const previousAllianceId = await this.getOffshoreAllianceId();
+    if (previousAllianceId && previousAllianceId !== allianceId) {
+      if (!guildId) {
+        throw new Error('A guild context is required to migrate existing offshore holdings.');
+      }
+      const cfg = await this._db.getBankingConfig(guildId);
+      const offshoreKey = this._resolveApiKey(cfg.offshore_api_key_ref);
+      if (!offshoreKey) throw new Error('Offshore API key is not configured; cannot migrate existing offshore holdings.');
+      const client = new PnWClient(offshoreKey);
+      const resources = normalizeBalance(await client.getAllianceBankBalance(previousAllianceId));
+      if (hasAnyAmount(resources)) {
+        const ledger = await this._db.createBankingLedgerEntry({
+          guild_id: guildId,
+          nation_id: null,
+          type: 'offshore-migration',
+          status: 'pending',
+          resources,
+          source_transaction_id: null,
+          idempotency_key: `offshore-migration:${previousAllianceId}:${allianceId}:${Date.now()}`,
+          note: `Migrate offshore holdings from ${previousAllianceId} to ${allianceId}`,
+          actor_discord_id: actorDiscordId,
+          error: null,
+        });
+        try {
+          const transfer = await client.bankWithdraw({
+            receiverId: allianceId,
+            receiverType: 2,
+            resources,
+            note: `bar3-offshore-migration ${previousAllianceId}->${allianceId}`,
+          });
+          await this._db.updateBankingLedgerStatus(ledger.ledger_id, 'completed');
+          await this._db.markImportedBankTransaction(
+            guildId,
+            `offshore-migration-transfer:${transfer.id}`,
+            transfer.id,
+            ledger.ledger_id
+          );
+        } catch (error) {
+          await this._db.updateBankingLedgerStatus(ledger.ledger_id, 'failed', toErrorMessage(error));
+          throw error;
+        }
+      }
+      await this._db.setGlobalOffshoreAllianceId(allianceId);
+      return { offshoreAllianceId: allianceId, migrated: hasAnyAmount(resources), resources };
+    }
+    await this._db.setGlobalOffshoreAllianceId(allianceId);
+    return { offshoreAllianceId: allianceId, migrated: false, resources: null };
+  }
+
   async syncGuildDeposits(guildId: string): Promise<SyncResult> {
     await this.ensureGuildConfig(guildId);
-    const result: SyncResult = { processed: 0, skipped: 0, forwarded: 0, failedForwards: 0 };
+    const result: SyncResult = { processed: 0, skipped: 0 };
     const cfg = await this._db.getBankingConfig(guildId);
     if (!cfg.enabled) return result;
     if (!cfg.bot_key) throw new Error(`Banking is enabled for guild ${guildId} but bot_key is missing.`);
-    if (!cfg.alliance_bank_alliance_id || !cfg.offshore_alliance_id) {
-      throw new Error(`Banking is enabled for guild ${guildId} but alliance IDs are missing.`);
+    if (!cfg.alliance_bank_alliance_id) {
+      throw new Error(`Banking is enabled for guild ${guildId} but alliance bank alliance ID is missing.`);
     }
 
     const allianceBankKey = this._resolveApiKey(cfg.alliance_bank_api_key_ref);
-    const offshoreKey = this._resolveApiKey(cfg.offshore_api_key_ref);
-    if (!allianceBankKey || !offshoreKey) {
-      throw new Error(`Banking is enabled for guild ${guildId} but API key references are unresolved.`);
+    if (!allianceBankKey) {
+      throw new Error(`Banking is enabled for guild ${guildId} but the alliance bank API key reference is unresolved.`);
     }
 
     const allianceBankClient = new PnWClient(allianceBankKey);
-    const offshoreClient = new PnWClient(offshoreKey);
     const minId = parseCursorId(cfg.last_sync_cursor);
     const transactions = await allianceBankClient.getAllianceBankTransactions(cfg.alliance_bank_alliance_id, {
       minId: minId != null ? minId + 1 : undefined,
       limit: 500,
     });
-    const depositCandidates = transactions
-      .filter((tx) => tx.senderType === 1 && tx.receiverType === 2 && tx.receiverId === cfg.alliance_bank_alliance_id)
+    const relatedTransactions = transactions
+      .filter((tx) =>
+        (tx.senderType === 1 && tx.receiverType === 2 && tx.receiverId === cfg.alliance_bank_alliance_id) ||
+        (tx.senderType === 2 && tx.senderId === cfg.alliance_bank_alliance_id && tx.receiverType === 1)
+      )
       .sort((a, b) => Number.parseInt(a.id, 10) - Number.parseInt(b.id, 10));
 
     let lastSeenCursor = cfg.last_sync_cursor;
-    for (const tx of depositCandidates) {
+    for (const tx of relatedTransactions) {
       lastSeenCursor = tx.id;
-      const idempotencyKey = `deposit:${cfg.alliance_bank_alliance_id}:${tx.id}`;
       const resources = normalizeBalance(tx.resources);
       if (!hasAnyAmount(resources)) {
         result.skipped += 1;
         continue;
       }
-      let depositLedger: BankingLedgerDoc;
+
+      const isDeposit = tx.senderType === 1 && tx.receiverType === 2 && tx.receiverId === cfg.alliance_bank_alliance_id;
+      if (isDeposit) {
+        const idempotencyKey = `deposit:${cfg.alliance_bank_alliance_id}:${tx.id}`;
+        let depositLedger: BankingLedgerDoc;
+        try {
+          depositLedger = await this._db.createBankingLedgerEntry({
+            guild_id: guildId,
+            nation_id: tx.senderId || null,
+            type: 'deposit',
+            status: 'pending',
+            resources,
+            source_transaction_id: tx.id,
+            idempotency_key: idempotencyKey,
+            note: tx.note || null,
+            actor_discord_id: null,
+            error: null,
+          });
+        } catch (error) {
+          if (isDuplicateKeyError(error)) {
+            result.skipped += 1;
+            continue;
+          }
+          throw error;
+        }
+        const registration = tx.senderId > 0 ? await this._db.getByNationId(tx.senderId) : null;
+        if (registration) {
+          await this._db.creditNationBankBalance(guildId, registration.nation_id, resources);
+        } else {
+          await this._db.creditAlliancePoolBalance(guildId, resources);
+        }
+        await this._db.updateBankingLedgerStatus(depositLedger.ledger_id, 'completed');
+        await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, depositLedger.ledger_id);
+        result.processed += 1;
+        continue;
+      }
+
+      const idempotencyKey = `external-withdrawal:${cfg.alliance_bank_alliance_id}:${tx.id}`;
+      let withdrawalLedger: BankingLedgerDoc;
       try {
-        depositLedger = await this._db.createBankingLedgerEntry({
+        const registration = tx.receiverId > 0 ? await this._db.getByNationId(tx.receiverId) : null;
+        withdrawalLedger = await this._db.createBankingLedgerEntry({
           guild_id: guildId,
-          nation_id: tx.senderId || null,
-          type: 'deposit',
+          nation_id: registration?.nation_id ?? (tx.receiverId || null),
+          type: 'external-withdrawal',
           status: 'pending',
           resources,
           source_transaction_id: tx.id,
           idempotency_key: idempotencyKey,
-          note: tx.note || null,
+          note: tx.note || 'External alliance-bank withdrawal detected',
           actor_discord_id: null,
           error: null,
         });
+        const debited = registration
+          ? await this._db.debitNationBankBalance(guildId, registration.nation_id, resources)
+          : await this._db.debitAlliancePoolBalance(guildId, resources);
+        if (!debited.ok) {
+          await this._db.updateBankingLedgerStatus(
+            withdrawalLedger.ledger_id,
+            'failed',
+            'External withdrawal exceeded tracked balance. Manual reconcile required before trusting this balance.'
+          );
+          result.skipped += 1;
+          continue;
+        }
+        await this._db.updateBankingLedgerStatus(withdrawalLedger.ledger_id, 'completed');
+        await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, withdrawalLedger.ledger_id);
+        result.processed += 1;
       } catch (error) {
         if (isDuplicateKeyError(error)) {
           result.skipped += 1;
           continue;
         }
         throw error;
-      }
-      const registration = tx.senderId > 0 ? await this._db.getByNationId(tx.senderId) : null;
-      if (registration) {
-        await this._db.creditNationBankBalance(guildId, registration.nation_id, resources);
-      } else {
-        await this._db.creditAlliancePoolBalance(guildId, resources);
-      }
-      await this._db.updateBankingLedgerStatus(depositLedger.ledger_id, 'completed');
-      await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, depositLedger.ledger_id);
-      result.processed += 1;
-
-      const forwardLedger = await this._db.createBankingLedgerEntry({
-        guild_id: guildId,
-        nation_id: registration?.nation_id ?? null,
-        type: 'forward',
-        status: 'pending',
-        resources,
-        source_transaction_id: tx.id,
-        idempotency_key: `forward:${cfg.alliance_bank_alliance_id}:${tx.id}`,
-        note: `Auto-forward deposit ${tx.id}`,
-        actor_discord_id: null,
-        error: null,
-      });
-      try {
-        await offshoreClient.bankWithdraw({
-          receiverId: cfg.offshore_alliance_id,
-          receiverType: 2,
-          resources,
-          note: `bar3-auto-forward deposit:${tx.id}`,
-        });
-        await this._db.updateBankingLedgerStatus(forwardLedger.ledger_id, 'completed');
-        result.forwarded += 1;
-      } catch (error) {
-        await this._db.updateBankingLedgerStatus(forwardLedger.ledger_id, 'failed', toErrorMessage(error));
-        result.failedForwards += 1;
       }
     }
 
@@ -226,36 +298,9 @@ export class BankingService {
       await this._db.setBankingConfig(guildId, { last_sync_at: new Date().toISOString() });
     }
 
-    await this.retryFailedForwards(guildId);
     return result;
   }
 
-  async retryFailedForwards(guildId: string): Promise<number> {
-    const cfg = await this._db.getBankingConfig(guildId);
-    if (!cfg.enabled || !cfg.offshore_alliance_id || !cfg.bot_key) return 0;
-    const offshoreKey = this._resolveApiKey(cfg.offshore_api_key_ref);
-    if (!offshoreKey) return 0;
-    const offshoreClient = new PnWClient(offshoreKey);
-    const failed = await this._db.getBankingLedgerByStatus(guildId, 'failed', 100);
-    let retried = 0;
-    for (const row of failed) {
-      if (row.type !== 'forward') continue;
-      try {
-        await this._db.updateBankingLedgerStatus(row.ledger_id, 'pending');
-        await offshoreClient.bankWithdraw({
-          receiverId: cfg.offshore_alliance_id,
-          receiverType: 2,
-          resources: row.resources,
-          note: row.note ?? `bar3-forward-retry ${row.source_transaction_id ?? row.ledger_id}`,
-        });
-        await this._db.updateBankingLedgerStatus(row.ledger_id, 'completed');
-        retried += 1;
-      } catch (error) {
-        await this._db.updateBankingLedgerStatus(row.ledger_id, 'failed', toErrorMessage(error));
-      }
-    }
-    return retried;
-  }
 
   async withdrawToNation(
     guildId: string,
@@ -322,7 +367,8 @@ export class BankingService {
   ): Promise<{ ok: true; pool: BankingResourceBalance } | { ok: false; error: string }> {
     const cfg = await this._db.getBankingConfig(guildId);
     if (!cfg.enabled) return { ok: false, error: 'Banking is currently disabled for this guild.' };
-    if (!cfg.offshore_alliance_id) return { ok: false, error: 'Offshore alliance ID is not configured.' };
+    const offshoreAllianceId = await this._db.getGlobalOffshoreAllianceId(this._defaults.offshoreAllianceId);
+    if (!offshoreAllianceId) return { ok: false, error: 'Offshore alliance ID is not configured.' };
     if (!cfg.bot_key) return { ok: false, error: 'Banking configuration is missing bot_key.' };
     const allianceBankKey = this._resolveApiKey(cfg.alliance_bank_api_key_ref);
     if (!allianceBankKey) return { ok: false, error: 'Alliance-bank API key is not configured.' };
@@ -344,7 +390,7 @@ export class BankingService {
     });
     try {
       await client.bankWithdraw({
-        receiverId: cfg.offshore_alliance_id,
+        receiverId: offshoreAllianceId,
         receiverType: 2,
         resources,
         note: note ?? 'bar3-manual-offshore',

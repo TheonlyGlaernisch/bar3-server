@@ -130,9 +130,6 @@ if (BANKING_ENABLED) {
   if (!BOT_KEY) {
     throw new Error("Environment variable 'bot_key' is required when banking is enabled.");
   }
-  if (!OFFSHORE_ALLIANCE_ID) {
-    throw new Error("Environment variable 'OFFSHORE_ALLIANCE_ID' is required when banking is enabled.");
-  }
   if (!ALLIANCE_BANK_ALLIANCE_ID) {
     throw new Error("Environment variable 'ALLIANCE_BANK_ALLIANCE_ID' is required when banking is enabled.");
   }

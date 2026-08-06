@@ -187,6 +187,8 @@ function resolveCanonicalCommandNameFromInteraction(i: ChatInputCommandInteracti
   if (i.commandName === 'banking') {
     if (sub === 'withdraw') return 'banking_withdraw';
     if (sub === 'manual_offshore') return 'banking_manual_offshore';
+    if (sub === 'set_offshore') return 'banking_set_offshore';
+    if (sub === 'show_offshore') return 'banking_show_offshore';
   }
   if (i.commandName === 'roles') {
     if (sub === 'setup') return 'roles_setup';
@@ -1815,7 +1817,10 @@ async function main(): Promise<void> {
         .addNumberOption(o => o.setName('gasoline').setDescription('Gasoline amount'))
         .addNumberOption(o => o.setName('munitions').setDescription('Munitions amount'))
         .addNumberOption(o => o.setName('steel').setDescription('Steel amount'))
-        .addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount'))),
+        .addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount')))
+      .addSubcommand(sc => sc.setName('set_offshore').setDescription('Set the single global offshore alliance ID (ADMIN_DISCORD_IDS only)')
+        .addIntegerOption(o => o.setName('alliance_id').setDescription('Offshore alliance ID').setRequired(true).setMinValue(1)))
+      .addSubcommand(sc => sc.setName('show_offshore').setDescription('Show the single global offshore alliance ID')), 
     new SlashCommandBuilder().setName('roles').setDescription('Government role configuration')
       .addSubcommand(sc => sc.setName('setup').setDescription('Configure gov roles')
         .addRoleOption(o => o.setName('leader').setDescription('Leader role'))
@@ -2624,6 +2629,23 @@ ${resourceLines}
 \`\`\`${transferCmd}\`\`\``)],
         });
         return void interaction.reply({ content: `Grant request submitted in <#${grantChannelId}>.`, flags: MessageFlags.Ephemeral });
+      }
+      if (commandName === 'banking_set_offshore') {
+        if (!ADMIN_DISCORD_IDS.has(BigInt(interaction.user.id))) {
+          return void interaction.reply({ content: 'Only ADMIN_DISCORD_IDS may set the global offshore alliance ID.', flags: MessageFlags.Ephemeral });
+        }
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        const allianceId = interaction.options.getInteger('alliance_id', true);
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const result = await banking.setOffshoreAllianceId(allianceId, interaction.guildId, interaction.user.id);
+        const migrationLine = result.migrated && result.resources
+          ? `\nMigrated existing offshore holdings to the new offshore:\n${formatResourceSummary(result.resources)}`
+          : '';
+        return void interaction.followUp({ content: `Global offshore alliance ID set to **${result.offshoreAllianceId}**.${migrationLine}`, flags: MessageFlags.Ephemeral });
+      }
+      if (commandName === 'banking_show_offshore') {
+        const allianceId = await banking.getOffshoreAllianceId();
+        return void interaction.reply({ content: allianceId ? `Global offshore alliance ID: **${allianceId}**.` : 'Global offshore alliance ID is not configured.', flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'banking_manual_offshore') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });

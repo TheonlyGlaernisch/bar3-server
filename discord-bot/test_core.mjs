@@ -238,6 +238,31 @@ test('getAllianceBankTransactions maps bankrec payloads', async () => {
   assert.equal(rows[0].resources.food, 0);
 });
 
+test('getAllianceBankBalance maps alliance resource payload', async () => {
+  const client = new PnWClient('test-key');
+  client._query = async (_query, variables) => {
+    assert.deepEqual(variables.id, [654]);
+    return {
+      data: {
+        alliances: {
+          data: [{
+            money: 9876,
+            food: 100,
+            coal: 50,
+            steel: 25,
+          }],
+        },
+      },
+    };
+  };
+  const balance = await client.getAllianceBankBalance(654);
+  assert.equal(balance.money, 9876);
+  assert.equal(balance.food, 100);
+  assert.equal(balance.coal, 50);
+  assert.equal(balance.steel, 25);
+  assert.equal(balance.aluminum, 0);
+});
+
 test('bankWithdraw maps returned transfer and enforces transaction id', async () => {
   const client = new PnWClient('test-key');
   client._query = async (query, variables) => {
