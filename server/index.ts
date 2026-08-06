@@ -211,7 +211,7 @@ app.get('/health', (_req: Request, res: Response) => {
 // service, only one public port is exposed. Proxy bot endpoints to the local
 // flame_bot API listener so callers can use the same base URL.
 const FLAME_BOT_INTERNAL_URL = (process.env.FLAME_BOT_API_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
-const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || '';
+const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || process.env.API_KEY || '';
 const getRateLimitKey = (req: Request): string => req.ip || 'unknown-ip';
 const cleanupBotRouteRateLimitEntries = (now: number): void => {
   for (const [key, value] of botRouteRateLimit) {

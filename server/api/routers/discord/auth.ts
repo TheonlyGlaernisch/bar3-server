@@ -61,7 +61,7 @@ const ALLOWED_ABSOLUTE_RETURN_TO = parseConfiguredReturnToAllowlist();
 // Set FLAME_BOT_API_URL to the base URL of the running flame_bot (e.g. http://localhost:8080)
 // and FLAME_BOT_API_KEY to the same secret configured in flame_bot's API_KEY env var.
 const FLAME_BOT_API_URL = (process.env.FLAME_BOT_API_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
-const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || '';
+const FLAME_BOT_API_KEY = process.env.FLAME_BOT_API_KEY || process.env.API_KEY || '';
 const ROLE_CHECK_MAX_ATTEMPTS = 3;
 const ROLE_CHECK_RETRY_DELAY_MS = 400;
 const ROLE_CHECK_RESPONSE_TIMEOUT_MS = 4000;
