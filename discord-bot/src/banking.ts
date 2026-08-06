@@ -2,6 +2,7 @@ import {
   BANKING_RESOURCE_KEYS,
   BankingLedgerDoc,
   BankingResourceBalance,
+  NationBankBalanceWithRegistrationDoc,
   Database,
 } from './database';
 import { BankTransactionRecord, PnWClient } from './pnw_api';
@@ -42,6 +43,19 @@ function hasAnyAmount(balance: BankingResourceBalance): boolean {
   return BANKING_RESOURCE_KEYS.some((key) => Math.abs(balance[key]) > EPSILON);
 }
 
+
+function subtractBalance(available: BankingResourceBalance, needed: BankingResourceBalance): BankingResourceBalance {
+  const next = { ...available } as BankingResourceBalance;
+  for (const key of BANKING_RESOURCE_KEYS) next[key] -= needed[key];
+  return next;
+}
+
+function allocateBalance(available: BankingResourceBalance, needed: BankingResourceBalance): BankingResourceBalance {
+  const allocated = emptyBalance();
+  for (const key of BANKING_RESOURCE_KEYS) allocated[key] = Math.min(Math.max(available[key], 0), Math.max(needed[key], 0));
+  return allocated;
+}
+
 function balanceToNote(balance: BankingResourceBalance): string {
   return BANKING_RESOURCE_KEYS
     .filter((key) => Math.abs(balance[key]) > EPSILON)
@@ -75,6 +89,42 @@ export class BankingService {
     this._db = db;
     this._defaults = defaults;
     this._fallbackPnwApiKey = fallbackPnwApiKey;
+  }
+
+
+  private async _creditOffshoredDeposits(
+    guildId: string,
+    offshoredResources: BankingResourceBalance
+  ): Promise<{ credited: BankingResourceBalance; alliancePool: BankingResourceBalance }> {
+    let remaining = normalizeBalance(offshoredResources);
+    const credited = emptyBalance();
+    const pendingDeposits = await this._db.getBankingLedgerByTypeAndStatus(guildId, 'deposit', 'pending', 500);
+    for (const deposit of pendingDeposits) {
+      if (!hasAnyAmount(remaining)) break;
+      const resources = normalizeBalance(deposit.resources);
+      const allocated = allocateBalance(remaining, resources);
+      if (!hasAnyAmount(allocated)) continue;
+      const registration = deposit.nation_id ? await this._db.getByNationId(deposit.nation_id) : null;
+      if (registration && deposit.nation_id != null) {
+        await this._db.creditNationBankBalance(guildId, registration.nation_id, allocated);
+      } else {
+        await this._db.creditAlliancePoolBalance(guildId, allocated);
+      }
+      remaining = subtractBalance(remaining, allocated);
+      const leftoverDeposit = subtractBalance(resources, allocated);
+      if (hasAnyAmount(leftoverDeposit)) {
+        await this._db.updateBankingLedgerResources(deposit.ledger_id, leftoverDeposit);
+      } else {
+        await this._db.updateBankingLedgerStatus(deposit.ledger_id, 'completed');
+      }
+      for (const key of BANKING_RESOURCE_KEYS) credited[key] += allocated[key];
+    }
+    if (hasAnyAmount(remaining)) {
+      await this._db.creditAlliancePoolBalance(guildId, remaining);
+      for (const key of BANKING_RESOURCE_KEYS) credited[key] += remaining[key];
+    }
+    const alliancePool = await this._db.getAlliancePoolBalance(guildId);
+    return { credited, alliancePool };
   }
 
   private _resolveApiKey(apiKeyRef: string | null): string {
@@ -116,6 +166,17 @@ export class BankingService {
   async setBankingEnabled(guildId: string, enabled: boolean): Promise<boolean> {
     const row = await this._db.setBankingEnabled(guildId, enabled);
     return row.enabled;
+  }
+
+  async setApiKeyRefs(
+    guildId: string,
+    allianceBankApiKeyRef: string,
+    offshoreApiKeyRef: string
+  ): Promise<void> {
+    await this._db.setBankingConfig(guildId, {
+      alliance_bank_api_key_ref: allianceBankApiKeyRef.trim(),
+      offshore_api_key_ref: offshoreApiKeyRef.trim(),
+    });
   }
 
   async getOffshoreAllianceId(): Promise<number | null> {
@@ -237,13 +298,6 @@ export class BankingService {
           }
           throw error;
         }
-        const registration = tx.senderId > 0 ? await this._db.getByNationId(tx.senderId) : null;
-        if (registration) {
-          await this._db.creditNationBankBalance(guildId, registration.nation_id, resources);
-        } else {
-          await this._db.creditAlliancePoolBalance(guildId, resources);
-        }
-        await this._db.updateBankingLedgerStatus(depositLedger.ledger_id, 'completed');
         await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, depositLedger.ledger_id);
         result.processed += 1;
         continue;
@@ -395,13 +449,21 @@ export class BankingService {
         resources,
         note: note ?? 'bar3-manual-offshore',
       });
-      const pool = await this._db.creditAlliancePoolBalance(guildId, resources);
+      const credited = await this._creditOffshoredDeposits(guildId, resources);
       await this._db.updateBankingLedgerStatus(ledger.ledger_id, 'completed');
-      return { ok: true, pool };
+      return { ok: true, pool: credited.alliancePool };
     } catch (error) {
       await this._db.updateBankingLedgerStatus(ledger.ledger_id, 'failed', toErrorMessage(error));
       return { ok: false, error: toErrorMessage(error) };
     }
+  }
+
+  async getAlliancePoolVisibility(guildId: string): Promise<BankingResourceBalance> {
+    return this._db.getAlliancePoolBalance(guildId);
+  }
+
+  async getAllNationBalances(guildId: string): Promise<NationBankBalanceWithRegistrationDoc[]> {
+    return this._db.getAllNationBankBalances(guildId);
   }
 
   async getMemberVisibility(guildId: string, nationId: number): Promise<{
