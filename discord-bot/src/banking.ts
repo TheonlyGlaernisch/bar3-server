@@ -2,6 +2,7 @@ import {
   BANKING_RESOURCE_KEYS,
   BankingLedgerDoc,
   BankingResourceBalance,
+  NationBankBalanceWithRegistrationDoc,
   Database,
 } from './database';
 import { BankTransactionRecord, PnWClient } from './pnw_api';
@@ -116,6 +117,17 @@ export class BankingService {
   async setBankingEnabled(guildId: string, enabled: boolean): Promise<boolean> {
     const row = await this._db.setBankingEnabled(guildId, enabled);
     return row.enabled;
+  }
+
+  async setApiKeyRefs(
+    guildId: string,
+    allianceBankApiKeyRef: string,
+    offshoreApiKeyRef: string
+  ): Promise<void> {
+    await this._db.setBankingConfig(guildId, {
+      alliance_bank_api_key_ref: allianceBankApiKeyRef.trim(),
+      offshore_api_key_ref: offshoreApiKeyRef.trim(),
+    });
   }
 
   async getOffshoreAllianceId(): Promise<number | null> {
@@ -402,6 +414,14 @@ export class BankingService {
       await this._db.updateBankingLedgerStatus(ledger.ledger_id, 'failed', toErrorMessage(error));
       return { ok: false, error: toErrorMessage(error) };
     }
+  }
+
+  async getAlliancePoolVisibility(guildId: string): Promise<BankingResourceBalance> {
+    return this._db.getAlliancePoolBalance(guildId);
+  }
+
+  async getAllNationBalances(guildId: string): Promise<NationBankBalanceWithRegistrationDoc[]> {
+    return this._db.getAllNationBankBalances(guildId);
   }
 
   async getMemberVisibility(guildId: string, nationId: number): Promise<{

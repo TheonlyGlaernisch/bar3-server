@@ -186,7 +186,11 @@ function resolveCanonicalCommandNameFromInteraction(i: ChatInputCommandInteracti
   if (i.commandName === 'request' && sub === 'grant') return 'request_grant';
   if (i.commandName === 'banking') {
     if (sub === 'withdraw') return 'banking_withdraw';
+    if (sub === 'balance') return 'banking_balance';
+    if (sub === 'alliance_balance') return 'banking_alliance_balance';
+    if (sub === 'user_balances') return 'banking_user_balances';
     if (sub === 'manual_offshore') return 'banking_manual_offshore';
+    if (sub === 'set_api_keys') return 'banking_set_api_keys';
     if (sub === 'set_offshore') return 'banking_set_offshore';
     if (sub === 'show_offshore') return 'banking_show_offshore';
   }
@@ -802,6 +806,13 @@ function formatResourceSummary(resources: BankingResourceBalance): string {
     .filter((key) => resources[key] > 0)
     .map((key) => `${key}: ${Math.trunc(resources[key]).toLocaleString()}`);
   return lines.join('\n') || 'none';
+}
+
+function summarizeBalanceLine(resources: BankingResourceBalance): string {
+  return BANKING_RESOURCE_KEYS
+    .filter((key) => resources[key] > 0)
+    .map((key) => `${key}:${Math.trunc(resources[key]).toLocaleString()}`)
+    .join(', ') || 'none';
 }
 
 function formatMentionsForEmbed(memberIds: string[]): string {
@@ -1791,6 +1802,9 @@ async function main(): Promise<void> {
         .addNumberOption(o => o.setName('steel').setDescription('Steel amount'))
         .addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount'))),
     new SlashCommandBuilder().setName('banking').setDescription('Banking commands')
+      .addSubcommand(sc => sc.setName('balance').setDescription('View your registered nation deposit balance'))
+      .addSubcommand(sc => sc.setName('alliance_balance').setDescription('View alliance-held/unregistered deposit balance (leaders/admins only)'))
+      .addSubcommand(sc => sc.setName('user_balances').setDescription('View every tracked nation deposit balance (ADMIN_DISCORD_IDS only)'))
       .addSubcommand(sc => sc.setName('withdraw').setDescription('Withdraw from offshore to your nation balance')
         .addNumberOption(o => o.setName('money').setDescription('Money amount'))
         .addNumberOption(o => o.setName('food').setDescription('Food amount'))
@@ -1818,6 +1832,9 @@ async function main(): Promise<void> {
         .addNumberOption(o => o.setName('munitions').setDescription('Munitions amount'))
         .addNumberOption(o => o.setName('steel').setDescription('Steel amount'))
         .addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount')))
+      .addSubcommand(sc => sc.setName('set_api_keys').setDescription('Set alliance-bank and offshore API keys (ADMIN_DISCORD_IDS only)')
+        .addStringOption(o => o.setName('alliance_bank_api_key').setDescription('Alliance bank API key or env:VAR reference').setRequired(true))
+        .addStringOption(o => o.setName('offshore_api_key').setDescription('Offshore API key or env:VAR reference').setRequired(true)))
       .addSubcommand(sc => sc.setName('set_offshore').setDescription('Set the single global offshore alliance ID (ADMIN_DISCORD_IDS only)')
         .addIntegerOption(o => o.setName('alliance_id').setDescription('Offshore alliance ID').setRequired(true).setMinValue(1)))
       .addSubcommand(sc => sc.setName('show_offshore').setDescription('Show the single global offshore alliance ID')), 
@@ -2630,6 +2647,20 @@ ${resourceLines}
         });
         return void interaction.reply({ content: `Grant request submitted in <#${grantChannelId}>.`, flags: MessageFlags.Ephemeral });
       }
+
+      if (commandName === 'banking_set_api_keys') {
+        if (!ADMIN_DISCORD_IDS.has(BigInt(interaction.user.id))) {
+          return void interaction.reply({ content: 'Only ADMIN_DISCORD_IDS may set banking API keys.', flags: MessageFlags.Ephemeral });
+        }
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        const allianceBankApiKey = interaction.options.getString('alliance_bank_api_key', true).trim();
+        const offshoreApiKey = interaction.options.getString('offshore_api_key', true).trim();
+        if (!allianceBankApiKey || !offshoreApiKey) {
+          return void interaction.reply({ content: 'Both API keys are required.', flags: MessageFlags.Ephemeral });
+        }
+        await banking.setApiKeyRefs(interaction.guildId, allianceBankApiKey, offshoreApiKey);
+        return void interaction.reply({ content: 'Banking API keys updated for this guild.', flags: MessageFlags.Ephemeral });
+      }
       if (commandName === 'banking_set_offshore') {
         if (!ADMIN_DISCORD_IDS.has(BigInt(interaction.user.id))) {
           return void interaction.reply({ content: 'Only ADMIN_DISCORD_IDS may set the global offshore alliance ID.', flags: MessageFlags.Ephemeral });
@@ -2646,6 +2677,37 @@ ${resourceLines}
       if (commandName === 'banking_show_offshore') {
         const allianceId = await banking.getOffshoreAllianceId();
         return void interaction.reply({ content: allianceId ? `Global offshore alliance ID: **${allianceId}**.` : 'Global offshore alliance ID is not configured.', flags: MessageFlags.Ephemeral });
+      }
+
+      if (commandName === 'banking_balance') {
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        const registration = await db.getByDiscordId(BigInt(interaction.user.id));
+        if (!registration) return void interaction.reply({ content: 'You do not have a registered nation.', flags: MessageFlags.Ephemeral });
+        const view = await banking.getMemberVisibility(interaction.guildId, registration.nation_id);
+        return void interaction.reply({ content: `Deposit balance for nation **${registration.nation_id}**:
+${formatResourceSummary(view.nationBalance)}`, flags: MessageFlags.Ephemeral });
+      }
+      if (commandName === 'banking_alliance_balance') {
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['leader', '2ic'])) {
+          return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        }
+        const pool = await banking.getAlliancePoolVisibility(interaction.guildId);
+        return void interaction.reply({ content: `Alliance-held/unregistered deposit balance:
+${formatResourceSummary(pool)}`, flags: MessageFlags.Ephemeral });
+      }
+      if (commandName === 'banking_user_balances') {
+        if (!ADMIN_DISCORD_IDS.has(BigInt(interaction.user.id))) {
+          return void interaction.reply({ content: 'Only ADMIN_DISCORD_IDS may view every user balance.', flags: MessageFlags.Ephemeral });
+        }
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        const rows = await banking.getAllNationBalances(interaction.guildId);
+        const lines = rows.map((row) => {
+          const owner = row.registration ? `<@${row.registration.discord_id}>` : 'unregistered';
+          return `• Nation ${row.nation_id} (${owner}): ${summarizeBalanceLine(row.balances)}`;
+        });
+        return void interaction.reply({ content: lines.length ? lines.slice(0, 40).join('\n') : 'No tracked nation balances.', flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'banking_manual_offshore') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
