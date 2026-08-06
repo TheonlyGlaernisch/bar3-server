@@ -32,6 +32,14 @@ function _optionalString(key: string): string | null {
   return value ? value : null;
 }
 
+function _optionalStringList(key: string): string[] {
+  const value = process.env[key] || '';
+  return value
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
 function _optionalSnowflake(key: string): string | null {
   const value = (process.env[key] || '').trim();
   if (!value) return null;
@@ -121,6 +129,7 @@ export const LOG_LEVEL: 'DEBUG' | 'INFO' =
 
 export const BANKING_ENABLED: boolean = _optionalBool('BANKING_ENABLED', true);
 export const BANKING_SYNC_INTERVAL_SECONDS: number = _optionalInt('BANKING_SYNC_INTERVAL_SECONDS') ?? 120;
+export const BANKING_DEPOSIT_REQUIRED_WORDS: string[] = _optionalStringList('BANKING_DEPOSIT_REQUIRED_WORDS');
 export const OFFSHORE_ALLIANCE_ID: number | null = _optionalInt('OFFSHORE_ALLIANCE_ID');
 export const ALLIANCE_BANK_ALLIANCE_ID: number | null = _optionalInt('ALLIANCE_BANK_ALLIANCE_ID');
 export const ALLIANCE_BANK_API_KEY_REF: string | null = _optionalString('ALLIANCE_BANK_API_KEY_REF');

@@ -852,6 +852,21 @@ export class Database {
     );
   }
 
+  async updateBankingLedgerResources(
+    ledgerId: string,
+    resources: Partial<BankingResourceBalance>
+  ): Promise<void> {
+    await this._bankingLedger.updateOne(
+      { ledger_id: ledgerId },
+      {
+        $set: {
+          resources: this._normalizeBankingBalance(resources),
+          updated_at: new Date().toISOString(),
+        },
+      }
+    );
+  }
+
   async getLatestBankingActivity(guildId: string, nationId?: number): Promise<BankingLedgerDoc | null> {
     const filter: Record<string, unknown> = { guild_id: guildId };
     if (typeof nationId === 'number') filter['nation_id'] = nationId;
@@ -869,6 +884,19 @@ export class Database {
       .find({ guild_id: guildId, status }, { projection: { _id: 0 } })
       .toArray();
     rows.sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
+    return rows.slice(0, Math.max(0, Math.floor(limit)));
+  }
+
+  async getBankingLedgerByTypeAndStatus(
+    guildId: string,
+    type: BankingLedgerType,
+    status: BankingLedgerStatus,
+    limit = 500
+  ): Promise<BankingLedgerDoc[]> {
+    const rows = await this._bankingLedger
+      .find({ guild_id: guildId, type, status }, { projection: { _id: 0 } })
+      .toArray();
+    rows.sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
     return rows.slice(0, Math.max(0, Math.floor(limit)));
   }
 
