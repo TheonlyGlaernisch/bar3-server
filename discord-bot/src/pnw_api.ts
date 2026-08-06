@@ -837,6 +837,37 @@ export class PnWClient {
     })).filter((row) => row.id.length > 0);
   }
 
+
+  async getAllianceBankBalance(allianceId: number): Promise<LootResources> {
+    if (allianceId <= 0) {
+      return { money: 0, food: 0, coal: 0, oil: 0, uranium: 0, iron: 0, bauxite: 0, lead: 0, gasoline: 0, munitions: 0, steel: 0, aluminum: 0 };
+    }
+    const query = `query GetAllianceBankBalance($id: [Int]) {
+      alliances(id: $id, first: 1) {
+        data {
+          money food coal oil uranium iron bauxite lead gasoline munitions steel aluminum
+        }
+      }
+    }`;
+    const data = await this._query(query, { id: [allianceId] });
+    const alliances = (((data['data'] as Record<string, unknown>)?.['alliances'] as Record<string, unknown>)?.['data'] as unknown[]) ?? [];
+    const raw = (alliances[0] as Record<string, unknown> | undefined) ?? {};
+    return {
+      money: n(raw['money']),
+      food: n(raw['food']),
+      coal: n(raw['coal']),
+      oil: n(raw['oil']),
+      uranium: n(raw['uranium']),
+      iron: n(raw['iron']),
+      bauxite: n(raw['bauxite']),
+      lead: n(raw['lead']),
+      gasoline: n(raw['gasoline']),
+      munitions: n(raw['munitions']),
+      steel: n(raw['steel']),
+      aluminum: n(raw['aluminum']),
+    };
+  }
+
   async bankWithdraw(request: BankTransferRequest): Promise<BankTransactionRecord> {
     const query = `mutation BankWithdraw($receiver: Int!, $receiver_type: Int!, $note: String, $money: Float, $food: Float, $coal: Float, $oil: Float, $uranium: Float, $iron: Float, $bauxite: Float, $lead: Float, $gasoline: Float, $munitions: Float, $steel: Float, $aluminum: Float) {
       bankWithdraw(receiver: $receiver, receiver_type: $receiver_type, note: $note, money: $money, food: $food, coal: $coal, oil: $oil, uranium: $uranium, iron: $iron, bauxite: $bauxite, lead: $lead, gasoline: $gasoline, munitions: $munitions, steel: $steel, aluminum: $aluminum) {

@@ -350,6 +350,14 @@ test('setPnwApiKey and getPnwApiKey round-trip', async () => {
   assert.equal(await db.getPnwApiKey(), 'mykey123');
 });
 
+test('global offshore alliance ID config supports fallback and override', async () => {
+  const db = await makeDb();
+  assert.equal(await db.getGlobalOffshoreAllianceId(), null);
+  assert.equal(await db.getGlobalOffshoreAllianceId(1234), 1234);
+  await db.setGlobalOffshoreAllianceId(5678);
+  assert.equal(await db.getGlobalOffshoreAllianceId(1234), 5678);
+});
+
 // ---------------------------------------------------------------------------
 // War alert subscriptions
 // ---------------------------------------------------------------------------

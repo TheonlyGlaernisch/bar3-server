@@ -36,6 +36,39 @@
       </v-btn>
     </v-card>
 
+    <!-- Banking section -->
+    <v-card color="#1A1A1A" class="mb-6 pa-4">
+      <div class="d-flex align-center justify-space-between flex-wrap ga-3 mb-3">
+        <div>
+          <div class="text-subtitle-1 text-white font-weight-medium">
+            <v-icon size="small" class="mr-1">mdi-bank</v-icon>
+            Discord Banking
+          </div>
+          <div class="text-medium-emphasis caption">
+            Enable or disable banking commands and offshore automation for guilds managed by the bot.
+          </div>
+        </div>
+        <v-switch
+          v-model="bankingEnabled"
+          color="primary"
+          hide-details
+          inset
+          :loading="bankingLoading || bankingSaving"
+          :disabled="bankingLoading || bankingSaving"
+          :label="bankingEnabled ? 'Enabled' : 'Disabled'"
+          @update:model-value="updateBankingEnabled"
+        />
+      </div>
+      <v-alert v-if="bankingError" type="error" density="compact" class="mb-2">{{ bankingError }}</v-alert>
+      <v-alert v-if="bankingSuccess" type="success" density="compact" class="mb-2">Banking setting updated.</v-alert>
+      <div v-if="Object.keys(bankingEnabledByGuild).length" class="text-medium-emphasis caption">
+        Per-server status:
+        <span v-for="(enabled, guildId) in bankingEnabledByGuild" :key="guildId" class="mr-3">
+          <code>{{ guildId }}</code>: {{ enabled ? 'enabled' : 'disabled' }}
+        </span>
+      </div>
+    </v-card>
+
     <!-- Servers section -->
     <v-card color="#1A1A1A" class="mb-6 pa-4">
       <div class="text-subtitle-1 text-white font-weight-medium mb-3">
@@ -93,7 +126,7 @@
 
 <script lang="ts">
 import { defineComponent } from 'vue';
-import { botApi, BotServer, BotCommand } from '@/utilities/botApi';
+import { botApi, BotServer, BotCommand, BotBankingEnabledState } from '@/utilities/botApi';
 
 export default defineComponent({
   name: 'BotPanel',
@@ -104,6 +137,14 @@ export default defineComponent({
       sendLoading: false,
       sendError: '',
       sendSuccess: false,
+
+      // Banking
+      bankingEnabled: false,
+      bankingEnabledByGuild: {} as Record<string, boolean>,
+      bankingLoading: false,
+      bankingSaving: false,
+      bankingError: '',
+      bankingSuccess: false,
 
       // Servers
       servers: [] as BotServer[],
@@ -117,13 +158,48 @@ export default defineComponent({
     };
   },
   async created() {
-    await Promise.all([this.loadServers(), this.loadCommands()]);
+    await Promise.all([this.loadServers(), this.loadCommands(), this.loadBankingEnabled()]);
   },
   methods: {
     serverIconUrl(server: BotServer): string {
       if (!server.icon || server.icon.includes('{')) return '';
       if (/^https?:\/\//.test(server.icon)) return server.icon;
       return `https://cdn.discordapp.com/icons/${server.id}/${server.icon}.png?size=64`;
+    },
+    applyBankingState(state: BotBankingEnabledState) {
+      this.bankingEnabledByGuild = state.enabledByGuild ?? {};
+      if (typeof state.enabled === 'boolean') {
+        this.bankingEnabled = state.enabled;
+        return;
+      }
+      const values = Object.values(this.bankingEnabledByGuild);
+      this.bankingEnabled = values.length > 0 && values.every(Boolean);
+    },
+    async loadBankingEnabled() {
+      this.bankingLoading = true;
+      this.bankingError = '';
+      try {
+        this.applyBankingState(await botApi.getBankingEnabled());
+      } catch (e) {
+        this.bankingError = (e as any)?.message || 'Failed to load banking status';
+      } finally {
+        this.bankingLoading = false;
+      }
+    },
+    async updateBankingEnabled(value: boolean | null) {
+      const enabled = value === true;
+      this.bankingSaving = true;
+      this.bankingError = '';
+      this.bankingSuccess = false;
+      try {
+        this.applyBankingState(await botApi.setBankingEnabled(enabled));
+        this.bankingSuccess = true;
+      } catch (e) {
+        this.bankingError = (e as any)?.message || 'Failed to update banking status';
+        await this.loadBankingEnabled();
+      } finally {
+        this.bankingSaving = false;
+      }
     },
     async loadServers() {
       this.serversLoading = true;
