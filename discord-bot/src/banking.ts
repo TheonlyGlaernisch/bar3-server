@@ -5,7 +5,7 @@ import {
   NationBankBalanceWithRegistrationDoc,
   Database,
 } from './database';
-import { BankTransactionRecord, PnWClient } from './pnw_api';
+import { BankTransactionRecord, BankTransferRequest, PnWClient } from './pnw_api';
 
 const EPSILON = 0.000001;
 
@@ -23,6 +23,14 @@ export interface SyncResult {
   processed: number;
   skipped: number;
 }
+
+interface PnWBankingClient {
+  getAllianceBankTransactions(allianceId: number, opts?: { minId?: number; limit?: number }): Promise<BankTransactionRecord[]>;
+  getAllianceBankBalance(allianceId: number): Promise<Partial<BankingResourceBalance>>;
+  bankWithdraw(request: BankTransferRequest): Promise<BankTransactionRecord>;
+}
+
+type PnWBankingClientFactory = (apiKey: string) => PnWBankingClient;
 
 function emptyBalance(): BankingResourceBalance {
   const balance = {} as BankingResourceBalance;
@@ -89,14 +97,21 @@ export class BankingService {
   private readonly _db: Database;
   private readonly _defaults: BankingRuntimeDefaults;
   private readonly _fallbackPnwApiKey: string;
+  private readonly _clientFactory: PnWBankingClientFactory;
 
-  constructor(db: Database, defaults: BankingRuntimeDefaults, fallbackPnwApiKey: string) {
+  constructor(
+    db: Database,
+    defaults: BankingRuntimeDefaults,
+    fallbackPnwApiKey: string,
+    clientFactory: PnWBankingClientFactory = (apiKey) => new PnWClient(apiKey)
+  ) {
     this._db = db;
     this._defaults = {
       ...defaults,
       depositRequiredWords: defaults.depositRequiredWords.map((word) => word.trim().toLowerCase()).filter(Boolean),
     };
     this._fallbackPnwApiKey = fallbackPnwApiKey;
+    this._clientFactory = clientFactory;
   }
 
   private async _creditOffshoredDeposits(
@@ -210,7 +225,7 @@ export class BankingService {
       const cfg = await this._db.getBankingConfig(guildId);
       const offshoreKey = this._resolveApiKey(cfg.offshore_api_key_ref);
       if (!offshoreKey) throw new Error('Offshore API key is not configured; cannot migrate existing offshore holdings.');
-      const client = new PnWClient(offshoreKey);
+      const client = this._clientFactory(offshoreKey);
       const resources = normalizeBalance(await client.getAllianceBankBalance(previousAllianceId));
       if (hasAnyAmount(resources)) {
         const ledger = await this._db.createBankingLedgerEntry({
@@ -266,7 +281,7 @@ export class BankingService {
       throw new Error(`Banking is enabled for guild ${guildId} but the alliance bank API key reference is unresolved.`);
     }
 
-    const allianceBankClient = new PnWClient(allianceBankKey);
+    const allianceBankClient = this._clientFactory(allianceBankKey);
     const minId = parseCursorId(cfg.last_sync_cursor);
     const transactions = await allianceBankClient.getAllianceBankTransactions(cfg.alliance_bank_alliance_id, {
       minId: minId != null ? minId + 1 : undefined,
@@ -317,8 +332,33 @@ export class BankingService {
           }
           throw error;
         }
-        await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, depositLedger.ledger_id);
-        result.processed += 1;
+        const offshoreAllianceId = await this._db.getGlobalOffshoreAllianceId(this._defaults.offshoreAllianceId);
+        if (!offshoreAllianceId) {
+          await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, depositLedger.ledger_id);
+          result.skipped += 1;
+          continue;
+        }
+
+        try {
+          const transfer = await allianceBankClient.bankWithdraw({
+            receiverId: offshoreAllianceId,
+            receiverType: 2,
+            resources,
+            note: `bar3-auto-offshore deposit:${tx.id}`,
+          });
+          await this._db.markImportedBankTransaction(
+            guildId,
+            `auto-offshore-transfer:${transfer.id}`,
+            transfer.id,
+            depositLedger.ledger_id
+          );
+          await this._creditOffshoredDeposits(guildId, resources);
+          await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, depositLedger.ledger_id);
+          result.processed += 1;
+        } catch (error) {
+          await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, depositLedger.ledger_id);
+          result.skipped += 1;
+        }
         continue;
       }
 
@@ -395,7 +435,7 @@ export class BankingService {
       }
     }
 
-    const offshoreClient = new PnWClient(offshoreKey);
+    const offshoreClient = this._clientFactory(offshoreKey);
     const ledger = await this._db.createBankingLedgerEntry({
       guild_id: guildId,
       nation_id: nationId,
@@ -448,7 +488,7 @@ export class BankingService {
 
     const resources = normalizeBalance(resourcesInput);
     if (!hasAnyAmount(resources)) return { ok: false, error: 'Provide at least one positive resource amount.' };
-    const client = new PnWClient(allianceBankKey);
+    const client = this._clientFactory(allianceBankKey);
     const ledger = await this._db.createBankingLedgerEntry({
       guild_id: guildId,
       nation_id: null,

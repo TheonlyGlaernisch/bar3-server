@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Database } from './build/src/database.js';
+import { BankingService } from './build/src/banking.js';
 
 // ---------------------------------------------------------------------------
 // Lightweight pure-JS MongoDB mock (no binary download required).
@@ -485,4 +486,117 @@ test('banking ledger + idempotency entries support dedupe semantics', async () =
   const duplicate = await db.markImportedBankTransaction(guildId, 'idem-1', 'tx-1', ledger.ledger_id);
   assert.equal(inserted, true);
   assert.equal(duplicate, false);
+});
+
+
+test('syncGuildDeposits only credits deposits after successful offshore transfer', async () => {
+  const db = await makeDb();
+  const guildId = '1103';
+  const nationId = 6101;
+  await db.register(BigInt(9101), nationId, 'depositor');
+  await db.setBankingConfig(guildId, {
+    enabled: true,
+    bot_key: 'bot-key',
+    alliance_bank_alliance_id: 77,
+    alliance_bank_api_key_ref: 'alliance-key',
+  });
+  await db.setGlobalOffshoreAllianceId(88);
+
+  const withdrawals = [];
+  const service = new BankingService(db, {
+    enabled: true,
+    offshoreAllianceId: null,
+    allianceBankAllianceId: null,
+    allianceBankApiKeyRef: null,
+    offshoreApiKeyRef: null,
+    botKey: null,
+    depositRequiredWords: [],
+  }, '', () => ({
+    getAllianceBankBalance: async () => ({ money: 0 }),
+    getAllianceBankTransactions: async () => [{
+      id: '100',
+      date: new Date().toISOString(),
+      senderId: nationId,
+      senderType: 1,
+      receiverId: 77,
+      receiverType: 2,
+      bankerId: 1,
+      note: 'deposit',
+      resources: { money: 1234 },
+    }],
+    bankWithdraw: async (request) => {
+      withdrawals.push(request);
+      return {
+        id: '200',
+        date: new Date().toISOString(),
+        senderId: 77,
+        senderType: 2,
+        receiverId: request.receiverId,
+        receiverType: request.receiverType,
+        bankerId: 1,
+        note: request.note ?? '',
+        resources: request.resources,
+      };
+    },
+  }));
+
+  const result = await service.syncGuildDeposits(guildId);
+  const balance = await db.getNationBankBalance(guildId, nationId);
+  const latest = await db.getLatestBankingActivity(guildId, nationId);
+
+  assert.equal(result.processed, 1);
+  assert.equal(result.skipped, 0);
+  assert.equal(withdrawals.length, 1);
+  assert.equal(withdrawals[0].receiverId, 88);
+  assert.equal(withdrawals[0].receiverType, 2);
+  assert.equal(balance.money, 1234);
+  assert.equal(latest.status, 'completed');
+});
+
+test('syncGuildDeposits leaves deposited-but-not-offshored money out of balance', async () => {
+  const db = await makeDb();
+  const guildId = '1104';
+  const nationId = 6102;
+  await db.register(BigInt(9102), nationId, 'pending');
+  await db.setBankingConfig(guildId, {
+    enabled: true,
+    bot_key: 'bot-key',
+    alliance_bank_alliance_id: 77,
+    alliance_bank_api_key_ref: 'alliance-key',
+  });
+  await db.setGlobalOffshoreAllianceId(88);
+
+  const service = new BankingService(db, {
+    enabled: true,
+    offshoreAllianceId: null,
+    allianceBankAllianceId: null,
+    allianceBankApiKeyRef: null,
+    offshoreApiKeyRef: null,
+    botKey: null,
+    depositRequiredWords: [],
+  }, '', () => ({
+    getAllianceBankBalance: async () => ({ money: 0 }),
+    getAllianceBankTransactions: async () => [{
+      id: '101',
+      date: new Date().toISOString(),
+      senderId: nationId,
+      senderType: 1,
+      receiverId: 77,
+      receiverType: 2,
+      bankerId: 1,
+      note: 'deposit',
+      resources: { money: 500 },
+    }],
+    bankWithdraw: async () => { throw new Error('offshore transfer failed'); },
+  }));
+
+  const result = await service.syncGuildDeposits(guildId);
+  const balance = await db.getNationBankBalance(guildId, nationId);
+  const latest = await db.getLatestBankingActivity(guildId, nationId);
+
+  assert.equal(result.processed, 0);
+  assert.equal(result.skipped, 1);
+  assert.equal(balance.money, 0);
+  assert.equal(latest.status, 'pending');
+  assert.equal(latest.resources.money, 500);
 });
