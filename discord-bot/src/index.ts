@@ -2799,11 +2799,16 @@ ${resourceLines}
         if (!registration) return void interaction.reply({ content: 'You do not have a registered nation.', flags: MessageFlags.Ephemeral });
         const view = await banking.getMemberVisibility(interaction.guildId, registration.nation_id);
         const hasBalance = hasAnyPositiveBalance(view.nationBalance);
+        let nationFlag: string | null = null;
+        try {
+          const nation = await pnw.getNation(registration.nation_id);
+          nationFlag = nation?.flag || null;
+        } catch { /* fall back to Discord avatar below */ }
         const embed = new EmbedBuilder()
           .setTitle('💳 Deposit Balance')
           .setDescription(`Offshored deposit balance for nation **${registration.nation_id}**`)
           .setColor(hasBalance ? 0x2ECC71 : 0x99AAB5)
-          .setThumbnail(interaction.user.displayAvatarURL())
+          .setThumbnail(nationFlag || interaction.user.displayAvatarURL())
           .setTimestamp(new Date())
           .addFields(buildResourceFields(view.nationBalance));
         if (view.lastActivity) {
