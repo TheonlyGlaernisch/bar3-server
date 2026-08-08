@@ -127,8 +127,15 @@ export class BankingService {
   ): Promise<{ credited: BankingResourceBalance; alliancePool: BankingResourceBalance }> {
     let remaining = normalizeBalance(offshoredResources);
     const credited = emptyBalance();
+    const offshoreSetAt = await this._db.getGlobalOffshoreSetAt();
     const pendingDeposits = await this._db.getBankingLedgerByTypeAndStatus(guildId, 'deposit', 'pending', 500);
-    for (const deposit of pendingDeposits) {
+    // Deposits recorded before the offshore alliance was (last) configured aren't
+    // attributed to nations here — they're excluded from matching so that only
+    // deposits made after offshore was set get counted toward nation balances.
+    const eligibleDeposits = offshoreSetAt
+      ? pendingDeposits.filter((deposit) => deposit.created_at >= offshoreSetAt)
+      : pendingDeposits;
+    for (const deposit of eligibleDeposits) {
       if (!hasAnyAmount(remaining)) break;
       const resources = normalizeBalance(deposit.resources);
       const allocated = allocateBalance(remaining, resources);
