@@ -103,6 +103,8 @@ export interface BankingLedgerDoc {
   error: string | null;
   created_at: string;
   updated_at: string;
+  discord_channel_id?: string | null;
+  discord_message_id?: string | null;
 }
 
 export interface BankingIdempotencyDoc {
@@ -873,6 +875,17 @@ export class Database {
     const rows = await this._bankingLedger.find(filter, { projection: { _id: 0 } }).toArray();
     rows.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
     return rows[0] ?? null;
+  }
+
+  async getBankingLedgerEntry(ledgerId: string): Promise<BankingLedgerDoc | null> {
+    return this._bankingLedger.findOne({ ledger_id: ledgerId }, { projection: { _id: 0 } });
+  }
+
+  async setBankingLedgerDiscordMessage(ledgerId: string, channelId: string, messageId: string): Promise<void> {
+    await this._bankingLedger.updateOne(
+      { ledger_id: ledgerId },
+      { $set: { discord_channel_id: channelId, discord_message_id: messageId, updated_at: new Date().toISOString() } }
+    );
   }
 
   async getBankingLedgerByStatus(
