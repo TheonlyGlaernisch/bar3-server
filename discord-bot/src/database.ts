@@ -601,10 +601,21 @@ export class Database {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultValue;
   }
 
+  /** ISO timestamp of when the global offshore alliance ID was last (re)configured, or null if never set via setGlobalOffshoreAllianceId. */
+  async getGlobalOffshoreSetAt(): Promise<string | null> {
+    const doc = await this._botConfig.findOne({ key: 'banking_offshore_alliance_set_at' }, { projection: { _id: 0 } });
+    return doc?.value || null;
+  }
+
   async setGlobalOffshoreAllianceId(allianceId: number): Promise<void> {
     await this._botConfig.updateOne(
       { key: 'banking_offshore_alliance_id' },
       { $set: { key: 'banking_offshore_alliance_id', value: String(allianceId) } },
+      { upsert: true }
+    );
+    await this._botConfig.updateOne(
+      { key: 'banking_offshore_alliance_set_at' },
+      { $set: { key: 'banking_offshore_alliance_set_at', value: new Date().toISOString() } },
       { upsert: true }
     );
   }
