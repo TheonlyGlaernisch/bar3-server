@@ -2057,6 +2057,10 @@ async function main(): Promise<void> {
   let bankSyncTimer: NodeJS.Timeout | null = null;
   const postDepositOffshoreButtons = async (guildId: string, newDeposits: BankingLedgerDoc[]): Promise<void> => {
     if (newDeposits.length === 0) return;
+    // Don't post deposit logs until an offshore alliance is actually configured —
+    // otherwise every historical deposit picked up on first sync gets spammed as a log.
+    const offshoreAllianceId = await banking.getOffshoreAllianceId();
+      if (!offshoreAllianceId) return;
     const channelId = await db.getCounterRequestChannel(BigInt(guildId));
     if (!channelId) return;
     let channel: TextChannel | null = null;
