@@ -52,8 +52,8 @@ import {
 } from './config';
 import { handleWinlogPayload } from './winlog';
 import { createApp } from './api';
-import { BANKING_RESOURCE_KEYS, BankingResourceBalance, Database } from './database';
-import { BankingService } from './banking';
+import { BANKING_RESOURCE_KEYS, BankingLedgerDoc, BankingResourceBalance, Database } from './database';
+import { BankingService, balanceToNote } from './banking';
 import {
   PNW_TEST_REST_URL,
   PnWClient,
@@ -2017,12 +2017,52 @@ async function main(): Promise<void> {
 
   let inviteRefreshTimer: NodeJS.Timeout | null = null;
   let bankSyncTimer: NodeJS.Timeout | null = null;
+  const postDepositOffshoreButtons = async (guildId: string, newDeposits: BankingLedgerDoc[]): Promise<void> => {
+    if (newDeposits.length === 0) return;
+    const channelId = await db.getCounterRequestChannel(BigInt(guildId));
+    if (!channelId) return;
+    let channel: TextChannel | null = null;
+    try {
+      const fetched = await client.channels.fetch(channelId);
+      if (fetched instanceof TextChannel) channel = fetched;
+    } catch (error) {
+      logWarn(`[banking] failed to fetch counter request channel ${channelId} for guild ${guildId}:`, error);
+      return;
+    }
+    if (!channel) return;
+    for (const deposit of newDeposits) {
+      const embed = new EmbedBuilder()
+        .setTitle('New deposit logged')
+        .setDescription(
+          `**Nation:** ${deposit.nation_id ?? 'Unknown'}\n` +
+          `**Resources:** ${balanceToNote(deposit.resources)}\n` +
+          `**Note:** ${deposit.note || '—'}`
+        )
+        .setColor(0x2ECC71)
+        .setTimestamp(new Date(deposit.created_at));
+      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId('banking_offshore_btn_all')
+          .setLabel('Send All to Offshore')
+          .setStyle(ButtonStyle.Primary)
+          .setEmoji('🏦')
+      );
+      try {
+        const sentMessage = await channel.send({ embeds: [embed], components: [row] });
+        await db.setBankingLedgerDiscordMessage(deposit.ledger_id, channel.id, sentMessage.id);
+      } catch (error) {
+        logWarn(`[banking] failed to post deposit message for ledger ${deposit.ledger_id}:`, error);
+      }
+    }
+  };
+
   const syncAllGuildBanking = async (): Promise<void> => {
     if (!BANKING_ENABLED) return;
     const guildIds = client.guilds.cache.map((guild) => guild.id);
     for (const guildId of guildIds) {
       try {
-        await banking.syncGuildDeposits(guildId);
+        const result = await banking.syncGuildDeposits(guildId);
+        await postDepositOffshoreButtons(guildId, result.newDeposits);
       } catch (error) {
         logWarn(`[banking] sync failed for guild ${guildId}:`, error);
       }
@@ -2115,6 +2155,39 @@ async function main(): Promise<void> {
   });
 
   client.on('interactionCreate', async (interaction: Interaction) => {
+
+    if (interaction.isButton() && interaction.customId === 'banking_offshore_btn_all') {
+      if (!interaction.guildId) return void interaction.reply({ content: 'Guild only interaction.', flags: MessageFlags.Ephemeral });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const result = await banking.sendAllPendingDepositsToOffshore(interaction.guildId, interaction.user.id);
+      if (!result.ok) {
+        return void interaction.editReply({ content: `❌ ${result.error}` });
+      }
+      // Only disable/relabel buttons for deposits that were actually part of
+      // this successful transfer — anything not in sentLedgerIds wasn't sent
+      // and its message is left untouched so it can still be swept later.
+      const disabledRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId('banking_offshore_btn_done')
+          .setLabel(`Sent by @${interaction.user.username}`)
+          .setStyle(ButtonStyle.Success)
+          .setEmoji('✅')
+          .setDisabled(true)
+      );
+      for (const ledgerId of result.sentLedgerIds) {
+        try {
+          const deposit = await db.getBankingLedgerEntry(ledgerId);
+          if (!deposit?.discord_channel_id || !deposit.discord_message_id) continue;
+          const channel = await client.channels.fetch(deposit.discord_channel_id);
+          if (!(channel instanceof TextChannel)) continue;
+          const message = await channel.messages.fetch(deposit.discord_message_id);
+          if (message.editable) await message.edit({ components: [disabledRow] });
+        } catch (error) {
+          logWarn(`[banking] failed to disable offshore button for ledger ${ledgerId}:`, error);
+        }
+      }
+      return void interaction.editReply({ content: `✅ Sent ${result.sentLedgerIds.length} deposit(s) to offshore.` });
+    }
 
     if (interaction.isButton() && interaction.customId === 'verify_alliance_send_open_modal') {
       if (!interaction.guildId || !interaction.guild) return void interaction.reply({ content: 'Guild only interaction.', flags: MessageFlags.Ephemeral });
