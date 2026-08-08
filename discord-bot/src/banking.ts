@@ -22,6 +22,7 @@ export interface BankingRuntimeDefaults {
 export interface SyncResult {
   processed: number;
   skipped: number;
+  newDeposits: BankingLedgerDoc[];
 }
 
 interface PnWBankingClient {
@@ -59,13 +60,19 @@ function subtractBalance(available: BankingResourceBalance, needed: BankingResou
   return next;
 }
 
+function addBalance(a: BankingResourceBalance, b: BankingResourceBalance): BankingResourceBalance {
+  const next = { ...a } as BankingResourceBalance;
+  for (const key of BANKING_RESOURCE_KEYS) next[key] += b[key];
+  return next;
+}
+
 function allocateBalance(available: BankingResourceBalance, needed: BankingResourceBalance): BankingResourceBalance {
   const allocated = emptyBalance();
   for (const key of BANKING_RESOURCE_KEYS) allocated[key] = Math.min(Math.max(available[key], 0), Math.max(needed[key], 0));
   return allocated;
 }
 
-function balanceToNote(balance: BankingResourceBalance): string {
+export function balanceToNote(balance: BankingResourceBalance): string {
   return BANKING_RESOURCE_KEYS
     .filter((key) => Math.abs(balance[key]) > EPSILON)
     .map((key) => `${key}:${Math.trunc(balance[key] * 100) / 100}`)
@@ -268,7 +275,7 @@ export class BankingService {
 
   async syncGuildDeposits(guildId: string): Promise<SyncResult> {
     await this.ensureGuildConfig(guildId);
-    const result: SyncResult = { processed: 0, skipped: 0 };
+    const result: SyncResult = { processed: 0, skipped: 0, newDeposits: [] };
     const cfg = await this._db.getBankingConfig(guildId);
     if (!cfg.enabled) return result;
     if (!cfg.bot_key) throw new Error(`Banking is enabled for guild ${guildId} but bot_key is missing.`);
@@ -311,9 +318,13 @@ export class BankingService {
           result.skipped += 1;
           continue;
         }
-        let depositLedger: BankingLedgerDoc;
+        // Deposits are recorded and left pending in the alliance bank. They are
+        // NOT auto-forwarded to the offshore alliance — that only happens when
+        // a gov/econ user explicitly runs /banking manual_offshore, which sweeps
+        // the alliance bank and credits any matching pending deposit ledger
+        // entries via _creditOffshoredDeposits at that time.
         try {
-          depositLedger = await this._db.createBankingLedgerEntry({
+          const depositLedger = await this._db.createBankingLedgerEntry({
             guild_id: guildId,
             nation_id: tx.senderId || null,
             type: 'deposit',
@@ -325,39 +336,15 @@ export class BankingService {
             actor_discord_id: null,
             error: null,
           });
+          await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, depositLedger.ledger_id);
+          result.processed += 1;
+          result.newDeposits.push(depositLedger);
         } catch (error) {
           if (isDuplicateKeyError(error)) {
             result.skipped += 1;
             continue;
           }
           throw error;
-        }
-        const offshoreAllianceId = await this._db.getGlobalOffshoreAllianceId(this._defaults.offshoreAllianceId);
-        if (!offshoreAllianceId) {
-          await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, depositLedger.ledger_id);
-          result.skipped += 1;
-          continue;
-        }
-
-        try {
-          const transfer = await allianceBankClient.bankWithdraw({
-            receiverId: offshoreAllianceId,
-            receiverType: 2,
-            resources,
-            note: `bar3-auto-offshore deposit:${tx.id}`,
-          });
-          await this._db.markImportedBankTransaction(
-            guildId,
-            `auto-offshore-transfer:${transfer.id}`,
-            transfer.id,
-            depositLedger.ledger_id
-          );
-          await this._creditOffshoredDeposits(guildId, resources);
-          await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, depositLedger.ledger_id);
-          result.processed += 1;
-        } catch (error) {
-          await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, depositLedger.ledger_id);
-          result.skipped += 1;
         }
         continue;
       }
@@ -517,6 +504,48 @@ export class BankingService {
     }
   }
 
+  /**
+   * Sends EVERY currently-pending deposit for this guild to the offshore
+   * alliance in a single transfer, triggered by the "Send All to Offshore"
+   * button. Only deposits that are still 'pending' at the moment this runs
+   * are included, so nothing already sent gets double-processed.
+   *
+   * If the transfer to the offshore alliance fails, nothing is persisted as
+   * sent: the pending deposit ledger entries are left untouched (still
+   * 'pending') so they remain available to retry, and only the internal
+   * bookkeeping entry for this attempt is marked 'failed'. Deposits are only
+   * marked 'completed' — i.e. only "saved" as sent — once the offshore
+   * transfer has actually succeeded.
+   */
+  async sendAllPendingDepositsToOffshore(
+    guildId: string,
+    actorDiscordId: string
+  ): Promise<
+    | { ok: true; pool: BankingResourceBalance; sentLedgerIds: string[] }
+    | { ok: false; error: string }
+  > {
+    const pendingDeposits = await this._db.getBankingLedgerByTypeAndStatus(guildId, 'deposit', 'pending', 500);
+    if (pendingDeposits.length === 0) {
+      return { ok: false, error: 'No pending deposits to send.' };
+    }
+    const total = pendingDeposits.reduce(
+      (sum, deposit) => addBalance(sum, normalizeBalance(deposit.resources)),
+      emptyBalance()
+    );
+    if (!hasAnyAmount(total)) {
+      return { ok: false, error: 'No pending deposits to send.' };
+    }
+    const sentLedgerIds = pendingDeposits.map((d) => d.ledger_id);
+    const result = await this.manualSendToOffshore(
+      guildId,
+      total,
+      actorDiscordId,
+      `Sent via "Send All to Offshore" button (${sentLedgerIds.length} deposit(s))`
+    );
+    if (!result.ok) return result;
+    return { ok: true, pool: result.pool, sentLedgerIds };
+  }
+
   async getAlliancePoolVisibility(guildId: string): Promise<BankingResourceBalance> {
     return this._db.getAlliancePoolBalance(guildId);
   }
@@ -549,4 +578,3 @@ export class BankingService {
     };
   }
 }
-
