@@ -20,6 +20,7 @@ import {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  APIEmbedField,
 } from 'discord.js';
 import { createServer, Server } from 'http';
 
@@ -52,7 +53,7 @@ import {
 } from './config';
 import { handleWinlogPayload } from './winlog';
 import { createApp } from './api';
-import { BANKING_RESOURCE_KEYS, BankingLedgerDoc, BankingResourceBalance, Database } from './database';
+import { BANKING_RESOURCE_KEYS, BankingLedgerDoc, BankingResourceBalance, BankingResourceKey, Database } from './database';
 import { BankingService, balanceToNote } from './banking';
 import {
   PNW_TEST_REST_URL,
@@ -814,6 +815,43 @@ function summarizeBalanceLine(resources: BankingResourceBalance): string {
     .filter((key) => resources[key] > 0)
     .map((key) => `${key}:${Math.trunc(resources[key]).toLocaleString()}`)
     .join(', ') || 'none';
+}
+
+const RESOURCE_EMOJI: Record<BankingResourceKey, string> = {
+  money: '💰',
+  food: '🍞',
+  coal: '⚫',
+  oil: '🛢️',
+  uranium: '☢️',
+  iron: '⛏️',
+  bauxite: '🧱',
+  lead: '🔘',
+  gasoline: '⛽',
+  munitions: '💣',
+  steel: '🔩',
+  aluminum: '✈️',
+};
+
+function capitalizeResourceKey(key: BankingResourceKey): string {
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+function formatBalanceAmount(key: BankingResourceKey, value: number): string {
+  const rounded = Math.trunc(value);
+  return key === 'money' ? `$${rounded.toLocaleString()}` : rounded.toLocaleString();
+}
+
+/** Builds a grid of inline embed fields (one per resource, including zero balances) for balance displays. */
+function buildResourceFields(resources: BankingResourceBalance): APIEmbedField[] {
+  return BANKING_RESOURCE_KEYS.map((key) => ({
+    name: `${RESOURCE_EMOJI[key]} ${capitalizeResourceKey(key)}`,
+    value: formatBalanceAmount(key, resources[key]),
+    inline: true,
+  }));
+}
+
+function hasAnyPositiveBalance(resources: BankingResourceBalance): boolean {
+  return BANKING_RESOURCE_KEYS.some((key) => resources[key] > 0);
 }
 
 function formatMentionsForEmbed(memberIds: string[]): string {
@@ -2760,17 +2798,22 @@ ${resourceLines}
         const registration = await db.getByDiscordId(BigInt(interaction.user.id));
         if (!registration) return void interaction.reply({ content: 'You do not have a registered nation.', flags: MessageFlags.Ephemeral });
         const view = await banking.getMemberVisibility(interaction.guildId, registration.nation_id);
+        const hasBalance = hasAnyPositiveBalance(view.nationBalance);
         const embed = new EmbedBuilder()
-          .setTitle('Deposit balance')
+          .setTitle('💳 Deposit Balance')
           .setDescription(`Offshored deposit balance for nation **${registration.nation_id}**`)
-          .addFields({ name: 'Resources', value: formatResourceSummary(view.nationBalance) })
-          .setColor(0x2ECC71);
+          .setColor(hasBalance ? 0x2ECC71 : 0x99AAB5)
+          .setThumbnail(interaction.user.displayAvatarURL())
+          .setTimestamp(new Date())
+          .addFields(buildResourceFields(view.nationBalance));
         if (view.lastActivity) {
           embed.addFields({
             name: 'Latest activity',
             value: `${view.lastActivity.type} • ${view.lastActivity.status} • ${view.lastActivity.updated_at}`,
+            inline: false,
           });
         }
+        embed.setFooter({ text: 'Bar3 Banking' });
         return void interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'banking_alliance_balance') {
@@ -2779,8 +2822,15 @@ ${resourceLines}
           return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
         }
         const pool = await banking.getAlliancePoolVisibility(interaction.guildId);
-        return void interaction.reply({ content: `Alliance-held/unregistered deposit balance:
-${formatResourceSummary(pool)}`, flags: MessageFlags.Ephemeral });
+        const hasBalance = hasAnyPositiveBalance(pool);
+        const embed = new EmbedBuilder()
+          .setTitle('🏦 Alliance-Held Balance')
+          .setDescription('Alliance-held/unregistered deposit balance')
+          .setColor(hasBalance ? 0x2ECC71 : 0x99AAB5)
+          .setTimestamp(new Date())
+          .setFooter({ text: 'Bar3 Banking' })
+          .addFields(buildResourceFields(pool));
+        return void interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'banking_user_balances') {
         if (!ADMIN_DISCORD_IDS.has(BigInt(interaction.user.id))) {
@@ -2788,11 +2838,23 @@ ${formatResourceSummary(pool)}`, flags: MessageFlags.Ephemeral });
         }
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         const rows = await banking.getAllNationBalances(interaction.guildId);
-        const lines = rows.map((row) => {
+        const tracked = rows.filter((row) => hasAnyPositiveBalance(row.balances));
+        const shown = tracked.slice(0, 40);
+        const lines = shown.map((row) => {
           const owner = row.registration ? `<@${row.registration.discord_id}>` : 'unregistered';
-          return `• Nation ${row.nation_id} (${owner}): ${summarizeBalanceLine(row.balances)}`;
+          return `• **Nation ${row.nation_id}** (${owner}) — ${summarizeBalanceLine(row.balances)}`;
         });
-        return void interaction.reply({ content: lines.length ? lines.slice(0, 40).join('\n') : 'No tracked nation balances.', flags: MessageFlags.Ephemeral });
+        const embed = new EmbedBuilder()
+          .setTitle('📊 Tracked Nation Balances')
+          .setColor(0x2ECC71)
+          .setDescription(lines.length ? lines.join('\n') : '*No tracked nation balances.*')
+          .setTimestamp(new Date())
+          .setFooter({
+            text: tracked.length > shown.length
+              ? `Showing ${shown.length} of ${tracked.length} nation(s) with a balance`
+              : `${tracked.length} nation(s) with a balance`,
+          });
+        return void interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'banking_manual_offshore') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
