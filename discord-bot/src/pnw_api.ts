@@ -91,6 +91,7 @@ export interface Nation {
   nationName: string;
   leaderName: string;
   discordTag: string;
+  flag: string;
   numCities: number;
   score: number;
   lastActive: string;
@@ -430,6 +431,7 @@ const NATION_FIELDS = `
     alliance_seniority
     beige_turns
     color
+    flag
     alliance {
         name
     }
@@ -562,6 +564,7 @@ function parseNationDict(raw: Record<string, unknown>): Nation {
     nationName: s(raw['nation_name']),
     leaderName: s(raw['leader_name']),
     discordTag: s(raw['discord']),
+    flag: s(raw['flag']),
     numCities: n(raw['num_cities']),
     score: n(raw['score']),
     lastActive: laStr,
@@ -612,6 +615,7 @@ function parseNationFromNationsList(raw: Record<string, unknown>): Nation {
     nationName: s(raw['nation']),
     leaderName: s(raw['leader']),
     discordTag: '',
+    flag: s(raw['flag']),
     numCities: n(raw['cities']),
     score: n(raw['score']),
     lastActive: minutes ? `${minutes} minutes ago` : '',
@@ -1536,6 +1540,7 @@ export class PnWClient {
       nationName: s(data['name']),
       leaderName: s(data['leadername']),
       discordTag: '',
+      flag: s(data['flagurl']),
       numCities: n(data['cities']),
       score: n(data['score']),
       lastActive: minutes ? `${minutes} minutes ago` : '',
