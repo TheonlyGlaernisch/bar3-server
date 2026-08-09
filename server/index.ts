@@ -322,6 +322,13 @@ const proxyBotApi = async (req: Request, res: Response, method: 'get' | 'post', 
           }
         }
       }
+      if (path === '/api/bot/banking/alliance-pool-withdraw') {
+        const authDiscordId = (res.locals.discordAuth as { discordUserId?: string } | undefined)?.discordUserId;
+        const sessionDiscordId = req.session?.discordUserId || authDiscordId;
+        // Always use the authenticated session's Discord ID as the actor, regardless of
+        // what the client sent — this is what gets recorded in the banking ledger.
+        payload.actorDiscordId = typeof sessionDiscordId === 'string' ? sessionDiscordId.trim() : '';
+      }
       requestBuilder = requestBuilder.send(payload);
     }
     const upstream = await requestBuilder.timeout({ response: 10000, deadline: 15000 });
@@ -462,6 +469,26 @@ app.post('/api/member/nation/counter-request', rateLimit({
     }).catch(() => undefined);
   }
 });
+app.post('/api/member/nation/withdraw', rateLimit({
+  windowMs: BOT_ROUTE_WINDOW_MS,
+  limit: BOT_ROUTE_MAX_REQUESTS,
+  standardHeaders: true,
+  legacyHeaders: false,
+}), requireDiscordAuth, requireTrustedOriginForUnsafeMethod, requireDiscordMember, async (req: Request, res: Response) => {
+  const memberSelector = resolveMemberNationSelector(req, res);
+  if (!memberSelector) {
+    res.status(400).json({ error: 'Missing or invalid member identity' });
+    return;
+  }
+  await proxyBotApi(
+    req,
+    res,
+    'post',
+    `/api/member/nation/${encodeURIComponent(memberSelector)}/withdraw`
+  );
+});
+app.post('/api/bot/banking/alliance-pool-withdraw', botRouteLimiter, botWriteRouteLimiter, requireDiscordAuth, requireTrustedOriginForUnsafeMethod, requireDiscordAdmin, async (req: Request, res: Response) =>
+  proxyBotApi(req, res, 'post', '/api/bot/banking/alliance-pool-withdraw'));
 
 // PnW native auth and login UI routes must remain public and mounted before the auth guard.
 app.use('/auth/pnw', pnwNativeAuthRouter);
