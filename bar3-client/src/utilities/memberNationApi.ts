@@ -122,3 +122,28 @@ export async function requestCounterForWar(warId: number): Promise<void> {
   });
   if (!res.ok) throw new Error(await readError(res, 'Failed to request counter'));
 }
+
+export interface WithdrawResult {
+  remaining: Record<string, number>;
+}
+
+/**
+ * Withdraw resources from the caller's own tracked banking balance (offshore)
+ * to their registered nation, or optionally to a different nation ID.
+ */
+export async function withdrawFunds(
+  resources: Record<string, number>,
+  destinationNationId?: number | null
+): Promise<WithdrawResult> {
+  const body: Record<string, unknown> = { ...resources };
+  if (destinationNationId) body.nationId = destinationNationId;
+  const res = await fetch(`${AUTH_BASE_URL}/api/member/nation/withdraw`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await readError(res, 'Failed to withdraw funds'));
+  const data = await res.json();
+  return { remaining: data?.remaining ?? {} };
+}
