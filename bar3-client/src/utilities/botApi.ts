@@ -129,4 +129,19 @@ export const botApi = {
       throw new Error(await readError(res, 'Failed to send bot message'));
     }
   },
+
+  /**
+   * Withdraw from the alliance's unassigned pool balance to a specific nation.
+   * Admin-only. Backend: POST /api/bot/banking/alliance-pool-withdraw
+   */
+  async allianceBankPoolWithdraw(nationId: number, resources: Record<string, number>): Promise<Record<string, number>> {
+    const res = await botFetch(
+      '/api/bot/banking/alliance-pool-withdraw',
+      { method: 'POST' },
+      { nationId, ...resources }
+    );
+    if (!res.ok) throw new Error(await readError(res, 'Failed to withdraw from alliance pool'));
+    const data = await res.json();
+    return data?.remaining ?? {};
+  },
 };
