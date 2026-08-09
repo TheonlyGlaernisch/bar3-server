@@ -69,6 +69,52 @@
       </div>
     </v-card>
 
+    <!-- Alliance pool withdraw section -->
+    <v-card color="#1A1A1A" class="mb-6 pa-4">
+      <div class="text-subtitle-1 text-white font-weight-medium mb-1">
+        <v-icon size="small" class="mr-1">mdi-cash-multiple</v-icon>
+        Alliance Pool Withdraw
+      </div>
+      <div class="text-medium-emphasis caption mb-3">
+        Withdraw from the alliance's unassigned pool balance (unregistered-nation deposits) to a nation.
+      </div>
+      <v-text-field
+        v-model="poolWithdrawNationId"
+        label="Destination nation ID"
+        type="number"
+        min="1"
+        density="compact"
+        variant="outlined"
+        class="mb-2"
+        hide-details
+      />
+      <v-row dense>
+        <v-col v-for="key in resourceKeys" :key="key" cols="6" sm="4" md="3">
+          <v-text-field
+            v-model.number="poolWithdrawAmounts[key]"
+            :label="key.charAt(0).toUpperCase() + key.slice(1)"
+            type="number"
+            min="0"
+            density="compact"
+            variant="outlined"
+            hide-details
+          />
+        </v-col>
+      </v-row>
+      <v-alert v-if="poolWithdrawError" type="error" density="compact" class="mt-3">{{ poolWithdrawError }}</v-alert>
+      <v-alert v-if="poolWithdrawSuccess" type="success" density="compact" class="mt-3">Withdrawal completed.</v-alert>
+      <v-btn
+        color="primary"
+        class="mt-3"
+        :loading="poolWithdrawLoading"
+        :disabled="poolWithdrawLoading || !poolWithdrawNationId || !hasPositivePoolWithdrawAmount"
+        @click="submitPoolWithdraw"
+      >
+        <v-icon class="mr-1">mdi-cash-fast</v-icon>
+        Withdraw
+      </v-btn>
+    </v-card>
+
     <!-- Servers section -->
     <v-card color="#1A1A1A" class="mb-6 pa-4">
       <div class="text-subtitle-1 text-white font-weight-medium mb-3">
@@ -128,6 +174,8 @@
 import { defineComponent } from 'vue';
 import { botApi, BotServer, BotCommand, BotBankingEnabledState } from '@/utilities/botApi';
 
+const RESOURCE_KEYS = ['money', 'food', 'coal', 'oil', 'uranium', 'iron', 'bauxite', 'lead', 'gasoline', 'munitions', 'steel', 'aluminum'];
+
 export default defineComponent({
   name: 'BotPanel',
   data() {
@@ -146,6 +194,14 @@ export default defineComponent({
       bankingError: '',
       bankingSuccess: false,
 
+      // Alliance pool withdraw
+      resourceKeys: RESOURCE_KEYS,
+      poolWithdrawNationId: '',
+      poolWithdrawAmounts: {} as Record<string, number | null>,
+      poolWithdrawLoading: false,
+      poolWithdrawError: '',
+      poolWithdrawSuccess: false,
+
       // Servers
       servers: [] as BotServer[],
       serversLoading: false,
@@ -156,6 +212,11 @@ export default defineComponent({
       commandsLoading: false,
       commandsError: '',
     };
+  },
+  computed: {
+    hasPositivePoolWithdrawAmount(): boolean {
+      return Object.values(this.poolWithdrawAmounts).some((amount) => typeof amount === 'number' && amount > 0);
+    },
   },
   async created() {
     await Promise.all([this.loadServers(), this.loadCommands(), this.loadBankingEnabled()]);
@@ -236,6 +297,35 @@ export default defineComponent({
         this.sendError = (e as any)?.message || 'Failed to send message';
       } finally {
         this.sendLoading = false;
+      }
+    },
+    async submitPoolWithdraw() {
+      this.poolWithdrawError = '';
+      this.poolWithdrawSuccess = false;
+      const nationId = parseInt(this.poolWithdrawNationId, 10);
+      if (!Number.isInteger(nationId) || nationId <= 0) {
+        this.poolWithdrawError = 'Destination nation ID must be a positive integer.';
+        return;
+      }
+      const resources: Record<string, number> = {};
+      for (const key of this.resourceKeys) {
+        const amount = this.poolWithdrawAmounts[key];
+        if (typeof amount === 'number' && amount > 0) resources[key] = amount;
+      }
+      if (Object.keys(resources).length === 0) {
+        this.poolWithdrawError = 'Enter at least one resource amount greater than zero.';
+        return;
+      }
+      this.poolWithdrawLoading = true;
+      try {
+        await botApi.allianceBankPoolWithdraw(nationId, resources);
+        this.poolWithdrawSuccess = true;
+        this.poolWithdrawAmounts = {};
+        this.poolWithdrawNationId = '';
+      } catch (e) {
+        this.poolWithdrawError = (e as any)?.message || 'Failed to withdraw from alliance pool';
+      } finally {
+        this.poolWithdrawLoading = false;
       }
     },
   },
