@@ -841,6 +841,30 @@ export class PnWClient {
     })).filter((row) => row.id.length > 0);
   }
 
+  /**
+   * Returns the ID of the newest bank record for this alliance, or null if there are
+   * none. Used to seed a sync cursor baseline so a fresh sync doesn't backfill the
+   * alliance's entire bank history (bankrecs only supports orderBy ASC + min_id,
+   * so "newest" has to be fetched with a separate DESC query).
+   */
+  async getLatestAllianceBankTransactionId(allianceId: number): Promise<string | null> {
+    if (allianceId <= 0) return null;
+    const query = `query GetLatestAllianceBankTransaction($or_id: [Int], $or_type: [Int]) {
+      bankrecs(or_id: $or_id, or_type: $or_type, first: 1, orderBy: { column: ID, order: DESC }) {
+        data { id }
+      }
+    }`;
+    const data = await this._query(query, { or_id: [allianceId], or_type: [2] });
+    const payload = (data['data'] as Record<string, unknown>) ?? {};
+    const paginator = (payload['bankrecs'] as Record<string, unknown>) ?? {};
+    const rows = Array.isArray(paginator['data'])
+      ? paginator['data'] as Array<Record<string, unknown>>
+      : Array.isArray(payload['bankrecs'])
+        ? payload['bankrecs'] as Array<Record<string, unknown>>
+        : [];
+    const id = rows[0] ? String(rows[0]['id'] ?? '') : '';
+    return id.length > 0 ? id : null;
+  }
 
   async getAllianceBankBalance(allianceId: number): Promise<LootResources> {
     if (allianceId <= 0) {
