@@ -84,6 +84,7 @@ export type BankingLedgerType =
   | 'deposit'
   | 'external-withdrawal'
   | 'withdraw'
+  | 'alliance-pool-withdraw'
   | 'manual-offshore'
   | 'offshore-migration'
   | 'reconcile';
