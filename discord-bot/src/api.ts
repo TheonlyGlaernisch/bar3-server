@@ -72,7 +72,7 @@
 import express, { Application, NextFunction, Request, RequestHandler, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { registerLeaderboardRoute } from './api_leaderboard_route';
-import { Database } from './database';
+import { Database, BANKING_RESOURCE_KEYS } from './database';
 import { Guild, GuildMember } from 'discord.js';
 import { registerWinlogRoute } from './api_winlog_route';
 import { WinlogPayload } from './winlog';
@@ -194,6 +194,16 @@ export type MemberNationCounterRequestResult =
   | { ok: false; status: number; error: string; };
 export type MemberNationCounterRequestHandler =
   (discordId: string, warId: number) => Promise<MemberNationCounterRequestResult>;
+export type MemberNationWithdrawResult =
+  | { ok: true; remaining: Record<string, number>; }
+  | { ok: false; status: number; error: string; };
+export type MemberNationWithdrawHandler =
+  (discordId: string, resources: Record<string, number>, destinationNationId: number | null) => Promise<MemberNationWithdrawResult>;
+export type AllianceBankPoolWithdrawResult =
+  | { ok: true; remaining: Record<string, number>; }
+  | { ok: false; status: number; error: string; };
+export type AllianceBankPoolWithdrawHandler =
+  (resources: Record<string, number>, destinationNationId: number, actorDiscordId: string) => Promise<AllianceBankPoolWithdrawResult>;
 
 export interface CreateAppOptions {
   guildGetter: GuildGetter;
@@ -206,6 +216,8 @@ export interface CreateAppOptions {
   adminIds?: Set<bigint>;
   memberNationContextGetter?: MemberNationContextGetter;
   memberNationCounterRequestHandler?: MemberNationCounterRequestHandler;
+  memberNationWithdrawHandler?: MemberNationWithdrawHandler;
+  allianceBankPoolWithdrawHandler?: AllianceBankPoolWithdrawHandler;
   bankingEnabledGetter?: () => Promise<{ enabled: boolean } | { enabledByGuild: Record<string, boolean> }>;
   bankingEnabledSetter?: (enabled: boolean) => Promise<{ enabled: boolean } | { enabledByGuild: Record<string, boolean> }>;
   winlogSecret?: string | null;
@@ -461,6 +473,8 @@ export function createApp(options: CreateAppOptions): Application {
     adminIds = new Set<bigint>(),
     memberNationContextGetter,
     memberNationCounterRequestHandler,
+    memberNationWithdrawHandler,
+    allianceBankPoolWithdrawHandler,
     bankingEnabledGetter,
     bankingEnabledSetter,
     winlogSecret = null,
@@ -706,6 +720,87 @@ export function createApp(options: CreateAppOptions): Application {
       return;
     }
     memberNationContextCache.delete(memberSelector);
+    res.status(200).json(result);
+  });
+  app.post('/api/member/nation/:discord_id/withdraw', async (req: Request, res: Response) => {
+    if (!checkApiKey(req, apiKey)) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    if (!memberNationWithdrawHandler) {
+      res.status(503).json({ error: 'Bot not ready' });
+      return;
+    }
+    const memberSelector = req.params['discord_id'] ?? '';
+    if (!isMemberSelector(memberSelector)) {
+      res.status(400).json({ error: 'Invalid member selector' });
+      return;
+    }
+    const body = (req.body as Record<string, unknown> | undefined) ?? {};
+    const resources: Record<string, number> = {};
+    for (const key of BANKING_RESOURCE_KEYS) {
+      const raw = body[key];
+      const num = typeof raw === 'number' ? raw : parseFloat(String(raw ?? ''));
+      if (Number.isFinite(num) && num > 0) resources[key] = num;
+    }
+    if (Object.keys(resources).length === 0) {
+      res.status(400).json({ error: 'Provide at least one positive resource amount' });
+      return;
+    }
+    let destinationNationId: number | null = null;
+    const nationIdRaw = body['nationId'];
+    if (nationIdRaw !== undefined && nationIdRaw !== null && nationIdRaw !== '') {
+      const parsed = typeof nationIdRaw === 'number' ? nationIdRaw : parseInt(String(nationIdRaw), 10);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        res.status(400).json({ error: 'nationId must be a positive integer' });
+        return;
+      }
+      destinationNationId = parsed;
+    }
+    const result = await memberNationWithdrawHandler(memberSelector, resources, destinationNationId);
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    memberNationContextCache.delete(memberSelector);
+    res.status(200).json(result);
+  });
+  app.post('/api/bot/banking/alliance-pool-withdraw', async (req: Request, res: Response) => {
+    if (!checkApiKey(req, apiKey)) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    if (!allianceBankPoolWithdrawHandler) {
+      res.status(503).json({ error: 'Bot not ready' });
+      return;
+    }
+    const body = (req.body as Record<string, unknown> | undefined) ?? {};
+    const nationIdRaw = body['nationId'];
+    const nationId = typeof nationIdRaw === 'number' ? nationIdRaw : parseInt(String(nationIdRaw ?? ''), 10);
+    if (!Number.isInteger(nationId) || nationId <= 0) {
+      res.status(400).json({ error: 'nationId must be a positive integer' });
+      return;
+    }
+    const actorDiscordId = typeof body['actorDiscordId'] === 'string' ? (body['actorDiscordId'] as string).trim() : '';
+    if (!actorDiscordId) {
+      res.status(400).json({ error: 'actorDiscordId is required' });
+      return;
+    }
+    const resources: Record<string, number> = {};
+    for (const key of BANKING_RESOURCE_KEYS) {
+      const raw = body[key];
+      const num = typeof raw === 'number' ? raw : parseFloat(String(raw ?? ''));
+      if (Number.isFinite(num) && num > 0) resources[key] = num;
+    }
+    if (Object.keys(resources).length === 0) {
+      res.status(400).json({ error: 'Provide at least one positive resource amount' });
+      return;
+    }
+    const result = await allianceBankPoolWithdrawHandler(resources, nationId, actorDiscordId);
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
     res.status(200).json(result);
   });
 
