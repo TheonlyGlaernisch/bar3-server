@@ -192,6 +192,7 @@ function resolveCanonicalCommandNameFromInteraction(i: ChatInputCommandInteracti
     if (sub === 'alliance_balance') return 'banking_alliance_balance';
     if (sub === 'user_balances') return 'banking_user_balances';
     if (sub === 'manual_offshore') return 'banking_manual_offshore';
+    if (sub === 'alliance_pool_withdraw') return 'banking_alliance_pool_withdraw';
     if (sub === 'set_api_keys') return 'banking_set_api_keys';
     if (sub === 'set_offshore') return 'banking_set_offshore';
     if (sub === 'show_offshore') return 'banking_show_offshore';
@@ -1846,6 +1847,7 @@ async function main(): Promise<void> {
       .addSubcommand(sc => sc.setName('alliance_balance').setDescription('View alliance-held/unregistered deposit balance (leaders/admins only)'))
       .addSubcommand(sc => sc.setName('user_balances').setDescription('View every tracked nation deposit balance (ADMIN_DISCORD_IDS only)'))
       .addSubcommand(sc => sc.setName('withdraw').setDescription('Withdraw from offshore to your nation balance')
+        .addIntegerOption(o => o.setName('nation_id').setDescription('Send to a different nation ID instead of your own (still debits your balance)'))
         .addNumberOption(o => o.setName('money').setDescription('Money amount'))
         .addNumberOption(o => o.setName('food').setDescription('Food amount'))
         .addNumberOption(o => o.setName('coal').setDescription('Coal amount'))
@@ -1860,6 +1862,20 @@ async function main(): Promise<void> {
         .addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount')))
       .addSubcommand(sc => sc.setName('manual_offshore').setDescription('Manually send alliance-bank funds to offshore')
         .addStringOption(o => o.setName('note').setDescription('Optional transfer note'))
+        .addNumberOption(o => o.setName('money').setDescription('Money amount'))
+        .addNumberOption(o => o.setName('food').setDescription('Food amount'))
+        .addNumberOption(o => o.setName('coal').setDescription('Coal amount'))
+        .addNumberOption(o => o.setName('oil').setDescription('Oil amount'))
+        .addNumberOption(o => o.setName('uranium').setDescription('Uranium amount'))
+        .addNumberOption(o => o.setName('iron').setDescription('Iron amount'))
+        .addNumberOption(o => o.setName('bauxite').setDescription('Bauxite amount'))
+        .addNumberOption(o => o.setName('lead').setDescription('Lead amount'))
+        .addNumberOption(o => o.setName('gasoline').setDescription('Gasoline amount'))
+        .addNumberOption(o => o.setName('munitions').setDescription('Munitions amount'))
+        .addNumberOption(o => o.setName('steel').setDescription('Steel amount'))
+        .addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount')))
+      .addSubcommand(sc => sc.setName('alliance_pool_withdraw').setDescription('Withdraw from the alliance (unassigned) pool balance to a nation (leaders/econ only)')
+        .addIntegerOption(o => o.setName('nation_id').setDescription('Nation ID to send the funds to').setRequired(true).setMinValue(1))
         .addNumberOption(o => o.setName('money').setDescription('Money amount'))
         .addNumberOption(o => o.setName('food').setDescription('Food amount'))
         .addNumberOption(o => o.setName('coal').setDescription('Coal amount'))
@@ -2057,10 +2073,6 @@ async function main(): Promise<void> {
   let bankSyncTimer: NodeJS.Timeout | null = null;
   const postDepositOffshoreButtons = async (guildId: string, newDeposits: BankingLedgerDoc[]): Promise<void> => {
     if (newDeposits.length === 0) return;
-    // Don't post deposit logs until an offshore alliance is actually configured —
-    // otherwise every historical deposit picked up on first sync gets spammed as a log.
-    const offshoreAllianceId = await banking.getOffshoreAllianceId();
-      if (!offshoreAllianceId) return;
     const channelId = await db.getCounterRequestChannel(BigInt(guildId));
     if (!channelId) return;
     let channel: TextChannel | null = null;
@@ -2895,6 +2907,36 @@ ${resourceLines}
           flags: MessageFlags.Ephemeral,
         });
       }
+      if (commandName === 'banking_alliance_pool_withdraw') {
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        if (!await hasGovAccess(interaction, db, ['econ', 'econ_gov', 'leader', '2ic'])) {
+          return void interaction.reply({ content: 'Missing permissions.', flags: MessageFlags.Ephemeral });
+        }
+        const enabled = await banking.getBankingEnabled(interaction.guildId);
+        if (!enabled) return void interaction.reply({ content: 'Banking is currently disabled.', flags: MessageFlags.Ephemeral });
+        const destinationNationId = interaction.options.getInteger('nation_id', true);
+        const resources = getResourceOptionsFromInteraction(interaction);
+        if (!hasPositiveResourceInput(resources)) {
+          return void interaction.reply({ content: 'Provide at least one resource amount greater than zero.', flags: MessageFlags.Ephemeral });
+        }
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const result = await banking.withdrawFromAlliancePool(
+          interaction.guildId,
+          resources,
+          interaction.user.id,
+          destinationNationId
+        );
+        if (!result.ok) {
+          return void interaction.followUp({ content: `Withdrawal failed: ${result.error}`, flags: MessageFlags.Ephemeral });
+        }
+        return void interaction.followUp({
+          content:
+            `Withdrew from the alliance pool to nation **${destinationNationId}**.\nRequested:\n${formatResourceSummary(resources)}\n\n` +
+            `Remaining alliance pool:\n${formatResourceSummary(result.remaining)}`,
+          flags: MessageFlags.Ephemeral,
+        });
+      }
       if (commandName === 'banking_withdraw') {
         if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
         if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
@@ -2908,19 +2950,28 @@ ${resourceLines}
         if (!hasPositiveResourceInput(resources)) {
           return void interaction.reply({ content: 'Provide at least one resource amount greater than zero.', flags: MessageFlags.Ephemeral });
         }
+        const destinationNationId = interaction.options.getInteger('nation_id');
+        if (destinationNationId != null && destinationNationId <= 0) {
+          return void interaction.reply({ content: 'nation_id must be a positive integer.', flags: MessageFlags.Ephemeral });
+        }
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const result = await banking.withdrawToNation(
           interaction.guildId,
           registration.nation_id,
           resources,
-          interaction.user.id
+          interaction.user.id,
+          destinationNationId
         );
         if (!result.ok) {
           return void interaction.followUp({ content: `Withdrawal failed: ${result.error}`, flags: MessageFlags.Ephemeral });
         }
+        const recipientNationId = destinationNationId ?? registration.nation_id;
         return void interaction.followUp({
           content:
-            `Withdrawal completed for nation **${registration.nation_id}**.\nRequested:\n${formatResourceSummary(resources)}\n\n` +
+            (recipientNationId === registration.nation_id
+              ? `Withdrawal completed for nation **${registration.nation_id}**.\n`
+              : `Withdrawal completed from your balance (nation **${registration.nation_id}**), sent to nation **${recipientNationId}**.\n`) +
+            `Requested:\n${formatResourceSummary(resources)}\n\n` +
             `Remaining balance:\n${formatResourceSummary(result.remaining)}`,
           flags: MessageFlags.Ephemeral,
         });
@@ -4050,6 +4101,22 @@ Message: ${cfg.message}`)],
           defenderDiscordId: discordIdStr,
         }, ...withoutWar]);
         return { ok: true as const, warId, requestedAt };
+      },
+      memberNationWithdrawHandler: async (discordIdStr: string, resources: Record<string, number>, destinationNationId: number | null) => {
+        const registration = await resolveRegistrationByMemberSelector(discordIdStr);
+        if (!registration) return { ok: false as const, status: 404, error: 'No nation registration found for the provided member identifier.' };
+        const memberGuildId = getPrimaryGuild(client)?.id ?? null;
+        if (!memberGuildId) return { ok: false as const, status: 503, error: 'Bot is not in a configured guild.' };
+        const result = await banking.withdrawToNation(memberGuildId, registration.nation_id, resources, discordIdStr, destinationNationId);
+        if (!result.ok) return { ok: false as const, status: 400, error: result.error };
+        return { ok: true as const, remaining: result.remaining };
+      },
+      allianceBankPoolWithdrawHandler: async (resources: Record<string, number>, destinationNationId: number, actorDiscordId: string) => {
+        const memberGuildId = getPrimaryGuild(client)?.id ?? null;
+        if (!memberGuildId) return { ok: false as const, status: 503, error: 'Bot is not in a configured guild.' };
+        const result = await banking.withdrawFromAlliancePool(memberGuildId, resources, actorDiscordId, destinationNationId);
+        if (!result.ok) return { ok: false as const, status: 400, error: result.error };
+        return { ok: true as const, remaining: result.remaining };
       },
         winlogSecret: WINLOG_POST_SECRET,
         winlogHandler: (payload) => handleWinlogPayload(client, db, payload),
