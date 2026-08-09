@@ -27,6 +27,7 @@ export interface SyncResult {
 
 interface PnWBankingClient {
   getAllianceBankTransactions(allianceId: number, opts?: { minId?: number; limit?: number }): Promise<BankTransactionRecord[]>;
+  getLatestAllianceBankTransactionId(allianceId: number): Promise<string | null>;
   getAllianceBankBalance(allianceId: number): Promise<Partial<BankingResourceBalance>>;
   bankWithdraw(request: BankTransferRequest): Promise<BankTransactionRecord>;
 }
@@ -297,8 +298,24 @@ export class BankingService {
 
     const allianceBankClient = this._clientFactory(allianceBankKey);
     const minId = parseCursorId(cfg.last_sync_cursor);
+
+    if (minId == null) {
+      // First-ever sync for this guild. The bankrecs API only supports orderBy ASC
+      // with a min_id filter, so a null cursor would otherwise pull the OLDEST
+      // transactions in the alliance's entire bank history (up to the 500 limit)
+      // and treat every one of them as "new" — spamming a deposit log per row.
+      // Instead, baseline the cursor at the current newest transaction and do no
+      // processing this run; only transactions from this point forward are tracked.
+      const latestId = await allianceBankClient.getLatestAllianceBankTransactionId(cfg.alliance_bank_alliance_id);
+      await this._db.setBankingConfig(guildId, {
+        last_sync_cursor: latestId,
+        last_sync_at: new Date().toISOString(),
+      });
+      return result;
+    }
+
     const transactions = await allianceBankClient.getAllianceBankTransactions(cfg.alliance_bank_alliance_id, {
-      minId: minId != null ? minId + 1 : undefined,
+      minId: minId + 1,
       limit: 500,
     });
     const relatedTransactions = transactions
@@ -320,6 +337,15 @@ export class BankingService {
       const isDeposit = tx.senderType === 1 && tx.receiverType === 2 && tx.receiverId === cfg.alliance_bank_alliance_id;
       if (isDeposit) {
         const idempotencyKey = `deposit:${cfg.alliance_bank_alliance_id}:${tx.id}`;
+        const offshoreAllianceId = await this.getOffshoreAllianceId();
+        if (!offshoreAllianceId) {
+          // Offshore isn't configured yet — mark the transaction as seen so it's
+          // never replayed later, but don't create a ledger entry or log it.
+          // Deposit tracking only starts once an offshore alliance is set.
+          await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, null);
+          result.skipped += 1;
+          continue;
+        }
         if (!this._depositHasRequiredWord(tx.note)) {
           await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, null);
           result.skipped += 1;
@@ -413,7 +439,8 @@ export class BankingService {
     guildId: string,
     nationId: number,
     resourcesInput: Partial<BankingResourceBalance>,
-    actorDiscordId: string
+    actorDiscordId: string,
+    destinationNationId: number | null = null
   ): Promise<{ ok: true; remaining: BankingResourceBalance } | { ok: false; error: string; remaining?: BankingResourceBalance }> {
     const cfg = await this._db.getBankingConfig(guildId);
     if (!cfg.enabled) return { ok: false, error: 'Banking is currently disabled for this guild.' };
@@ -422,6 +449,15 @@ export class BankingService {
     if (!offshoreKey) return { ok: false, error: 'Offshore API key is not configured.' };
     const resources = normalizeBalance(resourcesInput);
     if (!hasAnyAmount(resources)) return { ok: false, error: 'Provide at least one positive resource amount.' };
+    // The balance debited is always the caller's own registered/tracked nation
+    // (nationId) — only who the in-game PnW transfer is *sent to* (recipientNationId)
+    // is configurable. This keeps withdrawals from being able to drain someone
+    // else's tracked balance while still letting a user redirect their own funds
+    // to an alt or teammate.
+    const recipientNationId = destinationNationId && destinationNationId > 0 ? destinationNationId : nationId;
+    if (!Number.isInteger(recipientNationId) || recipientNationId <= 0) {
+      return { ok: false, error: 'Destination nation ID must be a positive integer.' };
+    }
     const current = await this._db.getNationBankBalance(guildId, nationId);
     for (const key of BANKING_RESOURCE_KEYS) {
       if (resources[key] > current[key]) {
@@ -437,17 +473,21 @@ export class BankingService {
       status: 'pending',
       resources,
       source_transaction_id: null,
-      idempotency_key: `withdraw:${guildId}:${nationId}:${Date.now()}`,
-      note: `Withdraw to nation ${nationId} (${balanceToNote(resources)})`,
+      idempotency_key: `withdraw:${guildId}:${nationId}:${recipientNationId}:${Date.now()}`,
+      note: recipientNationId === nationId
+        ? `Withdraw to nation ${nationId} (${balanceToNote(resources)})`
+        : `Withdraw from nation ${nationId} balance, sent to nation ${recipientNationId} (${balanceToNote(resources)})`,
       actor_discord_id: actorDiscordId,
       error: null,
     });
     try {
       const transfer = await offshoreClient.bankWithdraw({
-        receiverId: nationId,
+        receiverId: recipientNationId,
         receiverType: 1,
         resources,
-        note: `bar3-withdraw nation:${nationId}`,
+        note: recipientNationId === nationId
+          ? `bar3-withdraw nation:${nationId}`
+          : `bar3-withdraw nation:${nationId}->${recipientNationId}`,
       });
       const debited = await this._db.debitNationBankBalance(guildId, nationId, resources);
       if (!debited.ok) {
@@ -457,6 +497,73 @@ export class BankingService {
           `Transfer ${transfer.id} succeeded but balance debit failed. Manual reconcile required.`
         );
         return { ok: false, error: 'Withdrawal transfer succeeded but balance update failed. Staff has been alerted.' };
+      }
+      await this._db.updateBankingLedgerStatus(ledger.ledger_id, 'completed');
+      return { ok: true, remaining: debited.balance };
+    } catch (error) {
+      await this._db.updateBankingLedgerStatus(ledger.ledger_id, 'failed', toErrorMessage(error));
+      return { ok: false, error: toErrorMessage(error) };
+    }
+  }
+
+  /**
+   * Withdraws from the alliance's unregistered/unallocated pool balance (i.e. money
+   * held on behalf of the alliance itself, not any single tracked nation) out to a
+   * chosen nation. Distinct from withdrawToNation, which only ever debits the
+   * calling member's own tracked balance — this debits the shared alliance pool,
+   * so it should be gated to leaders/gov in the command layer.
+   */
+  async withdrawFromAlliancePool(
+    guildId: string,
+    resourcesInput: Partial<BankingResourceBalance>,
+    actorDiscordId: string,
+    destinationNationId: number
+  ): Promise<{ ok: true; remaining: BankingResourceBalance } | { ok: false; error: string; remaining?: BankingResourceBalance }> {
+    const cfg = await this._db.getBankingConfig(guildId);
+    if (!cfg.enabled) return { ok: false, error: 'Banking is currently disabled for this guild.' };
+    if (!cfg.bot_key) return { ok: false, error: 'Banking configuration is missing bot_key.' };
+    const offshoreKey = this._resolveApiKey(cfg.offshore_api_key_ref);
+    if (!offshoreKey) return { ok: false, error: 'Offshore API key is not configured.' };
+    if (!Number.isInteger(destinationNationId) || destinationNationId <= 0) {
+      return { ok: false, error: 'Destination nation ID must be a positive integer.' };
+    }
+    const resources = normalizeBalance(resourcesInput);
+    if (!hasAnyAmount(resources)) return { ok: false, error: 'Provide at least one positive resource amount.' };
+    const current = await this._db.getAlliancePoolBalance(guildId);
+    for (const key of BANKING_RESOURCE_KEYS) {
+      if (resources[key] > current[key]) {
+        return { ok: false, error: `Insufficient alliance pool ${key} balance.`, remaining: current };
+      }
+    }
+
+    const offshoreClient = this._clientFactory(offshoreKey);
+    const ledger = await this._db.createBankingLedgerEntry({
+      guild_id: guildId,
+      nation_id: destinationNationId,
+      type: 'alliance-pool-withdraw',
+      status: 'pending',
+      resources,
+      source_transaction_id: null,
+      idempotency_key: `alliance-pool-withdraw:${guildId}:${destinationNationId}:${Date.now()}`,
+      note: `Withdraw from alliance pool to nation ${destinationNationId} (${balanceToNote(resources)})`,
+      actor_discord_id: actorDiscordId,
+      error: null,
+    });
+    try {
+      const transfer = await offshoreClient.bankWithdraw({
+        receiverId: destinationNationId,
+        receiverType: 1,
+        resources,
+        note: `bar3-alliance-pool-withdraw ->${destinationNationId}`,
+      });
+      const debited = await this._db.debitAlliancePoolBalance(guildId, resources);
+      if (!debited.ok) {
+        await this._db.updateBankingLedgerStatus(
+          ledger.ledger_id,
+          'failed',
+          `Transfer ${transfer.id} succeeded but alliance pool debit failed. Manual reconcile required.`
+        );
+        return { ok: false, error: 'Withdrawal transfer succeeded but pool balance update failed. Staff has been alerted.' };
       }
       await this._db.updateBankingLedgerStatus(ledger.ledger_id, 'completed');
       return { ok: true, remaining: debited.balance };
