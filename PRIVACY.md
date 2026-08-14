@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated:** [DATE]
+**Last updated:** 14.8.2026
 
 This Privacy Policy explains how Bar3 / TRF Tech ("**the Service**", "**we**", "**us**") collects,
 uses, stores, and protects personal data when you use the Service, in accordance with:
