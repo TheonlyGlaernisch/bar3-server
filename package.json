@@ -13,7 +13,7 @@
     "postinstall": "npm --prefix discord-bot install && npm --prefix bar3-client install",
     "prebuild": "shx rm -rf ./build/*",
     "build": "npm run build:server && npm run build:bot && npm run build:client",
-    "build:server": "tsc",
+    "build:server": "tsc && shx cp ./PRIVACY.md ./build/PRIVACY.md",
     "build:bot": "npm --prefix discord-bot run build",
     "build:client": "npm --prefix bar3-client run build",
     "pack": "npm run build && npx pkg . --target node12-win-x86,node12-linux,node12-macos-x64",
@@ -29,8 +29,8 @@
     "@types/cors": "^2.8.9",
     "@types/express": "^4.17.11",
     "@types/express-session": "^1.18.2",
-    "@types/superagent": "^4.1.10",
-    "@types/ws": "^8.18.1",
+    "@types/superagent": "^4.1.0",
+    "@types/ws": "^8.18.0",
     "@types/yargs": "^16.0.0",
     "@typescript-eslint/eslint-plugin": "^4.14.1",
     "@typescript-eslint/parser": "^4.13.0",
@@ -53,7 +53,7 @@
     "shx": "^0.3.3",
     "superagent": "^6.1.0",
     "typescript": "^5.3.3",
-    "ws": "^8.18.0",
+    "ws": "^8.18.1",
     "yargs": "^16.2.0",
     "web-push": "^3.6.7",
     "@types/web-push": "^3.6.4"
@@ -61,7 +61,8 @@
   "pkg": {
     "assets": [
       "./public/**/*",
-      "./package.json"
+      "./package.json",
+      "./PRIVACY.md"
     ]
   }
 }
