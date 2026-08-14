@@ -162,6 +162,11 @@ export default defineComponent({
           icon: 'mdi-book-open-page-variant',
           path: '/constitution',
         },
+        {
+          title: 'Privacy Policy',
+          icon: 'mdi-shield-lock-outline',
+          path: '/privacy',
+        },
       );
       if (this.isAdmin) {
         base.push({
