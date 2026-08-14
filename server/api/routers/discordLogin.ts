@@ -159,6 +159,17 @@ function buildDiscordLoginHtml(errorText: string, returnTo: string): string {
       text-decoration: none;
     }
     .public-link a:hover { text-decoration: underline; }
+    .legal-note {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      color: #8d94b8;
+      font-size: 0.82rem;
+    }
+    .legal-note a {
+      color: #aeb6df;
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
@@ -176,6 +187,9 @@ function buildDiscordLoginHtml(errorText: string, returnTo: string): string {
         <a class="discord-btn" href="${escapeHtml(discordHref)}">Login with Discord</a>
         <div class="public-link">
           Looking for the territorial.io [ro] leaderboard?? <a href="/leaderboard">Here it is.</a>.
+        </div>
+        <div class="legal-note">
+          By continuing, you agree to our <a href="/privacy" target="_blank">Privacy Policy</a>.
         </div>
       </section>
 
@@ -243,6 +257,11 @@ function buildDiscordLoginHtml(errorText: string, returnTo: string): string {
           <button class="primary" type="submit">Apply Reset and Sign In</button>
           <div id="resetConfirmMsg" class="msg"></div>
         </form>
+
+        <div class="legal-note">
+          Registering stores your nation ID and a securely hashed password. See our
+          <a href="/privacy" target="_blank">Privacy Policy</a> for details.
+        </div>
       </section>
     </div>
   </div>
