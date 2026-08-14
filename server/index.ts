@@ -17,6 +17,7 @@ import discordAuthRouter from './api/routers/discord/auth';
 import adminRouter from './api/routers/admin';
 import pnwNativeAuthRouter from './api/routers/pnwNativeAuth';
 import discordLoginRouter from './api/routers/discordLogin';
+import privacyRouter from './api/routers/privacy';
 import { requireDiscordAuth } from './api/middleware/discordAuth';
 import { isTrustedOrigin } from './api/middleware/sameOrigin';
 import { startAutomationLoop } from './services/v2AutomationRunner';
@@ -493,6 +494,10 @@ app.post('/api/bot/banking/alliance-pool-withdraw', botRouteLimiter, botWriteRou
 // PnW native auth and login UI routes must remain public and mounted before the auth guard.
 app.use('/auth/pnw', pnwNativeAuthRouter);
 app.use('/discord-login', discordLoginRouter);
+
+// Privacy policy must be reachable without a session, since it needs to be
+// readable *before* someone submits a password or links a Discord/PnW account.
+app.use('/privacy', privacyRouter);
 
 // Discord OAuth routes — must be mounted BEFORE the auth guard so the login
 // page and callback are reachable without an existing session.
