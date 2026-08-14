@@ -16,6 +16,7 @@ import Chat from '@/components/Chat.vue';
 import { discordAuth } from '@/utilities/discordAuth';
 import { normalizeReturnTo } from '@/utilities/serverUrls';
 import Leaderboard from '@/views/Leaderboard.vue';
+import PrivacyRedirect from '@/views/PrivacyRedirect.vue';
 
 const DISCORD_PUBLIC_PATHS = ['/auth/discord/callback'];
 
@@ -36,6 +37,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/auth/discord/callback', name: 'Discord Callback', component: DiscordCallback, meta: { public: true } },
   { path: '/bot', name: 'Bot Panel', component: BotPanel, meta: { requiresBotAuth: true } },
   { path: '/leaderboard', name: 'Leaderboard', component: Leaderboard, meta: { public: true } },
+  { path: '/privacy', name: 'Privacy Policy', component: PrivacyRedirect, meta: { public: true } },
 ];
 
 const router = createRouter({
