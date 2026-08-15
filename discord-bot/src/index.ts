@@ -188,6 +188,7 @@ function resolveCanonicalCommandNameFromInteraction(i: ChatInputCommandInteracti
   if (i.commandName === 'request' && sub === 'grant') return 'request_grant';
   if (i.commandName === 'banking') {
     if (sub === 'withdraw') return 'banking_withdraw';
+    if (sub === 'transfer') return 'banking_transfer';
     if (sub === 'balance') return 'banking_balance';
     if (sub === 'alliance_balance') return 'banking_alliance_balance';
     if (sub === 'user_balances') return 'banking_user_balances';
@@ -1860,6 +1861,20 @@ async function main(): Promise<void> {
         .addNumberOption(o => o.setName('munitions').setDescription('Munitions amount'))
         .addNumberOption(o => o.setName('steel').setDescription('Steel amount'))
         .addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount')))
+      .addSubcommand(sc => sc.setName('transfer').setDescription('Transfer tracked balance to another registered nation (internal, no PnW transfer)')
+        .addIntegerOption(o => o.setName('nation_id').setDescription('Destination nation ID').setRequired(true).setMinValue(1))
+        .addNumberOption(o => o.setName('money').setDescription('Money amount'))
+        .addNumberOption(o => o.setName('food').setDescription('Food amount'))
+        .addNumberOption(o => o.setName('coal').setDescription('Coal amount'))
+        .addNumberOption(o => o.setName('oil').setDescription('Oil amount'))
+        .addNumberOption(o => o.setName('uranium').setDescription('Uranium amount'))
+        .addNumberOption(o => o.setName('iron').setDescription('Iron amount'))
+        .addNumberOption(o => o.setName('bauxite').setDescription('Bauxite amount'))
+        .addNumberOption(o => o.setName('lead').setDescription('Lead amount'))
+        .addNumberOption(o => o.setName('gasoline').setDescription('Gasoline amount'))
+        .addNumberOption(o => o.setName('munitions').setDescription('Munitions amount'))
+        .addNumberOption(o => o.setName('steel').setDescription('Steel amount'))
+        .addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount')))
       .addSubcommand(sc => sc.setName('manual_offshore').setDescription('Manually send alliance-bank funds to offshore')
         .addStringOption(o => o.setName('note').setDescription('Optional transfer note'))
         .addNumberOption(o => o.setName('money').setDescription('Money amount'))
@@ -2973,6 +2988,43 @@ ${resourceLines}
               : `Withdrawal completed from your balance (nation **${registration.nation_id}**), sent to nation **${recipientNationId}**.\n`) +
             `Requested:\n${formatResourceSummary(resources)}\n\n` +
             `Remaining balance:\n${formatResourceSummary(result.remaining)}`,
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      if (commandName === 'banking_transfer') {
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        const enabled = await banking.getBankingEnabled(interaction.guildId);
+        if (!enabled) return void interaction.reply({ content: 'Banking is currently disabled.', flags: MessageFlags.Ephemeral });
+        const registration = await db.getByDiscordId(BigInt(interaction.user.id));
+        if (!registration) {
+          return void interaction.reply({ content: 'You must register your nation before using transfers.', flags: MessageFlags.Ephemeral });
+        }
+        const destinationNationId = interaction.options.getInteger('nation_id', true);
+        if (destinationNationId === registration.nation_id) {
+          return void interaction.reply({ content: 'You cannot transfer to your own tracked balance.', flags: MessageFlags.Ephemeral });
+        }
+        const resources = getResourceOptionsFromInteraction(interaction);
+        if (!hasPositiveResourceInput(resources)) {
+          return void interaction.reply({ content: 'Provide at least one resource amount greater than zero.', flags: MessageFlags.Ephemeral });
+        }
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const result = await banking.transferToNation(
+          interaction.guildId,
+          registration.nation_id,
+          destinationNationId,
+          resources,
+          interaction.user.id
+        );
+        if (!result.ok) {
+          return void interaction.followUp({ content: `Transfer failed: ${result.error}`, flags: MessageFlags.Ephemeral });
+        }
+        return void interaction.followUp({
+          content:
+            `Transferred tracked balance from nation **${registration.nation_id}** to nation **${destinationNationId}** (internal only, no PnW transfer sent).\n` +
+            `Sent:\n${formatResourceSummary(resources)}\n\n` +
+            `Your remaining balance:\n${formatResourceSummary(result.remaining)}`,
           flags: MessageFlags.Ephemeral,
         });
       }
