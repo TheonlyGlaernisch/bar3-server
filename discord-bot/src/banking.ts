@@ -17,6 +17,7 @@ export interface BankingRuntimeDefaults {
   offshoreApiKeyRef: string | null;
   botKey: string | null;
   depositRequiredWords: string[];
+  syncFetchLimit: number;
 }
 
 export interface SyncResult {
@@ -117,6 +118,7 @@ export class BankingService {
     this._defaults = {
       ...defaults,
       depositRequiredWords: defaults.depositRequiredWords.map((word) => word.trim().toLowerCase()).filter(Boolean),
+      syncFetchLimit: Math.max(1, Math.min(1000, Math.floor(defaults.syncFetchLimit || 100))),
     };
     this._fallbackPnwApiKey = fallbackPnwApiKey;
     this._clientFactory = clientFactory;
@@ -281,6 +283,80 @@ export class BankingService {
     return { offshoreAllianceId: allianceId, migrated: false, resources: null };
   }
 
+  /**
+   * Processes a single bank transaction pushed by the `bankrec/create` WS
+   * subscription (see PnWSubscriptionClient.iterBankRecCreates). This is
+   * the push-based counterpart to the deposit-detection branch inside
+   * syncGuildDeposits — same idempotency key scheme, same required-word and
+   * offshore-configured checks — so it's safe to run alongside the REST
+   * poll: whichever path sees a given transaction first wins, and the
+   * other's attempt is silently absorbed by the unique
+   * (guild_id, source_transaction_id) ledger index. Returns the created
+   * ledger entry, or null if the transaction was filtered, already seen,
+   * or otherwise not something to log.
+   */
+  async handleIncomingBankRecDeposit(
+    guildId: string,
+    tx: BankTransactionRecord
+  ): Promise<BankingLedgerDoc | null> {
+    const cfg = await this._db.getBankingConfig(guildId);
+    if (!cfg.enabled) return null;
+    if (!cfg.alliance_bank_alliance_id) return null;
+    if (tx.receiverId !== cfg.alliance_bank_alliance_id || tx.receiverType !== 2) return null;
+    // Only nation -> alliance transfers are tracked as member deposits; a
+    // sender_type of 2 would be another alliance sending funds, which isn't
+    // attributable to a single member and is left for manual handling.
+    if (tx.senderType !== 1) return null;
+    const resources = normalizeBalance(tx.resources);
+    if (!hasAnyAmount(resources)) return null;
+
+    const idempotencyKey = `deposit:${cfg.alliance_bank_alliance_id}:${tx.id}`;
+    const offshoreAllianceId = await this.getOffshoreAllianceId();
+    if (!offshoreAllianceId) {
+      // Offshore isn't configured yet — mark seen so it's never replayed
+      // later, but don't create a ledger entry or log it, matching the poll.
+      await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, null);
+      return null;
+    }
+    if (!this._depositHasRequiredWord(tx.note)) {
+      await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, null);
+      return null;
+    }
+
+    try {
+      const depositLedger = await this._db.createBankingLedgerEntry({
+        guild_id: guildId,
+        nation_id: tx.senderId || null,
+        type: 'deposit',
+        status: 'pending',
+        resources,
+        source_transaction_id: tx.id,
+        idempotency_key: idempotencyKey,
+        note: tx.note || null,
+        actor_discord_id: null,
+        error: null,
+      });
+      await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, depositLedger.ledger_id);
+      return depositLedger;
+    } catch (error) {
+      if (isDuplicateKeyError(error)) return null;
+      throw error;
+    }
+  }
+
+  /**
+   * Resolves the alliance ID + API key a guild's bank-deposit WS listener
+   * should use, or null if banking isn't fully configured for it yet.
+   */
+  async getBankSubscriptionContext(guildId: string): Promise<{ allianceId: number; apiKey: string } | null> {
+    const cfg = await this._db.getBankingConfig(guildId);
+    if (!cfg.enabled) return null;
+    if (!cfg.alliance_bank_alliance_id) return null;
+    const apiKey = this._resolveApiKey(cfg.alliance_bank_api_key_ref);
+    if (!apiKey) return null;
+    return { allianceId: cfg.alliance_bank_alliance_id, apiKey };
+  }
+
   async syncGuildDeposits(guildId: string): Promise<SyncResult> {
     await this.ensureGuildConfig(guildId);
     const result: SyncResult = { processed: 0, skipped: 0, newDeposits: [] };
@@ -302,10 +378,11 @@ export class BankingService {
     if (minId == null) {
       // First-ever sync for this guild. The bankrecs API only supports orderBy ASC
       // with a min_id filter, so a null cursor would otherwise pull the OLDEST
-      // transactions in the alliance's entire bank history (up to the 500 limit)
-      // and treat every one of them as "new" — spamming a deposit log per row.
-      // Instead, baseline the cursor at the current newest transaction and do no
-      // processing this run; only transactions from this point forward are tracked.
+      // transactions in the alliance's entire bank history (up to the fetch
+      // limit) and treat every one of them as "new" — spamming a deposit log
+      // per row. Instead, baseline the cursor at the current newest transaction
+      // and do no processing this run; only transactions from this point
+      // forward are tracked.
       const latestId = await allianceBankClient.getLatestAllianceBankTransactionId(cfg.alliance_bank_alliance_id);
       await this._db.setBankingConfig(guildId, {
         last_sync_cursor: latestId,
@@ -316,7 +393,7 @@ export class BankingService {
 
     const transactions = await allianceBankClient.getAllianceBankTransactions(cfg.alliance_bank_alliance_id, {
       minId: minId + 1,
-      limit: 500,
+      limit: this._defaults.syncFetchLimit,
     });
     const relatedTransactions = transactions
       .filter((tx) =>
