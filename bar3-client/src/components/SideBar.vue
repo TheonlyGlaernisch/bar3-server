@@ -1,91 +1,240 @@
-import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router';
+<template>
+  <div>
+    <v-navigation-drawer
+      v-model="drawerOpen"
+      :permanent="!isMobile"
+      :temporary="isMobile"
+      color="#1A1A1A"
+      class="elevation-0"
+    >
+      <v-list-item style="height: 63px;">
+        <div class="text-h5 mt-3 mb-3 font-weight-medium d-flex align-center" @click="$router.push({'path': '/'})">
+          <v-img
+            class="shrink mr-2"
+            contain
+            src="/src/favicon.ico"
+            transition="scale-transition"
+            width="45"
+          />
+          <div class="ml-2 text-white">
+            Bar 3
+          </div>
+        </div>
+      </v-list-item>
 
-import Home from '@/views/Home.vue';
-import Configuration from '@/views/Configuration.vue';
-import MessageCreator from '@/views/MessageCreator.vue';
-import Analytics from '@/views/Analytics.vue';
-import AccountManager from '@/components/AccountManager.vue';
-import About from '@/views/About.vue';
-import Help from '@/views/Help.vue';
-import ConstitutionView from '@/views/ConstitutionView.vue';
-import DiscordCallback from '@/views/DiscordCallback.vue';
-import BotPanel from '@/views/BotPanel.vue';
-import Nation from '@/views/Nation.vue';
-import Alliance from '@/views/Alliance.vue';
-import Banking from '@/views/Banking.vue';
-import Chat from '@/components/Chat.vue';
-import { discordAuth } from '@/utilities/discordAuth';
-import { normalizeReturnTo } from '@/utilities/serverUrls';
-import Leaderboard from '@/views/Leaderboard.vue';
-import PrivacyRedirect from '@/views/PrivacyRedirect.vue';
+      <v-divider style="border-color: rgba(255, 107, 0, 0.4);"></v-divider>
 
-const DISCORD_PUBLIC_PATHS = ['/auth/discord/callback'];
+      <v-list
+        density="compact"
+        nav
+        class="pl-0"
+      >
+        <v-list-item
+          v-for="item in items"
+          :key="item.title"
+          :active="$route.path === item.path"
+          :disabled="disabled"
+          :prepend-icon="item.icon"
+          :title="item.title"
+          color="primary"
+          @click="goto(item.path)"
+        />
+      </v-list>
+    </v-navigation-drawer>
+  </div>
+</template>
 
-const routes: Array<RouteRecordRaw> = [
-  { path: '/', redirect: '/dashboard' },
-  { path: '/dashboard', name: 'Dashboard', component: Home, meta: { requiresClientAccess: true } },
-  { path: '/automation', name: 'Automation', component: MessageCreator, meta: { requiresClientAccess: true } },
-  { path: '/config', name: 'Configuration', component: Configuration, meta: { requiresClientAccess: true } },
-  { path: '/message-creator', name: 'Message Creator', component: MessageCreator, meta: { requiresClientAccess: true } },
-  { path: '/analytics', name: 'Analytics', component: Analytics, meta: { requiresClientAccess: true } },
-  { path: '/account', name: 'Account', component: AccountManager, meta: { requiresClientAccess: true } },
-  { path: '/nation', name: 'Nation', component: Nation, meta: { requiresMemberAccess: true } },
-  { path: '/alliance', name: 'Alliance', component: Alliance, meta: { requiresMemberAccess: true } },
-  { path: '/banking', name: 'Banking', component: Banking, meta: { requiresMemberAccess: true } },
-  { path: '/chat', name: 'Chat', component: Chat, meta: { requiresMemberAccess: true } },
-  { path: '/about', name: 'About', component: About },
-  { path: '/help', name: 'Help', component: Help },
-  { path: '/constitution', name: 'Constitution', component: ConstitutionView, meta: { requiresMemberAccess: true } },
-  { path: '/auth/discord/callback', name: 'Discord Callback', component: DiscordCallback, meta: { public: true } },
-  { path: '/bot', name: 'Bot Panel', component: BotPanel, meta: { requiresBotAuth: true } },
-  { path: '/leaderboard', name: 'Leaderboard', component: Leaderboard, meta: { public: true } },
-  { path: '/privacy', name: 'Privacy Policy', component: PrivacyRedirect, meta: { public: true } },
-];
+<script lang="ts">
+import { defineComponent } from 'vue';
+import { useDisplay } from 'vuetify';
+import { SideBarItem } from '@/types';
 
-const router = createRouter({
-  history: createWebHistory(),
-  routes,
+export default defineComponent({
+  name: 'SideBar',
+  emits: ['update:modelValue'],
+  props: {
+    modelValue: {
+      type: Boolean,
+      default: false,
+    },
+    disabled: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  setup() {
+    const { mobile: isMobile } = useDisplay();
+    return { isMobile };
+  },
+  computed: {
+    drawerOpen: {
+      get(): boolean {
+        return !this.isMobile || this.modelValue;
+      },
+      set(value: boolean) {
+        if (this.isMobile) {
+          this.$emit('update:modelValue', value);
+        }
+      },
+    },
+    isAdmin(): boolean {
+      return this.$store.getters.isAdmin;
+    },
+    hasClientRole(): boolean {
+      return this.$store.getters.hasClientRole;
+    },
+    hasMemberRole(): boolean {
+      return this.$store.getters.hasMemberRole;
+    },
+    items(): SideBarItem[] {
+      const base: SideBarItem[] = [];
+      if (this.hasClientRole) {
+        base.push(
+          {
+            title: 'Dashboard',
+            icon: 'mdi-view-dashboard',
+            path: '/dashboard',
+          },
+          {
+            title: 'Automation',
+            icon: 'mdi-robot-outline',
+            path: '/automation',
+          },
+          {
+            title: 'Configuration',
+            icon: 'mdi-cog',
+            path: '/config',
+          },
+          {
+            title: 'Compose',
+            icon: 'mdi-email-edit',
+            path: '/message-creator',
+          },
+          {
+            title: 'Analytics',
+            icon: 'mdi-chart-line',
+            path: '/analytics',
+          },
+          {
+            title: 'Account',
+            icon: 'mdi-account-circle',
+            path: '/account',
+          },
+        );
+      }
+      if (this.hasMemberRole) {
+        base.push(
+          {
+            title: 'Nation',
+            icon: 'mdi-flag',
+            path: '/nation',
+          },
+          {
+            title: 'Alliance',
+            icon: 'mdi-shield-account',
+            path: '/alliance',
+          },
+          {
+            title: 'Chat',
+            icon: 'mdi-chat',
+            path: '/chat',
+          },
+        );
+      }
+      base.push(
+        {
+          title: 'About',
+          icon: 'mdi-information',
+          path: '/about',
+        },
+        {
+          title: 'Leaderboard',
+          icon: 'mdi-podium',
+          path: '/leaderboard',
+        },
+        {
+          title: 'Help',
+          icon: 'mdi-help-circle',
+          path: '/help',
+        },
+        {
+          title: 'Constitution',
+          icon: 'mdi-book-open-page-variant',
+          path: '/constitution',
+        },
+        {
+          title: 'Privacy Policy',
+          icon: 'mdi-shield-lock-outline',
+          path: '/privacy',
+        },
+      );
+      if (this.isAdmin) {
+        base.push({
+          title: 'Bot',
+          icon: 'mdi-robot',
+          path: '/bot',
+        });
+      }
+      return base;
+    },
+  },
+  methods: {
+    goto(path: string) {
+      if (this.$route.path != path) {
+        this.$router.push({'path': path});
+      }
+      if (this.isMobile) this.$emit('update:modelValue', false);
+    },
+  },
 });
+</script>
+<style scoped>
+/* Nav item base transition */
+:deep(.v-list-item) {
+  transition: background 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  border-left: 3px solid transparent;
+  margin-left: 4px;
+  border-radius: 0 8px 8px 0 !important;
+}
 
-router.beforeEach(async (to) => {
-  if (to.meta?.public || DISCORD_PUBLIC_PATHS.includes(to.path)) {
-    return true;
-  }
+/* Hover glow */
+:deep(.v-list-item:hover) {
+  background: rgba(255, 107, 0, 0.07) !important;
+  border-left-color: rgba(255, 107, 0, 0.4);
+}
 
-  const session = await discordAuth.getSession();
-  if (!session.authenticated) {
-    const loginParams = new URLSearchParams();
-    const returnTo = normalizeReturnTo(to.fullPath);
-    if (returnTo) {
-      loginParams.set('returnTo', returnTo);
-    }
-    window.location.assign(`/auth/login?${loginParams.toString()}`);
-    return false;
-  }
+/* Active / selected state */
+:deep(.v-list-item--active) {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 107, 0, 0.14) 0%,
+    rgba(255, 107, 0, 0.04) 100%
+  ) !important;
+  border-left-color: #FF6B00;
+  box-shadow: inset 0 0 12px rgba(255, 107, 0, 0.08);
+}
 
-  const hasClientAccess = session.roles.bar3Client || session.roles.bar3Server || session.isAdmin;
-  const hasMemberAccess = session.roles.memberGuild || session.isAdmin;
+/* Icon glow on hover */
+:deep(.v-list-item:hover .v-icon) {
+  filter: drop-shadow(0 0 6px rgba(255, 107, 0, 0.6));
+  transition: filter 0.25s ease;
+}
 
-  if (to.meta?.requiresClientAccess && !hasClientAccess) {
-    return hasMemberAccess ? '/nation' : '/about';
-  }
+/* Active icon glow */
+:deep(.v-list-item--active .v-icon) {
+  filter: drop-shadow(0 0 8px rgba(255, 107, 0, 0.7));
+}
 
-  if (to.meta?.requiresMemberAccess && !hasMemberAccess) {
-    return hasClientAccess ? '/dashboard' : '/about';
-  }
-
-  if (to.meta?.requiresBotAuth && !session.isAdmin) {
-    return hasClientAccess ? '/dashboard' : (hasMemberAccess ? '/nation' : '/about');
-  }
-
-  if (to.query.returnTo) {
-    const returnTo = normalizeReturnTo(to.query.returnTo);
-    if (returnTo) {
-      return { path: returnTo, replace: true };
-    }
-  }
-
-  return true;
-});
-
-export default router;
+/* Gradient divider */
+:deep(.v-divider) {
+  border: none !important;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 107, 0, 0.45) 50%,
+    transparent 100%
+  ) !important;
+}
+</style>
