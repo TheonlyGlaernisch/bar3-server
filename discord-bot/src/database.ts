@@ -85,6 +85,7 @@ export type BankingLedgerType =
   | 'deposit'
   | 'external-withdrawal'
   | 'withdraw'
+  | 'internal-transfer'
   | 'alliance-pool-withdraw'
   | 'manual-offshore'
   | 'offshore-migration'
