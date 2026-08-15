@@ -507,6 +507,85 @@ export class BankingService {
   }
 
   /**
+   * Moves resources between two tracked nation balances entirely within the
+   * database — debits fromNationId and credits toNationId. No PnW bank API
+   * call is made and no in-game transfer happens; this only ever moves the
+   * bot's own bookkeeping of who "owns" already-offshored funds. Useful for
+   * e.g. splitting a balance between alts or handing off tracked funds to a
+   * teammate without touching the offshore alliance.
+   */
+  async transferToNation(
+    guildId: string,
+    fromNationId: number,
+    toNationId: number,
+    resourcesInput: Partial<BankingResourceBalance>,
+    actorDiscordId: string,
+    note: string | null = null
+  ): Promise<{ ok: true; remaining: BankingResourceBalance } | { ok: false; error: string; remaining?: BankingResourceBalance }> {
+    const cfg = await this._db.getBankingConfig(guildId);
+    if (!cfg.enabled) return { ok: false, error: 'Banking is currently disabled for this guild.' };
+    if (!Number.isInteger(fromNationId) || fromNationId <= 0) {
+      return { ok: false, error: 'Source nation ID must be a positive integer.' };
+    }
+    if (!Number.isInteger(toNationId) || toNationId <= 0) {
+      return { ok: false, error: 'Destination nation ID must be a positive integer.' };
+    }
+    if (toNationId === fromNationId) {
+      return { ok: false, error: 'Source and destination nation must be different.' };
+    }
+    const resources = normalizeBalance(resourcesInput);
+    if (!hasAnyAmount(resources)) return { ok: false, error: 'Provide at least one positive resource amount.' };
+
+    const current = await this._db.getNationBankBalance(guildId, fromNationId);
+    for (const key of BANKING_RESOURCE_KEYS) {
+      if (resources[key] > current[key]) {
+        return { ok: false, error: `Insufficient ${key} balance.`, remaining: current };
+      }
+    }
+
+    const ledger = await this._db.createBankingLedgerEntry({
+      guild_id: guildId,
+      nation_id: fromNationId,
+      type: 'internal-transfer',
+      status: 'pending',
+      resources,
+      source_transaction_id: null,
+      idempotency_key: `internal-transfer:${guildId}:${fromNationId}:${toNationId}:${Date.now()}`,
+      note: note || `Internal transfer from nation ${fromNationId} to nation ${toNationId} (${balanceToNote(resources)})`,
+      actor_discord_id: actorDiscordId,
+      error: null,
+    });
+
+    const debited = await this._db.debitNationBankBalance(guildId, fromNationId, resources);
+    if (!debited.ok) {
+      await this._db.updateBankingLedgerStatus(
+        ledger.ledger_id,
+        'failed',
+        'Balance changed before the transfer could be applied.'
+      );
+      return { ok: false, error: 'Insufficient balance.', remaining: debited.balance };
+    }
+
+    try {
+      await this._db.creditNationBankBalance(guildId, toNationId, resources);
+    } catch (error) {
+      // Credit failed after the debit already succeeded — refund the sender
+      // immediately so the internal books stay balanced, and flag the ledger
+      // entry for manual review.
+      await this._db.creditNationBankBalance(guildId, fromNationId, resources);
+      await this._db.updateBankingLedgerStatus(
+        ledger.ledger_id,
+        'failed',
+        `Credit to destination nation failed; sender was refunded. ${toErrorMessage(error)}`
+      );
+      return { ok: false, error: 'Transfer failed; your balance was not changed.' };
+    }
+
+    await this._db.updateBankingLedgerStatus(ledger.ledger_id, 'completed');
+    return { ok: true, remaining: debited.balance };
+  }
+
+  /**
    * Withdraws from the alliance's unregistered/unallocated pool balance (i.e. money
    * held on behalf of the alliance itself, not any single tracked nation) out to a
    * chosen nation. Distinct from withdrawToNation, which only ever debits the
