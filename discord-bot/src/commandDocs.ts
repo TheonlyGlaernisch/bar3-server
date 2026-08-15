@@ -28,6 +28,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
   { name: '/request grant <note> [resources]', summary: 'Submit grant request to configured grant channel.', category: 'gov' },
   { name: '/banking balance', summary: 'View offshored deposit balance for your registered nation.', category: 'core' },
   { name: '/banking withdraw [nation_id] [resources]', summary: 'Withdraw resources from offshore to your registered nation balance, optionally sent to a different nation ID.', category: 'core' },
+  { name: '/banking transfer <nation_id> [resources]', summary: 'Move tracked balance from your nation to another registered nation. Internal bookkeeping only — no PnW transfer is sent.', category: 'core' },
   { name: '/banking alliance_balance', summary: 'Leader/admin command to view offshored alliance-held and unregistered balances.', category: 'gov' },
   { name: '/banking manual_offshore [resources]', summary: 'Gov/admin command to manually send alliance-bank funds offshore.', category: 'gov' },
   { name: '/banking alliance_pool_withdraw <nation_id> [resources]', summary: 'Leader/econ command to withdraw from the alliance (unassigned) pool balance to a nation.', category: 'gov' },
