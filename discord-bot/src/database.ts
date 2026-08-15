@@ -4,6 +4,7 @@
  */
 import { MongoClient, Db, Collection, IndexSpecification } from 'mongodb';
 import { createHash, randomUUID } from 'crypto';
+import { decryptString, encryptString, isEncryptedPayload } from './cryptoBox';
 
 export interface RegistrationDoc {
   discord_id: string;
@@ -585,13 +586,22 @@ export class Database {
 
   async getPnwApiKey(): Promise<string | null> {
     const doc = await this._botConfig.findOne({ key: 'pnw_api_key' }, { projection: { _id: 0 } });
-    return doc?.value ?? null;
+    const stored = doc?.value ?? null;
+    if (!stored) return null;
+
+    // Legacy rows written before encryption was introduced are stored as
+    // plaintext. Transparently decrypt new-format rows, and fall back to
+    // returning legacy rows as-is (they get re-encrypted on next setPnwApiKey).
+    if (isEncryptedPayload(stored)) {
+      return decryptString(stored);
+    }
+    return stored;
   }
 
   async setPnwApiKey(apiKey: string): Promise<void> {
     await this._botConfig.updateOne(
       { key: 'pnw_api_key' },
-      { $set: { key: 'pnw_api_key', value: apiKey } },
+      { $set: { key: 'pnw_api_key', value: encryptString(apiKey) } },
       { upsert: true }
     );
   }
