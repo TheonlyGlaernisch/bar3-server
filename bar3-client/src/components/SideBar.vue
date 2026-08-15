@@ -135,6 +135,11 @@ export default defineComponent({
             path: '/alliance',
           },
           {
+            title: 'Banking',
+            icon: 'mdi-bank',
+            path: '/banking',
+          },
+          {
             title: 'Chat',
             icon: 'mdi-chat',
             path: '/chat',
