@@ -2323,6 +2323,52 @@ function getFirstString(raw: Record<string, unknown>, keys: string[]): string | 
   return undefined;
 }
 
+/**
+ * Parses a single bankrec payload off the `bankrec/create` subscription
+ * channel (both the singular BANKREC_CREATE and each element of a
+ * BULK_BANKREC_CREATE array use this same shape). Returns null for any
+ * record that doesn't match the requested alliance as a type-2 (alliance)
+ * receiver, or that's a tax collection (tax_id != 0) rather than a real
+ * transfer — tax sweeps aren't member deposits and shouldn't be logged as
+ * one.
+ */
+function makeBankRecCreateParser(allianceId: number): (raw: Record<string, unknown>) => BankTransactionRecord | null {
+  return (raw: Record<string, unknown>): BankTransactionRecord | null => {
+    const id = getFirstString(raw, ['id', 'bankrec_id']) || '';
+    if (!id) return null;
+    const receiverId = getFirstNumber(raw, ['receiver_id', 'receiverId', 'rid']) ?? 0;
+    if (receiverId !== allianceId) return null;
+    const receiverType = getFirstNumber(raw, ['receiver_type', 'receiverType', 'rtype']) ?? 0;
+    if (receiverType !== 2) return null;
+    const taxId = getFirstNumber(raw, ['tax_id', 'taxId']) ?? 0;
+    if (taxId !== 0) return null;
+    return {
+      id,
+      date: getFirstString(raw, ['date']) || '',
+      senderId: getFirstNumber(raw, ['sender_id', 'senderId', 'sid']) ?? 0,
+      senderType: getFirstNumber(raw, ['sender_type', 'senderType', 'stype']) ?? 0,
+      receiverId,
+      receiverType,
+      bankerId: getFirstNumber(raw, ['banker_id', 'bankerId', 'pid']) ?? 0,
+      note: getFirstString(raw, ['note']) || '',
+      resources: {
+        money: getFirstNumber(raw, ['money']) ?? 0,
+        food: getFirstNumber(raw, ['food']) ?? 0,
+        coal: getFirstNumber(raw, ['coal']) ?? 0,
+        oil: getFirstNumber(raw, ['oil']) ?? 0,
+        uranium: getFirstNumber(raw, ['uranium']) ?? 0,
+        iron: getFirstNumber(raw, ['iron']) ?? 0,
+        bauxite: getFirstNumber(raw, ['bauxite']) ?? 0,
+        lead: getFirstNumber(raw, ['lead']) ?? 0,
+        gasoline: getFirstNumber(raw, ['gasoline']) ?? 0,
+        munitions: getFirstNumber(raw, ['munitions']) ?? 0,
+        steel: getFirstNumber(raw, ['steel']) ?? 0,
+        aluminum: getFirstNumber(raw, ['aluminum']) ?? 0,
+      },
+    };
+  };
+}
+
 function parseWarCreateFromSubscription(raw: Record<string, unknown>): WarDetail | null {
   const warId = getFirstNumber(raw, ['id', 'war_id', 'warId']) ?? 0;
   if (!warId) return null;
@@ -2401,6 +2447,15 @@ export class PnWSubscriptionClient {
     * PnWSubscriptionClient.MS_PER_SECOND;
   private static readonly WAR_DEDUPE_COOLDOWN_MS =
     PnWSubscriptionClient.WAR_DEDUPE_COOLDOWN_SECONDS
+    * PnWSubscriptionClient.MS_PER_SECOND;
+  private static readonly BANKREC_DEDUPE_WINDOW_MINUTES = 10;
+  private static readonly BANKREC_DEDUPE_COOLDOWN_SECONDS = 60;
+  private static readonly BANKREC_DEDUPE_WINDOW_MS =
+    PnWSubscriptionClient.BANKREC_DEDUPE_WINDOW_MINUTES
+    * PnWSubscriptionClient.SECONDS_PER_MINUTE
+    * PnWSubscriptionClient.MS_PER_SECOND;
+  private static readonly BANKREC_DEDUPE_COOLDOWN_MS =
+    PnWSubscriptionClient.BANKREC_DEDUPE_COOLDOWN_SECONDS
     * PnWSubscriptionClient.MS_PER_SECOND;
 
   private _apiKey: string;
@@ -2710,6 +2765,67 @@ export class PnWSubscriptionClient {
         }
       } catch (err) {
         console.error(`PnW recruiter subscription: connection lost, reconnecting in ${delay}s.`, err);
+      }
+      const [insideWindow, remaining] = inTurnWindow();
+      if (insideWindow) {
+        delay = PnWSubscriptionClient.RECONNECT_BASE;
+        const sleepMs = Math.max(
+          MIN_TURN_WINDOW_SLEEP_MS,
+          Math.min(MAX_TURN_WINDOW_SLEEP_MS, remaining * 1000)
+        );
+        await new Promise((r) => setTimeout(r, sleepMs));
+        continue;
+      }
+      await new Promise((r) => setTimeout(r, delay * 1000));
+      delay = Math.min(delay * 2, PnWSubscriptionClient.RECONNECT_MAX);
+    }
+  }
+
+  /**
+   * Streams live bank transactions received by `allianceId` (as a type-2
+   * alliance receiver) over the `bankrec/create` subscription channel —
+   * the push-based replacement for polling `getAllianceBankTransactions`.
+   * Tax collections are filtered out server-side by the parser; everything
+   * yielded here is a real transfer into the alliance bank (deposits from
+   * members, other alliances sending funds, etc).
+   *
+   * Each guild's alliance may use a different API key, so unlike
+   * iterWarCreates/iterNationCreates (which share one global client) this
+   * is meant to be called on a client constructed with that guild's own
+   * resolved alliance-bank API key.
+   */
+  async *iterBankRecCreates(allianceId: number): AsyncGenerator<BankTransactionRecord> {
+    let delay = PnWSubscriptionClient.RECONNECT_BASE;
+    const parser = makeBankRecCreateParser(allianceId);
+    const recentlyEmittedTxIds = new Map<string, number>();
+    while (true) {
+      try {
+        const nowMs0 = Date.now();
+        for (const [txId, seenAt] of recentlyEmittedTxIds) {
+          if (nowMs0 - seenAt > PnWSubscriptionClient.BANKREC_DEDUPE_WINDOW_MS) recentlyEmittedTxIds.delete(txId);
+        }
+        for await (const tx of this._streamSubscription({
+          model: 'bankrec',
+          event: 'create',
+          eventNames: ['BANKREC_CREATE', 'BULK_BANKREC_CREATE'],
+          parser,
+          logPrefix: `PnW bank subscription (alliance ${allianceId}):`,
+          channelQuery: { receiver_id: allianceId },
+          disableChannelCache: true,
+        })) {
+          if (tx.id) {
+            const seenAt = recentlyEmittedTxIds.get(tx.id);
+            const nowMs = Date.now();
+            if (seenAt && nowMs - seenAt < PnWSubscriptionClient.BANKREC_DEDUPE_COOLDOWN_MS) {
+              continue;
+            }
+            recentlyEmittedTxIds.set(tx.id, nowMs);
+          }
+          delay = PnWSubscriptionClient.RECONNECT_BASE;
+          yield tx;
+        }
+      } catch (err) {
+        console.error(`PnW bank subscription (alliance ${allianceId}): connection lost, reconnecting in ${delay}s.`, err);
       }
       const [insideWindow, remaining] = inTurnWindow();
       if (insideWindow) {
