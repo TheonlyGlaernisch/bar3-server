@@ -128,7 +128,14 @@ export const LOG_LEVEL: 'DEBUG' | 'INFO' =
   (process.env['LOG_LEVEL'] || '').toUpperCase() === 'DEBUG' ? 'DEBUG' : 'INFO';
 
 export const BANKING_ENABLED: boolean = _optionalBool('BANKING_ENABLED', true);
-export const BANKING_SYNC_INTERVAL_SECONDS: number = _optionalInt('BANKING_SYNC_INTERVAL_SECONDS') ?? 120;
+// syncGuildDeposits (REST poll) is now a backfill/failover path behind the
+// bankrec/create WS subscription (see PnWSubscriptionClient.iterBankRecCreates),
+// which handles near-real-time deposit ingestion. The poll only needs to catch
+// transactions missed during a socket outage, so it runs less often and pulls
+// a smaller page per run than before; the cursor just picks up where it left
+// off on the next tick if there's a larger backlog than one page.
+export const BANKING_SYNC_INTERVAL_SECONDS: number = _optionalInt('BANKING_SYNC_INTERVAL_SECONDS') ?? 600;
+export const BANKING_SYNC_FETCH_LIMIT: number = _optionalInt('BANKING_SYNC_FETCH_LIMIT') ?? 100;
 export const BANKING_DEPOSIT_REQUIRED_WORDS: string[] = _optionalStringList('BANKING_DEPOSIT_REQUIRED_WORDS');
 export const OFFSHORE_ALLIANCE_ID: number | null = _optionalInt('OFFSHORE_ALLIANCE_ID');
 export const ALLIANCE_BANK_ALLIANCE_ID: number | null = _optionalInt('ALLIANCE_BANK_ALLIANCE_ID');
