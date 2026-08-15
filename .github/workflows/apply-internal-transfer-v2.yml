@@ -1,0 +1,123 @@
+name: Apply internal banking transfer v2
+on:
+  push:
+    branches: [agent/internal-banking-transfer]
+  pull_request:
+    types: [opened, synchronize]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/internal-banking-transfer
+          fetch-depth: 0
+      - name: Apply patch script
+        shell: python
+        run: |
+          from pathlib import Path
+          def r(path, old, new):
+            p=Path(path); s=p.read_text()
+            if old not in s: raise SystemExit(f'marker missing: {path}: {old[:80]!r}')
+            p.write_text(s.replace(old,new,1))
+          r('discord-bot/src/database.ts', "  | 'offshore-migration'\n  | 'reconcile';", "  | 'offshore-migration'\n  | 'internal-transfer'\n  | 'reconcile';")
+          r('discord-bot/src/database.ts', "  async getAlliancePoolBalance(guildId: string): Promise<BankingResourceBalance> {", """  async transferNationBankBalance(guildId: string, fromNationId: number, toNationId: number, delta: Partial<BankingResourceBalance>, actorDiscordId: string, note: string | null = null): Promise<{ ok: true; sourceBalance: BankingResourceBalance; destinationBalance: BankingResourceBalance; ledgerId: string } | { ok: false; error: string; balance?: BankingResourceBalance }> {
+    if (!Number.isInteger(fromNationId) || fromNationId <= 0 || !Number.isInteger(toNationId) || toNationId <= 0) return { ok: false, error: 'Source and destination nation IDs must be positive integers.' };
+    if (fromNationId === toNationId) return { ok: false, error: 'Source and destination accounts must be different.' };
+    const change = this._normalizeBankingBalance(delta);
+    if (!BANKING_RESOURCE_KEYS.some((key) => change[key] > 0)) return { ok: false, error: 'Provide at least one positive resource amount.' };
+    for (const key of BANKING_RESOURCE_KEYS) if (change[key] < 0) return { ok: false, error: `${key} amount cannot be negative.` };
+    const session = this._client.startSession();
+    try {
+      let result: { ok: true; sourceBalance: BankingResourceBalance; destinationBalance: BankingResourceBalance; ledgerId: string } | { ok: false; error: string; balance?: BankingResourceBalance } = { ok: false, error: 'Transfer failed.' };
+      try {
+        await session.withTransaction(async () => {
+          const sourceDoc = await this._nationBankBalances.findOne({ guild_id: guildId, nation_id: fromNationId }, { projection: { _id: 0 }, session });
+          const sourceBalance = this._normalizeBankingBalance(sourceDoc?.balances);
+          for (const key of BANKING_RESOURCE_KEYS) if (change[key] > sourceBalance[key]) { result = { ok: false, error: `Insufficient ${key} balance.`, balance: sourceBalance }; throw new Error('__TRANSFER_REJECTED__'); }
+          const destinationDoc = await this._nationBankBalances.findOne({ guild_id: guildId, nation_id: toNationId }, { projection: { _id: 0 }, session });
+          const destinationBalance = this._normalizeBankingBalance(destinationDoc?.balances);
+          const nextSource = this._emptyBankingBalance();
+          const nextDestination = this._emptyBankingBalance();
+          for (const key of BANKING_RESOURCE_KEYS) { nextSource[key] = sourceBalance[key] - change[key]; nextDestination[key] = destinationBalance[key] + change[key]; }
+          const now = new Date().toISOString();
+          await this._nationBankBalances.updateOne({ guild_id: guildId, nation_id: fromNationId }, { $set: { guild_id: guildId, nation_id: fromNationId, balances: nextSource, updated_at: now } }, { upsert: true, session });
+          await this._nationBankBalances.updateOne({ guild_id: guildId, nation_id: toNationId }, { $set: { guild_id: guildId, nation_id: toNationId, balances: nextDestination, updated_at: now } }, { upsert: true, session });
+          const ledgerId = randomUUID();
+          await this._bankingLedger.insertOne({ ledger_id: ledgerId, guild_id: guildId, nation_id: fromNationId, type: 'internal-transfer', status: 'completed', resources: change, source_transaction_id: null, idempotency_key: `internal-transfer:${guildId}:${fromNationId}:${toNationId}:${ledgerId}`, note: note || `Internal transfer from nation ${fromNationId} to nation ${toNationId}`, actor_discord_id: actorDiscordId, error: null, created_at: now, updated_at: now }, { session });
+          result = { ok: true, sourceBalance: nextSource, destinationBalance: nextDestination, ledgerId };
+        });
+      } catch (error) { if (!(error instanceof Error) || error.message !== '__TRANSFER_REJECTED__') throw error; }
+      return result;
+    } finally { await session.endSession(); }
+  }
+
+  async getAlliancePoolBalance(guildId: string): Promise<BankingResourceBalance> {""")
+          r('discord-bot/src/banking.ts', "\n\n  async withdrawToNation(\n", """\n\n  async transferInternalFunds(guildId: string, fromNationId: number, toNationId: number, resourcesInput: Partial<BankingResourceBalance>, actorDiscordId: string, note: string | null = null): Promise<{ ok: true; sourceBalance: BankingResourceBalance; destinationBalance: BankingResourceBalance; ledgerId: string } | { ok: false; error: string; balance?: BankingResourceBalance }> {
+    const cfg = await this._db.getBankingConfig(guildId);
+    if (!cfg.enabled) return { ok: false, error: 'Banking is currently disabled for this guild.' };
+    const resources = normalizeBalance(resourcesInput);
+    if (!hasAnyAmount(resources)) return { ok: false, error: 'Provide at least one positive resource amount.' };
+    return this._db.transferNationBankBalance(guildId, fromNationId, toNationId, resources, actorDiscordId, note);
+  }
+
+  async withdrawToNation(\n""")
+          r('discord-bot/src/commandDocs.ts', "  { name: '/banking withdraw [resources]', summary: 'Withdraw resources from offshore to your registered nation balance.', category: 'core' },", "  { name: '/banking transfer <recipient> [resources]', summary: 'Transfer internal tracked banking resources from your account to another registered account.', category: 'core' },\n  { name: '/banking withdraw [resources]', summary: 'Withdraw resources from offshore to your registered nation balance.', category: 'core' },")
+          r('discord-bot/src/index.ts', "  if (i.commandName === 'banking') {\n    if (sub === 'withdraw') return 'banking_withdraw';", "  if (i.commandName === 'banking') {\n    if (sub === 'transfer') return 'banking_transfer';\n    if (sub === 'withdraw') return 'banking_withdraw';")
+          r('discord-bot/src/index.ts', "    new SlashCommandBuilder().setName('banking').setDescription('Banking commands')\n      .addSubcommand(sc => sc.setName('balance').setDescription('View your registered nation deposit balance'))", """    new SlashCommandBuilder().setName('banking').setDescription('Banking commands')
+      .addSubcommand(sc => sc.setName('transfer').setDescription('Transfer internal tracked resources to another registered account')
+        .addUserOption(o => o.setName('recipient').setDescription('Discord user receiving the internal transfer').setRequired(true))
+        .addNumberOption(o => o.setName('money').setDescription('Money amount'))
+        .addNumberOption(o => o.setName('food').setDescription('Food amount'))
+        .addNumberOption(o => o.setName('coal').setDescription('Coal amount'))
+        .addNumberOption(o => o.setName('oil').setDescription('Oil amount'))
+        .addNumberOption(o => o.setName('uranium').setDescription('Uranium amount'))
+        .addNumberOption(o => o.setName('iron').setDescription('Iron amount'))
+        .addNumberOption(o => o.setName('bauxite').setDescription('Bauxite amount'))
+        .addNumberOption(o => o.setName('lead').setDescription('Lead amount'))
+        .addNumberOption(o => o.setName('gasoline').setDescription('Gasoline amount'))
+        .addNumberOption(o => o.setName('munitions').setDescription('Munitions amount'))
+        .addNumberOption(o => o.setName('steel').setDescription('Steel amount'))
+        .addNumberOption(o => o.setName('aluminum').setDescription('Aluminum amount')))
+      .addSubcommand(sc => sc.setName('balance').setDescription('View your registered nation deposit balance'))""")
+          r('discord-bot/src/index.ts', "      if (commandName === 'banking_set_api_keys') {", """      if (commandName === 'banking_transfer') {
+        if (!interaction.guildId) return void interaction.reply({ content: 'Guild only command.', flags: MessageFlags.Ephemeral });
+        if (!await hasMemberAccess(interaction, db)) return void interaction.reply({ content: 'You need the Member role to use this command.', flags: MessageFlags.Ephemeral });
+        const sender = await db.getByDiscordId(BigInt(interaction.user.id));
+        if (!sender) return void interaction.reply({ content: 'You do not have a registered nation.', flags: MessageFlags.Ephemeral });
+        const recipientUser = interaction.options.getUser('recipient', true);
+        if (recipientUser.bot) return void interaction.reply({ content: 'Bots cannot receive banking transfers.', flags: MessageFlags.Ephemeral });
+        const recipient = await db.getByDiscordId(BigInt(recipientUser.id));
+        if (!recipient) return void interaction.reply({ content: 'The recipient does not have a registered nation.', flags: MessageFlags.Ephemeral });
+        if (recipient.nation_id === sender.nation_id) return void interaction.reply({ content: 'Source and destination accounts must be different.', flags: MessageFlags.Ephemeral });
+        const resources = getResourceOptionsFromInteraction(interaction);
+        if (!hasPositiveResourceInput(resources)) return void interaction.reply({ content: 'Provide at least one resource amount greater than zero.', flags: MessageFlags.Ephemeral });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const result = await banking.transferInternalFunds(interaction.guildId, sender.nation_id, recipient.nation_id, resources, interaction.user.id, `Discord internal transfer ${sender.nation_id} -> ${recipient.nation_id}`);
+        if (!result.ok) return void interaction.followUp({ content: `Internal transfer failed: ${result.error}`, flags: MessageFlags.Ephemeral });
+        return void interaction.followUp({ content: `Internal transfer completed.\\nFrom nation **${sender.nation_id}** → nation **${recipient.nation_id}** (<@${recipientUser.id}>)\\n\\nResources:\\n${formatResourceSummary(resources)}\\n\\nYour remaining balance:\\n${formatResourceSummary(result.sourceBalance)}`, flags: MessageFlags.Ephemeral });
+      }
+
+      if (commandName === 'banking_set_api_keys') {""")
+          test='discord-bot/test_db.mjs'; p=Path(test); s=p.read_text()
+          if "test('internal banking transfer validates nation IDs'" not in s:
+            marker="test('global offshore alliance ID config supports fallback and override', async () => {"
+            if marker not in s: raise SystemExit('test marker missing')
+            block="test('internal banking transfer validates nation IDs', async () => {\n  const db = await makeDb();\n  const result = await db.transferNationBankBalance('test-guild', 0, 2, { money: 10 }, 'discord-user');\n  assert.equal(result.ok, false);\n});\n\n"
+            p.write_text(s.replace(marker,block+marker,1))
+      - name: Verify
+        working-directory: discord-bot
+        run: |
+          npm install
+          npm run build
+          node test_db.mjs
+      - name: Commit
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add discord-bot/src/database.ts discord-bot/src/banking.ts discord-bot/src/index.ts discord-bot/src/commandDocs.ts discord-bot/test_db.mjs
+          git rm .github/workflows/apply-internal-transfer.yml .github/workflows/apply-internal-transfer-v2.yml
+          git commit -m 'Add internal banking transfer command'
+          git push origin agent/internal-banking-transfer
