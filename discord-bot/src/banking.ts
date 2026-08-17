@@ -357,6 +357,87 @@ export class BankingService {
     return { allianceId: cfg.alliance_bank_alliance_id, apiKey };
   }
 
+  /**
+   * Resolves the offshore alliance ID + API key a guild's offshore-deposit
+   * WS listener should use, or null if the offshore alliance / its API key
+   * isn't configured yet.
+   */
+  async getOffshoreSubscriptionContext(guildId: string): Promise<{ allianceId: number; apiKey: string } | null> {
+    const cfg = await this._db.getBankingConfig(guildId);
+    if (!cfg.enabled) return null;
+    const offshoreAllianceId = await this.getOffshoreAllianceId();
+    if (!offshoreAllianceId) return null;
+    const apiKey = this._resolveApiKey(cfg.offshore_api_key_ref);
+    if (!apiKey) return null;
+    return { allianceId: offshoreAllianceId, apiKey };
+  }
+
+  /**
+   * Processes a transaction pushed by the OFFSHORE alliance's own
+   * `bankrec/create` WS subscription (as opposed to handleIncomingBankRecDeposit,
+   * which watches the main alliance bank). This fires for deposits landing
+   * directly in the offshore alliance. When the transaction's banker is the
+   * same nation as the sender — i.e. the nation banked its own funds rather
+   * than a gov/banker moving funds on their behalf — the amount is credited
+   * straight to that nation's tracked balance, since the funds are already
+   * sitting in the offshore alliance and there's nothing left to sweep there.
+   * Transactions where the banker differs from the sender are left alone
+   * here (not auto-attributed) and fall back to the existing manual-offshore
+   * / ledger-sweep flow. Returns the created ledger entry (already
+   * 'completed', since no forwarding is needed), or null if the transaction
+   * wasn't eligible for auto-crediting or was already seen.
+   */
+  async handleIncomingOffshoreDeposit(
+    guildId: string,
+    tx: BankTransactionRecord
+  ): Promise<BankingLedgerDoc | null> {
+    const cfg = await this._db.getBankingConfig(guildId);
+    if (!cfg.enabled) return null;
+    const offshoreAllianceId = await this.getOffshoreAllianceId();
+    if (!offshoreAllianceId) return null;
+    if (tx.receiverId !== offshoreAllianceId || tx.receiverType !== 2) return null;
+    // Only nation -> alliance transfers can be attributed to a single sender;
+    // alliance -> alliance transfers (e.g. this guild's own manual-offshore
+    // sweep landing here) aren't self-deposits.
+    if (tx.senderType !== 1) return null;
+    // Only auto-credit when the nation banked its own funds directly. If a
+    // different nation (a banker/gov member) executed the transfer, it isn't
+    // safe to assume the funds belong to the sender's balance.
+    if (tx.bankerId !== tx.senderId) return null;
+
+    const resources = normalizeBalance(tx.resources);
+    if (!hasAnyAmount(resources)) return null;
+
+    const idempotencyKey = `offshore-deposit:${offshoreAllianceId}:${tx.id}`;
+    try {
+      const registration = await this._db.getByNationId(tx.senderId);
+      const depositLedger = await this._db.createBankingLedgerEntry({
+        guild_id: guildId,
+        nation_id: tx.senderId,
+        type: 'offshore-deposit',
+        status: 'completed',
+        resources,
+        source_transaction_id: tx.id,
+        idempotency_key: idempotencyKey,
+        note: tx.note || null,
+        actor_discord_id: null,
+        error: null,
+      });
+      if (registration) {
+        await this._db.creditNationBankBalance(guildId, registration.nation_id, resources);
+      } else {
+        // No linked registration for this nation — fall back to the shared
+        // alliance pool rather than silently dropping the credit.
+        await this._db.creditAlliancePoolBalance(guildId, resources);
+      }
+      await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, depositLedger.ledger_id);
+      return depositLedger;
+    } catch (error) {
+      if (isDuplicateKeyError(error)) return null;
+      throw error;
+    }
+  }
+
   async syncGuildDeposits(guildId: string): Promise<SyncResult> {
     await this.ensureGuildConfig(guildId);
     const result: SyncResult = { processed: 0, skipped: 0, newDeposits: [] };
