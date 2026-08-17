@@ -2090,6 +2090,7 @@ async function main(): Promise<void> {
   let inviteRefreshTimer: NodeJS.Timeout | null = null;
   let bankSyncTimer: NodeJS.Timeout | null = null;
   let bankDepositListenerTimer: NodeJS.Timeout | null = null;
+  let offshoreDepositListenerTimer: NodeJS.Timeout | null = null;
   const BANK_DEPOSIT_LISTENER_RECONCILE_INTERVAL_MS = 60_000;
   const postDepositOffshoreButtons = async (guildId: string, newDeposits: BankingLedgerDoc[]): Promise<void> => {
     if (newDeposits.length === 0) return;
@@ -2214,6 +2215,70 @@ async function main(): Promise<void> {
     }
   };
 
+  // Push-based ingestion for deposits landing directly in the OFFSHORE
+  // alliance's bank (as opposed to bankDepositListeners above, which watches
+  // the main alliance bank). Self-banked deposits (banker == sender) are
+  // auto-credited straight to the sender's nation balance and are
+  // intentionally never passed to postDepositOffshoreButtons — the funds are
+  // already offshore, so there's nothing to sweep and no "Send All to
+  // Offshore" button/popup is needed for them.
+  const offshoreDepositListeners = new Map<string, BankDepositListener>();
+
+  const stopOffshoreDepositListener = (guildId: string): void => {
+    const existing = offshoreDepositListeners.get(guildId);
+    if (!existing) return;
+    existing.stopped = true;
+    offshoreDepositListeners.delete(guildId);
+  };
+
+  const startOffshoreDepositListener = (guildId: string, allianceId: number, apiKey: string): void => {
+    const subClient = new PnWSubscriptionClient(apiKey);
+    const listener: BankDepositListener = {
+      allianceId,
+      apiKeyFingerprint: apiKey,
+      stopped: false,
+      task: Promise.resolve(),
+    };
+    listener.task = (async () => {
+      for await (const tx of subClient.iterBankRecCreates(allianceId)) {
+        if (listener.stopped) break;
+        try {
+          await banking.handleIncomingOffshoreDeposit(guildId, tx);
+        } catch (error) {
+          logWarn(`[banking] failed to process offshore bankrec ${tx.id} for guild ${guildId}:`, error);
+        }
+      }
+    })();
+    offshoreDepositListeners.set(guildId, listener);
+  };
+
+  const reconcileOffshoreDepositListeners = async (): Promise<void> => {
+    if (!BANKING_ENABLED) return;
+    const guildIds = client.guilds.cache.map((guild) => guild.id);
+    const activeGuildIds = new Set(guildIds);
+    for (const guildId of [...offshoreDepositListeners.keys()]) {
+      if (!activeGuildIds.has(guildId)) stopOffshoreDepositListener(guildId);
+    }
+    for (const guildId of guildIds) {
+      let context: { allianceId: number; apiKey: string } | null = null;
+      try {
+        context = await banking.getOffshoreSubscriptionContext(guildId);
+      } catch (error) {
+        logWarn(`[banking] failed to resolve offshore subscription context for guild ${guildId}:`, error);
+      }
+      const existing = offshoreDepositListeners.get(guildId);
+      if (!context) {
+        if (existing) stopOffshoreDepositListener(guildId);
+        continue;
+      }
+      if (existing && existing.allianceId === context.allianceId && existing.apiKeyFingerprint === context.apiKey) {
+        continue;
+      }
+      if (existing) stopOffshoreDepositListener(guildId);
+      startOffshoreDepositListener(guildId, context.allianceId, context.apiKey);
+    }
+  };
+
   client.once('ready', async () => {
     logInfo(`Logged in as ${client.user?.tag ?? 'unknown'}`);
     const appId = client.application?.id;
@@ -2242,6 +2307,12 @@ async function main(): Promise<void> {
       }, BANK_DEPOSIT_LISTENER_RECONCILE_INTERVAL_MS);
       void reconcileBankDepositListeners();
     }
+    if (!offshoreDepositListenerTimer && BANKING_ENABLED) {
+      offshoreDepositListenerTimer = setInterval(() => {
+        void reconcileOffshoreDepositListeners();
+      }, BANK_DEPOSIT_LISTENER_RECONCILE_INTERVAL_MS);
+      void reconcileOffshoreDepositListeners();
+    }
     logInfo(
       `Slash commands synced. count=${syncSummary.count}, gov=${syncSummary.hasGov}, verify=${syncSummary.hasVerify}, verify_alliance_server=${syncSummary.hasVerifyAllianceServer}`
     );
@@ -2251,6 +2322,7 @@ async function main(): Promise<void> {
     await persistGuildMetadata(guild);
     await banking.ensureGuildConfig(guild.id);
     void reconcileBankDepositListeners();
+    void reconcileOffshoreDepositListeners();
     const appId = client.application?.id;
     if (!appId) return;
     const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
@@ -2887,6 +2959,7 @@ ${resourceLines}
         }
         await banking.setApiKeyRefs(interaction.guildId, allianceBankApiKey, offshoreApiKey);
         void reconcileBankDepositListeners();
+        void reconcileOffshoreDepositListeners();
         return void interaction.reply({ content: 'Banking API keys updated for this guild.', flags: MessageFlags.Ephemeral });
       }
       if (commandName === 'banking_set_offshore') {
@@ -2898,6 +2971,7 @@ ${resourceLines}
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const result = await banking.setOffshoreAllianceId(allianceId, interaction.guildId, interaction.user.id);
         void reconcileBankDepositListeners();
+        void reconcileOffshoreDepositListeners();
         const migrationLine = result.migrated && result.resources
           ? `\nMigrated existing offshore holdings to the new offshore:\n${formatResourceSummary(result.resources)}`
           : '';
@@ -4079,6 +4153,7 @@ Message: ${cfg.message}`)],
           enabledByGuild[guild.id] = await banking.setBankingEnabled(guild.id, enabled);
         }
         void reconcileBankDepositListeners();
+        void reconcileOffshoreDepositListeners();
         return { enabledByGuild };
       },
       memberNationContextGetter: async (discordIdStr: string) => {
