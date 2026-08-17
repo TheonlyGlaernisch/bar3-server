@@ -83,6 +83,7 @@ export interface AllianceBankPoolDoc {
 
 export type BankingLedgerType =
   | 'deposit'
+  | 'offshore-deposit'
   | 'external-withdrawal'
   | 'withdraw'
   | 'internal-transfer'
