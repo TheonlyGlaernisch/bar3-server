@@ -8,63 +8,22 @@
 .view-padding-inner-wrapper {
   padding: 25px;
 }
-/* ── Glassmorphism card ─────────────────────────────────────── */
-.glass-card {
-  background: rgba(26, 26, 26, 0.85) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 107, 0, 0.12) !important;
+
+/* ── Scrollbar ──────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
 
-/* ── Glow border ────────────────────────────────────────────── */
-.glow-border {
-  box-shadow:
-    0 0 0 1px rgba(255, 107, 0, 0.2),
-    0 4px 20px rgba(0, 0, 0, 0.4) !important;
-  transition: box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.glow-border:hover {
-  box-shadow:
-    0 0 0 1px rgba(255, 107, 0, 0.4),
-    0 0 20px rgba(255, 107, 0, 0.2),
-    0 8px 24px rgba(0, 0, 0, 0.5) !important;
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 4px;
 }
 
-/* ── Card gradient overlay ──────────────────────────────────── */
-.card-gradient {
-  background: linear-gradient(
-    135deg,
-    rgba(26, 26, 26, 0.95) 0%,
-    rgba(255, 107, 0, 0.04) 100%
-  ) !important;
-}
-
-/* ── Orange glow text ───────────────────────────────────────── */
-.text-glow-orange {
-  text-shadow: 0 0 12px rgba(255, 107, 0, 0.5);
-}
-
-/* ── Table row hover glow ───────────────────────────────────── */
-.table-glow-rows tbody tr:hover td {
-  background: rgba(255, 107, 0, 0.04) !important;
-  transition: background 0.2s ease;
-}
-
-/* ── Futuristic scrollbar ───────────────────────────────────── */
-.scrollbar-futuristic::-webkit-scrollbar {
-  width: 4px;
-}
-
-.scrollbar-futuristic::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.scrollbar-futuristic::-webkit-scrollbar-thumb {
-  background: rgba(255, 107, 0, 0.4);
-  border-radius: 2px;
-}
-
-.scrollbar-futuristic::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 107, 0, 0.6);
+::-webkit-scrollbar-thumb:hover {
+  background: #444;
 }
