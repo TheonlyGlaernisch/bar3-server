@@ -277,34 +277,14 @@ export default defineComponent({
 </script>
 
 <style scoped>
-/* Views & Links cards glassmorphism */
-:deep(.v-card[variant="outlined"]) {
-  background: rgba(26, 26, 26, 0.85) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 107, 0, 0.12) !important;
-}
-
-/* Stat number glow */
+/* Stat number accent */
 :deep(.v-card-text h2) {
-  text-shadow: 0 0 14px rgba(255, 107, 0, 0.4);
+  color: #FF9500;
 }
 
 /* Links list row hover */
 :deep(.v-list-item:hover) {
-  background: rgba(255, 107, 0, 0.05) !important;
-  transition: background 0.2s ease;
-}
-
-/* Gradient list dividers */
-:deep(.v-divider) {
-  border: none !important;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 107, 0, 0.2) 50%,
-    transparent 100%
-  );
+  background: rgba(255, 255, 255, 0.03) !important;
+  transition: background 0.15s ease;
 }
 </style>
