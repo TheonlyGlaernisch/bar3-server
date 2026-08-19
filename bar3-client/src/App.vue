@@ -127,17 +127,10 @@ export default defineComponent({
 
 <style>
   @import url('styles/viewStyle.css');
-  /* ── App bar glassmorphism ──────────────────────────────────── */
-  .app-bar-glass {
-    background: rgba(26, 26, 26, 0.88) !important;
-    backdrop-filter: blur(12px) !important;
-    -webkit-backdrop-filter: blur(12px) !important;
-  }
-  
+
   /* ── Bar 3 title ────────────────────────────────────────────── */
   .bar3-title {
-    letter-spacing: 0.08em;
-    text-shadow: 0 0 18px rgba(255, 107, 0, 0.35);
+    letter-spacing: 0.02em;
   }
 
 
@@ -159,37 +152,26 @@ export default defineComponent({
     min-width: 280px;
     max-width: 420px;
 
-    background: rgba(26, 26, 26, 0.9);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 107, 0, 0.15);
-    border-left: 4px solid #FF6B00;
+    background: #1e1e1e;
+    border: 1px solid #2c2c2c;
+    border-left: 3px solid #FF6B00;
 
-    border-radius: 12px;
+    border-radius: 8px;
 
     padding: 12px 36px 12px 14px;
 
-    box-shadow:
-      0 0 0 1px rgba(255, 107, 0, 0.1),
-      0 10px 25px rgba(0,0,0,.45),
-      0 0 20px rgba(255, 107, 0, 0.08);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
 
     display: flex;
     flex-direction: column;
 
     cursor: pointer;
 
-    transition:
-      transform .15s ease,
-      box-shadow .15s ease,
-      opacity .15s ease;
+    transition: transform .15s ease, opacity .15s ease;
   }
 
   .mention-toast:hover {
     transform: translateY(-2px);
-
-    box-shadow:
-      0 14px 30px rgba(0,0,0,.45);
   }
 
   .mention-toast:active {
@@ -245,65 +227,35 @@ export default defineComponent({
 
 
   .v-toolbar__content {
-    border-bottom: 1px solid transparent !important;
-    background-image:
-      linear-gradient(#1a1a1a, #1a1a1a),
-      linear-gradient(90deg, transparent, rgba(255,107,0,0.5), transparent) !important;
-    background-origin: border-box !important;
-    background-clip: padding-box, border-box !important;
+    border-bottom: 1px solid #262626 !important;
   }
 
-  /* Global rounded corners for cards */
+  /* ── Cards: one flat, consistent surface ───────────────────── */
   .v-card {
-    border-radius: 12px !important;
-    background: rgba(26, 26, 26, 0.85) !important;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid rgba(255, 107, 0, 0.1) !important;
-    transition:
-      box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-      border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  
-  .v-card:hover {
-    border-color: rgba(255, 107, 0, 0.22) !important;
-    box-shadow:
-      0 0 20px rgba(255, 107, 0, 0.1),
-      0 8px 32px rgba(0,0,0,0.4) !important;
+    border-radius: 10px !important;
+    background: #1a1a1a !important;
+    border: 1px solid #2a2a2a !important;
+    box-shadow: none !important;
+    transition: border-color 0.2s ease;
   }
 
-  /* Primary button glow */
-  .v-btn.v-btn--variant-flat[class*="bg-primary"],
-  .v-btn.v-btn--variant-flat .v-btn__overlay {
-    transition: box-shadow 0.25s ease, filter 0.25s ease;
+  .v-card:hover {
+    border-color: #3a3a3a !important;
   }
-  
-  .v-btn.v-btn--variant-flat[class*="bg-primary"]:hover {
-    box-shadow: 0 0 16px rgba(255, 107, 0, 0.45) !important;
-    filter: brightness(1.1);
-  }
-  
-  /* Outlined button hover glow */
-  .v-btn--variant-outlined:hover {
-    box-shadow: 0 0 12px rgba(255, 107, 0, 0.25) !important;
-    border-color: rgba(255, 107, 0, 0.6) !important;
-    transition: box-shadow 0.25s ease;
-  }
-  
-  /* Text field focus glow */
+
+  /* Text field focus ring */
   .v-field--focused .v-field__outline {
     --v-field-border-opacity: 1;
-    box-shadow: 0 0 0 2px rgba(255, 107, 0, 0.2);
   }
-  
-  /* Table semi-transparent background */
+
+  /* Tables */
   .v-table {
-    background: rgba(26, 26, 26, 0.6) !important;
+    background: transparent !important;
   }
-  
+
   .v-table tbody tr:hover td {
-    background: rgba(255, 107, 0, 0.04) !important;
-    transition: background 0.2s ease;
+    background: rgba(255, 255, 255, 0.03) !important;
+    transition: background 0.15s ease;
   }
 
   .v-text-field .v-input__control .v-input__slot {
@@ -312,5 +264,7 @@ export default defineComponent({
 
   .v-btn:not(.v-btn--fab):not(.v-btn--icon) {
     border-radius: 8px !important;
+    letter-spacing: 0.01em;
+    box-shadow: none !important;
   }
 </style>
