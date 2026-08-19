@@ -17,25 +17,56 @@
       <div class="text-subtitle-1 text-white font-weight-medium mb-2">No registered nation found</div>
       <div class="text-body-2">Link your Discord account with <code>/register</code></div>
     </v-card>
-    <v-card v-else-if="context.nation" color="#1A1A1A" class="pa-4">
-      <div class="text-subtitle-1 text-white font-weight-medium mb-3">
-        <a :href="context.nation.url" target="_blank" rel="noopener noreferrer">{{ context.nation.nationName }}</a>
-      </div>
-      <div class="text-body-2 mb-1"><strong>Leader:</strong> {{ context.nation.leaderName }}</div>
-      <div class="text-body-2 mb-1"><strong>Cities:</strong> {{ context.nation.numCities }}</div>
-      <div class="text-body-2 mb-1"><strong>Score:</strong> {{ context.nation.score.toFixed(2) }}</div>
-      <div class="text-body-2 mb-1">
-        <strong>Alliance:</strong>
-        <span v-if="context.alliance">
-          <a :href="context.alliance.url" target="_blank" rel="noopener noreferrer">{{ context.alliance.name }}</a>
-        </span>
-        <span v-else>{{ context.nation.allianceName || 'None' }}</span>
-      </div>
-      <div class="text-body-2"><strong>Position:</strong> {{ context.nation.alliancePosition || 'N/A' }}</div>
-    </v-card>
-    <v-card v-if="context.nation" color="#1A1A1A" class="pa-4 mt-4">
-      <div class="text-subtitle-1 text-white font-weight-medium mb-3">Defensive Wars</div>
-      <v-alert v-if="counterNotice" type="success" density="compact" class="mb-3">{{ counterNotice }}</v-alert>
+    <!-- Nation Overview Grid -->
+    <div v-if="context.nation" class="nation-grid">
+      <!-- Nation Info Card -->
+      <v-card class="info-card">
+        <div class="card-header">Nation</div>
+        <div class="card-content">
+          <div class="info-label">Name</div>
+          <div class="info-value">
+            <a :href="context.nation.url" target="_blank" rel="noopener noreferrer">{{ context.nation.nationName }}</a>
+          </div>
+          <div class="info-label mt-3">Leader</div>
+          <div class="info-value">{{ context.nation.leaderName }}</div>
+        </div>
+      </v-card>
+
+      <!-- Stats Card -->
+      <v-card class="info-card">
+        <div class="card-header">Stats</div>
+        <div class="card-content">
+          <div class="stat-row">
+            <div class="stat-label">Cities</div>
+            <div class="stat-number">{{ context.nation.numCities }}</div>
+          </div>
+          <div class="stat-row mt-3">
+            <div class="stat-label">Score</div>
+            <div class="stat-number">{{ context.nation.score.toFixed(2) }}</div>
+          </div>
+        </div>
+      </v-card>
+
+      <!-- Alliance Card -->
+      <v-card class="info-card">
+        <div class="card-header">Alliance</div>
+        <div class="card-content">
+          <div class="info-label">Name</div>
+          <div class="info-value">
+            <span v-if="context.alliance">
+              <a :href="context.alliance.url" target="_blank" rel="noopener noreferrer">{{ context.alliance.name }}</a>
+            </span>
+            <span v-else>{{ context.nation.allianceName || 'None' }}</span>
+          </div>
+          <div class="info-label mt-3">Position</div>
+          <div class="info-value">{{ context.nation.alliancePosition || 'N/A' }}</div>
+        </div>
+      </v-card>
+    </div>
+    <v-card v-if="context.nation" class="wars-card">
+      <div class="card-header">Defensive Wars</div>
+      <div class="card-content">
+        <v-alert v-if="counterNotice" type="success" density="compact" class="mb-3">{{ counterNotice }}</v-alert>
       <v-table v-if="context.nationDefensiveWars.length">
         <template v-slot:default>
           <thead>
@@ -69,8 +100,9 @@
           </tbody>
         </template>
       </v-table>
-      <div v-else class="caption text-grey-lighten-1">
+      <div v-else class="no-wars">
         No active defensive wars right now.
+      </div>
       </div>
     </v-card>
     <v-card v-else color="#1A1A1A" class="pa-4">
@@ -155,9 +187,120 @@ export default defineComponent({
 </script>
 
 <style scoped>
+.nation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.info-card {
+  border-radius: 10px !important;
+  background: #1a1a1a !important;
+  border: 1px solid #2a2a2a !important;
+  box-shadow: none !important;
+  transition: border-color 0.2s ease;
+}
+
+.info-card:hover {
+  border-color: #3a3a3a !important;
+}
+
+.card-header {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #FF9500;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid #2a2a2a;
+  letter-spacing: 0.02em;
+}
+
+.card-content {
+  padding: 16px;
+}
+
+.info-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.info-value {
+  font-size: 0.95rem;
+  color: #e8e8e8;
+  margin-top: 4px;
+  word-break: break-word;
+}
+
+.info-value a {
+  color: #FF6B00;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.info-value a:hover {
+  color: #FF9500;
+  text-decoration: underline;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stat-number {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #FF6B00;
+}
+
+.wars-card {
+  border-radius: 10px !important;
+  background: #1a1a1a !important;
+  border: 1px solid #2a2a2a !important;
+  box-shadow: none !important;
+  transition: border-color 0.2s ease;
+  margin-top: 24px;
+}
+
+.wars-card:hover {
+  border-color: #3a3a3a !important;
+}
+
+.no-wars {
+  color: #888;
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 20px;
+}
+
 /* Wars table row hover */
 :deep(.v-table tbody tr:hover td) {
   background: rgba(255, 255, 255, 0.03) !important;
   transition: background 0.15s ease;
+}
+
+/* Table styling within card */
+:deep(.card-content .v-table) {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .nation-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
