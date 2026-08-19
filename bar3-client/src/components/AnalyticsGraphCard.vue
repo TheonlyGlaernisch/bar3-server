@@ -191,26 +191,12 @@ export default defineComponent({
 });
 </script>
 <style scoped>
-/* Gradient header replacing bg-blue-darken-2 */
 .analytics-header {
-  background: linear-gradient(
-    135deg,
-    #1f1f1f 0%,
-    rgba(255, 107, 0, 0.18) 100%
-  );
-  border-bottom: 1px solid rgba(255, 107, 0, 0.2);
+  background: #1f1f1f;
+  border-bottom: 1px solid #2a2a2a;
 }
 
-/* Stat number glow */
 .analytics-header .text-md-h5 {
-  text-shadow: 0 0 14px rgba(255, 107, 0, 0.45);
-}
-
-/* Card glassmorphism */
-:deep(.v-card) {
-  background: rgba(26, 26, 26, 0.85) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 107, 0, 0.12) !important;
+  color: #FF9500;
 }
 </style>
