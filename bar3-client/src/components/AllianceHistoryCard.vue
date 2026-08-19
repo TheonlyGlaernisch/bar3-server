@@ -6,21 +6,25 @@
         <v-progress-circular indeterminate color="primary" size="28" />
       </div>
       <div v-else-if="error" class="history-message">{{ error }}</div>
-      <div v-else-if="!points.length" class="history-message">No history data available for this alliance yet.</div>
+      <div v-else-if="!chartPoints.length" class="history-message">No history data available for this alliance yet.</div>
       <template v-else>
         <div class="chart-block">
           <div class="chart-label">
             Score
-            <span class="chart-value">{{ latest.score.toLocaleString() }}</span>
+            <span class="chart-value">{{ latestScore.toLocaleString() }}</span>
           </div>
-          <Line :data="scoreChartData" :options="scoreChartOptions" :height="220" />
+          <div class="chart-wrap">
+            <Line :data="scoreChartData" :options="scoreChartOptions" />
+          </div>
         </div>
         <div class="chart-block mt-6">
           <div class="chart-label">
             Rank
-            <span class="chart-value">#{{ latest.rank }}</span>
+            <span class="chart-value">#{{ latestRank }}</span>
           </div>
-          <Line :data="rankChartData" :options="rankChartOptions" :height="220" />
+          <div class="chart-wrap">
+            <Line :data="rankChartData" :options="rankChartOptions" />
+          </div>
         </div>
       </template>
     </div>
@@ -52,15 +56,52 @@ export default defineComponent({
       type: Number as PropType<number | null>,
       default: null,
     },
+    // Live values straight from the alliance table/API - always shown as the
+    // most recent point, since they're more up to date than the sheet history.
+    currentScore: {
+      type: Number as PropType<number | null>,
+      default: null,
+    },
+    currentRank: {
+      type: Number as PropType<number | null>,
+      default: null,
+    },
   },
   setup(props) {
     const loading = ref(false);
     const error = ref('');
     const points = ref<AllianceHistoryPoint[]>([]);
 
-    const latest = computed(() => points.value[points.value.length - 1] || { score: 0, rank: 0 });
+    // Merge in the live table values as the newest point so the chart's
+    // latest reading always matches what's shown elsewhere on the page.
+    const chartPoints = computed(() => {
+      const merged = [...points.value];
+      if (props.currentScore != null && props.currentRank != null) {
+        const last = merged[merged.length - 1];
+        const isSameAsLast = last && last.score === props.currentScore && last.rank === props.currentRank;
+        if (!isSameAsLast) {
+          merged.push({
+            date: 'now',
+            score: props.currentScore,
+            rank: props.currentRank,
+          });
+        }
+      }
+      return merged;
+    });
 
-    const labels = computed(() => points.value.map((p) => {
+    const latestScore = computed(() => {
+      const p = chartPoints.value[chartPoints.value.length - 1];
+      return p ? p.score : 0;
+    });
+
+    const latestRank = computed(() => {
+      const p = chartPoints.value[chartPoints.value.length - 1];
+      return p ? p.rank : 0;
+    });
+
+    const labels = computed(() => chartPoints.value.map((p) => {
+      if (p.date === 'now') return 'Now';
       const d = new Date(p.date);
       return Number.isNaN(d.getTime()) ? p.date : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     }));
@@ -68,6 +109,8 @@ export default defineComponent({
     const baseOptions = {
       responsive: true,
       maintainAspectRatio: false,
+      resizeDelay: 100,
+      animation: false as const,
       plugins: {
         legend: { display: false },
       },
@@ -84,12 +127,16 @@ export default defineComponent({
       datasets: [
         {
           label: 'Score',
-          data: points.value.map((p) => p.score),
+          data: chartPoints.value.map((p) => p.score),
           borderColor: '#FF6B00',
           backgroundColor: 'rgba(255, 107, 0, 0.12)',
           fill: true,
-          tension: 0.25,
-          pointRadius: 0,
+          tension: 0,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          pointBackgroundColor: '#FF6B00',
+          pointBorderColor: '#1a1a1a',
+          pointBorderWidth: 1,
           pointHitRadius: 8,
         },
       ],
@@ -111,12 +158,16 @@ export default defineComponent({
       datasets: [
         {
           label: 'Rank',
-          data: points.value.map((p) => p.rank),
+          data: chartPoints.value.map((p) => p.rank),
           borderColor: '#FF9500',
           backgroundColor: 'rgba(255, 149, 0, 0.12)',
           fill: true,
-          tension: 0.25,
-          pointRadius: 0,
+          tension: 0,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          pointBackgroundColor: '#FF9500',
+          pointBorderColor: '#1a1a1a',
+          pointBorderWidth: 1,
           pointHitRadius: 8,
         },
       ],
@@ -157,8 +208,9 @@ export default defineComponent({
     return {
       loading,
       error,
-      points,
-      latest,
+      chartPoints,
+      latestScore,
+      latestRank,
       scoreChartData,
       scoreChartOptions,
       rankChartData,
@@ -210,6 +262,15 @@ export default defineComponent({
   text-transform: none;
   letter-spacing: normal;
   margin-left: 6px;
+}
+
+/* Fixed-size wrapper so chart.js has a stable box to measure against -
+   without this, responsive canvases can enter a resize feedback loop
+   inside flex/grid parents. */
+.chart-wrap {
+  position: relative;
+  height: 220px;
+  width: 100%;
 }
 
 .history-message {
