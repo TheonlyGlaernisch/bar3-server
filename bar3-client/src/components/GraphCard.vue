@@ -137,31 +137,8 @@ export default defineComponent({
 </script>
 
 <style scoped>
-  .graph-card {
-    border-radius: 12px !important;
-    background: rgba(26, 26, 26, 0.85) !important;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 107, 0, 0.12) !important;
-    transition: box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-                border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .graph-card:hover {
-    border-color: rgba(255, 107, 0, 0.28) !important;
-    box-shadow: 0 0 24px rgba(255, 107, 0, 0.15),
-                0 8px 32px rgba(0,0,0,0.45) !important;
-  }
-
   .card-title-orange {
     color: #FF6B00;
     font-weight: 600;
-    text-shadow: 0 0 10px rgba(255, 107, 0, 0.4);
-  }
-
-  /* Progress circular glow */
-  :deep(.v-progress-circular__overlay) {
-    filter: drop-shadow(0 0 6px rgba(255, 107, 0, 0.5));
   }
 </style>
-
