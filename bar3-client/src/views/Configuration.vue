@@ -146,27 +146,13 @@
     min-height: 200px;
     width: 100%;
     font-family: "Roboto",Arial;
-    background: rgba(26, 26, 26, 0.85) !important;
-backdrop-filter: blur(10px);
--webkit-backdrop-filter: blur(10px);
-border: 1px solid rgba(255, 107, 0, 0.15) !important;
-}
+    background: #1a1a1a !important;
+    border: 1px solid #2a2a2a !important;
+  }
 
-/* Section header styling */
-h2 {
-  letter-spacing: 0.04em;
-  background: linear-gradient(
-    90deg,
-    #ffffff 0%,
-    rgba(255, 149, 0, 0.85) 100%
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-/* Text field focus glow */
-:deep(.v-field--focused .v-field__outline) {
-  box-shadow: 0 0 0 2px rgba(255, 107, 0, 0.2);
-}
+  /* Section header styling */
+  h2 {
+    letter-spacing: 0.02em;
+    color: #FF9500;
+  }
 </style>
