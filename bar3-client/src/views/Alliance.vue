@@ -20,124 +20,126 @@
     <v-card v-else-if="!context.alliance" class="info-card pa-4">
       <div class="text-subtitle-1 text-white font-weight-medium">No alliance found for your nation</div>
     </v-card>
-    <div v-else>
-      <!-- Alliance Overview Grid -->
-      <div class="alliance-grid">
-        <!-- Alliance Info Card -->
-        <v-card class="info-card">
-          <div class="card-header">Alliance</div>
-          <div class="card-content">
-            <div class="info-label">Name</div>
-            <div class="info-value">
-              <a :href="context.alliance.url" target="_blank" rel="noopener noreferrer">
-                {{ context.alliance.name }} <span v-if="context.alliance.acronym">({{ context.alliance.acronym }})</span>
-              </a>
-            </div>
-            <div class="info-label mt-3">Rank</div>
-            <div class="info-value">#{{ context.alliance.rank }}</div>
-          </div>
-        </v-card>
-
-        <!-- Membership Card -->
-        <v-card class="info-card">
-          <div class="card-header">Membership</div>
-          <div class="card-content">
-            <div class="stat-row">
-              <div class="stat-label">Members</div>
-              <div class="stat-number">{{ context.alliance.numMembers }}</div>
-            </div>
-            <div class="stat-row mt-3">
-              <div class="stat-label">Total Cities</div>
-              <div class="stat-number">{{ context.alliance.totalCities }}</div>
-            </div>
-          </div>
-        </v-card>
-
-        <!-- Score Card -->
-        <v-card class="info-card">
-          <div class="card-header">Score</div>
-          <div class="card-content">
-            <div class="stat-row">
-              <div class="stat-label">Total Score</div>
-              <div class="stat-number">{{ context.alliance.score.toFixed(2) }}</div>
-            </div>
-            <div class="stat-row mt-3">
-              <div class="stat-label">Average Score</div>
-              <div class="stat-number">{{ context.alliance.averageScore.toFixed(2) }}</div>
-            </div>
-          </div>
-        </v-card>
-      </div>
-
-      <!-- Score & Rank History -->
-      <alliance-history-card
-        :alliance-id="context.alliance.allianceId"
-        :current-score="context.alliance.score"
-        :current-rank="context.alliance.rank"
-        class="mt-6"
-      />
-
-      <!-- Active Defensive Wars -->
-      <v-card class="info-card mt-6">
-        <div class="card-header">Active Defensive Wars</div>
-        <div class="card-content">
-          <v-list v-if="context.activeDefensiveWars.length" density="compact" color="transparent">
-            <v-list-item v-for="war in context.activeDefensiveWars" :key="war.warId" class="px-0">
-              <div>
-                <v-list-item-title class="text-white">
-                  <a :href="war.url" target="_blank" rel="noopener noreferrer">War #{{ war.warId }}</a>
-                </v-list-item-title>
-                <v-list-item-subtitle>
-                  {{ war.attackerName }} ({{ war.attackerAllianceName || war.attackerAllianceId }})
-                  vs
-                  {{ war.defenderName }} ({{ war.defenderAllianceName || war.defenderAllianceId }})
-                </v-list-item-subtitle>
-                <v-list-item-subtitle v-if="war.counterRequested" class="text-green-lighten-2">
-                  Counter requested{{ war.counterRequestedAt ? ` · ${new Date(war.counterRequestedAt).toLocaleString()}` : '' }}
-                </v-list-item-subtitle>
+    <v-container v-else fluid class="pa-0">
+      <v-row dense>
+        <!-- Row 1 -->
+        <v-col cols="12" md="4">
+          <v-card class="info-card h-100">
+            <div class="card-header">Alliance</div>
+            <div class="card-content">
+              <div class="info-label">Name</div>
+              <div class="info-value">
+                <a :href="context.alliance.url" target="_blank" rel="noopener noreferrer">
+                  {{ context.alliance.name }} <span v-if="context.alliance.acronym">({{ context.alliance.acronym }})</span>
+                </a>
               </div>
-              <template v-if="canRequestCounter(war)" #append>
-                <v-btn
-                  size="x-small"
-                  color="primary"
-                  :loading="requestingWarId === war.warId"
-                  :disabled="requestingWarId === war.warId || war.counterRequested"
-                  @click="requestCounter(war.warId)"
-                >
-                  {{ war.counterRequested ? 'Requested' : 'Request Counter' }}
-                </v-btn>
-              </template>
-            </v-list-item>
-          </v-list>
-          <div v-else class="history-message">No active defensive wars found.</div>
-        </div>
-      </v-card>
+              <div class="info-label mt-3">Rank</div>
+              <div class="info-value">#{{ context.alliance.rank }}</div>
+            </div>
+          </v-card>
+        </v-col>
 
-      <!-- Requested Counters -->
-      <v-card class="info-card mt-6">
-        <div class="card-header">Requested Counters</div>
-        <div class="card-content">
-          <v-list v-if="requestedCounterWars.length" density="compact" color="transparent">
-            <v-list-item v-for="war in requestedCounterWars" :key="`counter-${war.warId}`" class="px-0">
-              <div>
-                <v-list-item-title class="text-white">
-                  <a :href="war.url" target="_blank" rel="noopener noreferrer">War #{{ war.warId }}</a>
-                </v-list-item-title>
-                <v-list-item-subtitle>
-                  {{ war.attackerName }} ({{ war.attackerAllianceName || war.attackerAllianceId }})
-                  vs
-                  {{ war.defenderName }} ({{ war.defenderAllianceName || war.defenderAllianceId }})
-                </v-list-item-subtitle>
-                <v-list-item-subtitle class="text-green-lighten-2">
-                  Requested{{ war.counterRequestedAt ? ` · ${new Date(war.counterRequestedAt).toLocaleString()}` : '' }}
-                </v-list-item-subtitle>
+        <v-col cols="12" md="4">
+          <v-card class="info-card h-100">
+            <div class="card-header">Membership</div>
+            <div class="card-content">
+              <div class="stat-row">
+                <div class="stat-label">Members</div>
+                <div class="stat-number">{{ context.alliance.numMembers }}</div>
               </div>
-            </v-list-item>
-          </v-list>
-          <div v-else class="history-message">No requested counters in active wars.</div>
-        </div>
-      </v-card>
-    </div>
+              <div class="stat-row mt-3">
+                <div class="stat-label">Total Cities</div>
+                <div class="stat-number">{{ context.alliance.totalCities }}</div>
+              </div>
+            </div>
+          </v-card>
+        </v-col>
+
+        <v-col cols="12" md="4">
+          <v-card class="info-card h-100">
+            <div class="card-header">Score</div>
+            <div class="card-content">
+              <div class="stat-row">
+                <div class="stat-label">Total Score</div>
+                <div class="stat-number">{{ context.alliance.score.toFixed(2) }}</div>
+              </div>
+              <div class="stat-row mt-3">
+                <div class="stat-label">Average Score</div>
+                <div class="stat-number">{{ context.alliance.averageScore.toFixed(2) }}</div>
+              </div>
+            </div>
+          </v-card>
+        </v-col>
+
+        <!-- Row 2 -->
+        <v-col cols="12" md="4">
+          <alliance-history-card :alliance-id="context.alliance.allianceId" class="h-100" />
+        </v-col>
+
+        <v-col cols="12" md="4">
+          <v-card class="info-card h-100">
+            <div class="card-header">Active Defensive Wars</div>
+            <div class="card-content">
+              <v-list v-if="context.activeDefensiveWars.length" density="compact" color="transparent">
+                <v-list-item v-for="war in context.activeDefensiveWars" :key="war.warId" class="px-0">
+                  <div>
+                    <v-list-item-title class="text-white">
+                      <a :href="war.url" target="_blank" rel="noopener noreferrer">War #{{ war.warId }}</a>
+                    </v-list-item-title>
+                    <v-list-item-subtitle>
+                      {{ war.attackerName }} ({{ war.attackerAllianceName || war.attackerAllianceId }})
+                      vs
+                      {{ war.defenderName }} ({{ war.defenderAllianceName || war.defenderAllianceId }})
+                    </v-list-item-subtitle>
+                    <v-list-item-subtitle v-if="war.counterRequested" class="text-green-lighten-2">
+                      Counter requested{{ war.counterRequestedAt ? ` · ${new Date(war.counterRequestedAt).toLocaleString()}` : '' }}
+                    </v-list-item-subtitle>
+                  </div>
+                  <template v-if="canRequestCounter(war)" #append>
+                    <v-btn
+                      size="x-small"
+                      color="primary"
+                      :loading="requestingWarId === war.warId"
+                      :disabled="requestingWarId === war.warId || war.counterRequested"
+                      @click="requestCounter(war.warId)"
+                    >
+                      {{ war.counterRequested ? 'Requested' : 'Request Counter' }}
+                    </v-btn>
+                  </template>
+                </v-list-item>
+              </v-list>
+              <div v-else class="history-message">No active defensive wars found.</div>
+            </div>
+          </v-card>
+        </v-col>
+
+        <v-col cols="12" md="4">
+          <v-card class="info-card h-100">
+            <div class="card-header">Requested Counters</div>
+            <div class="card-content">
+              <v-list v-if="requestedCounterWars.length" density="compact" color="transparent">
+                <v-list-item v-for="war in requestedCounterWars" :key="`counter-${war.warId}`" class="px-0">
+                  <div>
+                    <v-list-item-title class="text-white">
+                      <a :href="war.url" target="_blank" rel="noopener noreferrer">War #{{ war.warId }}</a>
+                    </v-list-item-title>
+                    <v-list-item-subtitle>
+                      {{ war.attackerName }} ({{ war.attackerAllianceName || war.attackerAllianceId }})
+                      vs
+                      {{ war.defenderName }} ({{ war.defenderAllianceName || war.defenderAllianceId }})
+                    </v-list-item-subtitle>
+                    <v-list-item-subtitle class="text-green-lighten-2">
+                      Requested{{ war.counterRequestedAt ? ` · ${new Date(war.counterRequestedAt).toLocaleString()}` : '' }}
+                    </v-list-item-subtitle>
+                  </div>
+                </v-list-item>
+              </v-list>
+              <div v-else class="history-message">No requested counters in active wars.</div>
+            </div>
+          </v-card>
+        </v-col>
+      </v-row>
+    </v-container>
   </div>
 </template>
 
@@ -224,12 +226,6 @@ export default defineComponent({
 </script>
 
 <style scoped>
-.alliance-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 20px;
-}
-
 .info-card {
   border-radius: 10px !important;
   background: #1a1a1a !important;
@@ -314,12 +310,5 @@ export default defineComponent({
 
 :deep(.v-list-item:last-child) {
   border-bottom: none;
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
-  .alliance-grid {
-    grid-template-columns: 1fr;
-  }
 }
 </style>
