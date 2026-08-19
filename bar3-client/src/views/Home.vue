@@ -117,20 +117,15 @@ export default defineComponent({
     right: 24px;
     bottom: 24px;
     z-index: 10;
-    box-shadow: 0 0 20px rgba(255, 107, 0, 0.35) !important;
-    transition: box-shadow 0.25s ease, transform 0.2s ease !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4) !important;
+    transition: transform 0.15s ease !important;
   }
-  
+
   .dashboard-refresh-button:hover {
-    box-shadow: 0 0 32px rgba(255, 107, 0, 0.55) !important;
-    transform: scale(1.08) rotate(15deg);
+    transform: scale(1.06);
   }
+
   .home {
-    background: linear-gradient(
-      160deg,
-      rgba(26, 26, 26, 0) 0%,
-      rgba(255, 107, 0, 0.025) 100%
-    );
     min-height: 100%;
   }
 
