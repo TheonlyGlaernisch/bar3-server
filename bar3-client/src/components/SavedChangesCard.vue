@@ -49,13 +49,9 @@
     bottom: 50px;
     right: 50px;
     width: 300px;
-    background: rgba(26, 26, 26, 0.9) !important;
-    backdrop-filter: blur(12px) !important;
-    -webkit-backdrop-filter: blur(12px) !important;
-    border: 1px solid rgba(255, 107, 0, 0.2) !important;
-    box-shadow:
-      0 0 20px rgba(255, 107, 0, 0.12),
-      0 8px 32px rgba(0, 0, 0, 0.5) !important;
+    background: #1e1e1e !important;
+    border: 1px solid #FF6B00 !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
   }
 
   @media only screen and (max-width: 450px) {
