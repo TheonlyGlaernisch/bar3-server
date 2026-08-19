@@ -11,21 +11,17 @@ export default createVuetify({
     themes: {
       dark: {
         colors: {
+          background: '#141414',
+          surface: '#1a1a1a',
+          'surface-elevated': '#202020',
           primary: '#FF6B00',
-          secondary: '#424242',
+          secondary: '#3A3A3A',
           accent: '#FF9500',
           error: '#FF5252',
           info: '#2196F3',
           success: '#4CAF50',
           warning: '#FFC107',
-          'surface-elevated': '#242424',
-          'surface-glass': '#1A1A1A',
         },
-        variables: {
-        'glow-rgb': '255, 107, 0',
-        'glass-bg': 'rgba(26, 26, 26, 0.85)',
-        'glass-border': 'rgba(255, 107, 0, 0.12)',
-      },
       },
     },
   },
