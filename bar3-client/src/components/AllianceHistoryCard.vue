@@ -6,7 +6,7 @@
         <v-progress-circular indeterminate color="primary" size="28" />
       </div>
       <div v-else-if="error" class="history-message">{{ error }}</div>
-      <div v-else-if="!chartPoints.length" class="history-message">No history data available for this alliance yet.</div>
+      <div v-else-if="!points.length" class="history-message">No history data available for this alliance yet.</div>
       <template v-else>
         <div class="chart-block">
           <div class="chart-label">
@@ -56,52 +56,23 @@ export default defineComponent({
       type: Number as PropType<number | null>,
       default: null,
     },
-    // Live values straight from the alliance table/API - always shown as the
-    // most recent point, since they're more up to date than the sheet history.
-    currentScore: {
-      type: Number as PropType<number | null>,
-      default: null,
-    },
-    currentRank: {
-      type: Number as PropType<number | null>,
-      default: null,
-    },
   },
   setup(props) {
     const loading = ref(false);
     const error = ref('');
     const points = ref<AllianceHistoryPoint[]>([]);
 
-    // Merge in the live table values as the newest point so the chart's
-    // latest reading always matches what's shown elsewhere on the page.
-    const chartPoints = computed(() => {
-      const merged = [...points.value];
-      if (props.currentScore != null && props.currentRank != null) {
-        const last = merged[merged.length - 1];
-        const isSameAsLast = last && last.score === props.currentScore && last.rank === props.currentRank;
-        if (!isSameAsLast) {
-          merged.push({
-            date: 'now',
-            score: props.currentScore,
-            rank: props.currentRank,
-          });
-        }
-      }
-      return merged;
-    });
-
     const latestScore = computed(() => {
-      const p = chartPoints.value[chartPoints.value.length - 1];
+      const p = points.value[points.value.length - 1];
       return p ? p.score : 0;
     });
 
     const latestRank = computed(() => {
-      const p = chartPoints.value[chartPoints.value.length - 1];
+      const p = points.value[points.value.length - 1];
       return p ? p.rank : 0;
     });
 
-    const labels = computed(() => chartPoints.value.map((p) => {
-      if (p.date === 'now') return 'Now';
+    const labels = computed(() => points.value.map((p) => {
       const d = new Date(p.date);
       return Number.isNaN(d.getTime()) ? p.date : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     }));
@@ -127,7 +98,7 @@ export default defineComponent({
       datasets: [
         {
           label: 'Score',
-          data: chartPoints.value.map((p) => p.score),
+          data: points.value.map((p) => p.score),
           borderColor: '#FF6B00',
           backgroundColor: 'rgba(255, 107, 0, 0.12)',
           fill: true,
@@ -158,7 +129,7 @@ export default defineComponent({
       datasets: [
         {
           label: 'Rank',
-          data: chartPoints.value.map((p) => p.rank),
+          data: points.value.map((p) => p.rank),
           borderColor: '#FF9500',
           backgroundColor: 'rgba(255, 149, 0, 0.12)',
           fill: true,
@@ -208,7 +179,7 @@ export default defineComponent({
     return {
       loading,
       error,
-      chartPoints,
+      points,
       latestScore,
       latestRank,
       scoreChartData,
