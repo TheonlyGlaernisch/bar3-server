@@ -70,7 +70,12 @@
       </div>
 
       <!-- Score & Rank History -->
-      <alliance-history-card :alliance-id="context.alliance.allianceId" class="mt-6" />
+      <alliance-history-card
+        :alliance-id="context.alliance.allianceId"
+        :current-score="context.alliance.score"
+        :current-rank="context.alliance.rank"
+        class="mt-6"
+      />
 
       <!-- Active Defensive Wars -->
       <v-card class="info-card mt-6">
