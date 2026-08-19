@@ -100,41 +100,10 @@ export default defineComponent({
   .scrolling-list::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 107, 0, 0.65);
   }
-  
-  /* Card glassmorphism (applied to the root v-card) */
-  :deep(.v-card) {
-    background: rgba(26, 26, 26, 0.85) !important;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 107, 0, 0.12) !important;
-  }
-  
+
   /* Row hover */
   :deep(.v-list-item:hover) {
-    background: rgba(255, 107, 0, 0.05) !important;
-    transition: background 0.2s ease;
-  }
-  
-  /* Gradient list dividers */
-  :deep(.v-divider) {
-    border: none !important;
-    height: 1px;
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      rgba(255, 107, 0, 0.2) 50%,
-      transparent 100%
-    );
-  }
-  
-  /* Icon glow */
-  :deep(.v-icon[style*="color: green"]),
-  :deep(.v-icon.text-green) {
-    filter: drop-shadow(0 0 5px rgba(76, 175, 80, 0.6));
-  }
-  
-  :deep(.v-icon[style*="color: red"]),
-  :deep(.v-icon.text-red) {
-    filter: drop-shadow(0 0 5px rgba(255, 82, 82, 0.6));
+    background: rgba(255, 255, 255, 0.03) !important;
+    transition: background 0.15s ease;
   }
 </style>
