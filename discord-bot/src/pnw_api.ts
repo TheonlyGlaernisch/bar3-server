@@ -1947,10 +1947,10 @@ function normalizeContinent(raw: string): string {
 
 function cityCommerceRate(city: City, hasItc: boolean, hasSptp = false): number {
   let rate = (
-    city.supermarket * 3.5 + city.bank * 5.0 + city.shoppingMall * 5.0 +
-    city.stadium * 5.0 + city.subway * 8.0
+    city.supermarket * 4.0 + city.bank * 6.0 + city.shoppingMall * 8.0 +
+    city.stadium * 10.0 + city.subway * 10.0
   );
-  if (hasItc) rate += 2.0;
+  if (hasItc) rate += 1.0;
   if (hasSptp) rate += 4.0;
   return Math.min(100.0, rate);
 }
