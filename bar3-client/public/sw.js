@@ -54,7 +54,9 @@ self.addEventListener('push', (event) => {
     // Desktop Chrome: needs true for reliable delivery
     requireInteraction: !isIOS(),
     requireInteraction: requiresInteraction(),
-    data: { url: '/chat' },
+    // Notifications can carry a target url (e.g. the accept-trade page for
+    // a low-price trade alert). Falls back to the chat tab when absent.
+    data: { url: data.url || '/chat' },
   };
 
   console.log('[sw] Showing notification with title:', title, 'options:', options);
@@ -76,7 +78,8 @@ self.addEventListener('notificationclick', (event) => {
   console.log('[sw] Notification clicked');
   event.notification.close();
 
-  const targetUrl = new URL('/chat', self.location.origin).href;
+  const requestedUrl = (event.notification.data && event.notification.data.url) || '/chat';
+  const targetUrl = new URL(requestedUrl, self.location.origin).href;
 
   event.waitUntil(
     clients
