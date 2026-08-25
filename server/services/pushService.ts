@@ -41,6 +41,11 @@ export interface PushPayload {
   title: string;
   body: string;
   tag?: string;
+  /**
+   * Where the service worker should navigate the browser to when the user
+   * clicks the notification. Defaults to '/chat' (see sw.js) when omitted.
+   */
+  url?: string;
 }
 
 
@@ -131,6 +136,7 @@ export async function sendToUsername(
     title: payload.title,
     body: payload.body,
     tag: payload.tag ?? `bar3-mention-${Date.now()}`,
+    url: payload.url ?? '/chat',
   });
 
   console.log('[pushService] Payload:', data);
