@@ -1,5 +1,5 @@
 import searchLoop from '../jobs/searchLoop';
-import tradeAlertLoop from '../jobs/tradeAlertLoop';
+import tradeAlertLoop from '../services/tradeAlertLoop';
 import clearQueue from '../jobs/clearQueue';
 
 /**
