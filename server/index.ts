@@ -25,6 +25,7 @@ import AccountService from './services/accountService';
 import superagent from 'superagent';
 import { attachChatServer, resolveChatAccess } from './services/chatServer';
 import { sendToAdmins } from './services/pushService';
+import tradeAlertLoop from './services/tradeAlertLoop';
 // Extend express-session SessionData with Discord fields
 import './interfaces/session';
 import './interfaces/sessionPnwNative';
@@ -581,7 +582,7 @@ httpServer.listen(PORT, () => {
 
 attachChatServer(httpServer, sessionStore, sessionSecret || 'bar3-change-me-in-production');
 startAutomationLoop();
-
+tradeAlertLoop();
 
 
 // Graceful shutdown
