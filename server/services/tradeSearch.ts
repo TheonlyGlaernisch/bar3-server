@@ -25,8 +25,7 @@ class TradeSearchService {
 
     (async () => {
       for await (const trade of subscriptionClient.iterTradeCreates()) {
-        console.log(`[tradeSearch] Trade #${trade.tradeId}: ${trade.buyOrSell} ${trade.offerAmount} ${trade.offerResource} @ ${trade.price} (appOn=${state.isApplicationOn})`);
-        if (!state.isApplicationOn) continue;
+        console.log(`[tradeSearch] Trade #${trade.tradeId}: ${trade.buyOrSell} ${trade.offerAmount} ${trade.offerResource} @ ${trade.price}`);
         dLog(`Trade #${trade.tradeId}: ${trade.buyOrSell} ${trade.offerAmount} ${trade.offerResource} @ ${trade.price}`);
 
         evaluateTradeForLowPriceAlert(trade, scanningKey).catch((err) => {
