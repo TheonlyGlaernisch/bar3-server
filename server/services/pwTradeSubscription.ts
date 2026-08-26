@@ -95,6 +95,7 @@ export class PnWTradeSubscriptionClient {
       throw new Error(`PnW trade subscription API returned no channel: ${JSON.stringify(response.body)}`);
     }
     this.channel = channel;
+    console.log(`PnW trade subscription: obtained channel ${channel}.`);
     return channel;
   }
 
@@ -130,6 +131,7 @@ export class PnWTradeSubscriptionClient {
       ws.once('open', () => resolve());
       ws.once('error', (err: Error) => reject(err));
     });
+    console.log('PnW trade subscription: WebSocket connected.');
 
     ws.on('message', (raw: any) => {
       try {
@@ -226,6 +228,7 @@ export class PnWTradeSubscriptionClient {
           if (!socketId) throw new Error('PnW trade subscription connection did not provide socket_id.');
           const auth = await this.getAuth(channel, socketId);
           ws.send(JSON.stringify({event: 'pusher:subscribe', data: {auth, channel}}));
+          console.log(`PnW trade subscription: connection established (socket_id=${socketId}), subscribe sent for ${channel}.`);
           continue;
         }
         if (eventName === 'pusher:error') {
@@ -252,8 +255,14 @@ export class PnWTradeSubscriptionClient {
           ws.close();
           continue;
         }
+        if (eventName === 'pusher_internal:subscription_succeeded') {
+          console.log(`PnW trade subscription: subscribed to channel ${channel}.`);
+          continue;
+        }
 
         if (eventName !== 'TRADE_CREATE' && eventName !== 'BULK_TRADE_CREATE') continue;
+
+        console.log(`PnW trade subscription: received ${eventName} frame.`);
 
         let rawItems: unknown = frame.data;
         if (typeof rawItems === 'string') {
