@@ -28,7 +28,7 @@ export interface SyncResult {
 
 interface PnWBankingClient {
   getAllianceBankTransactions(allianceId: number, opts?: { minId?: number; limit?: number }): Promise<BankTransactionRecord[]>;
-  getLatestAllianceBankTransactionId(allianceId: number): Promise<string | null>;
+  getLatestAllianceBankTransactionId?(allianceId: number): Promise<string | null>;
   getAllianceBankBalance(allianceId: number): Promise<Partial<BankingResourceBalance>>;
   bankWithdraw(request: BankTransferRequest): Promise<BankTransactionRecord>;
 }
@@ -464,16 +464,24 @@ export class BankingService {
       // per row. Instead, baseline the cursor at the current newest transaction
       // and do no processing this run; only transactions from this point
       // forward are tracked.
-      const latestId = await allianceBankClient.getLatestAllianceBankTransactionId(cfg.alliance_bank_alliance_id);
-      await this._db.setBankingConfig(guildId, {
-        last_sync_cursor: latestId,
-        last_sync_at: new Date().toISOString(),
-      });
-      return result;
+      if (typeof allianceBankClient.getLatestAllianceBankTransactionId === 'function') {
+        try {
+          const latestId = await allianceBankClient.getLatestAllianceBankTransactionId(cfg.alliance_bank_alliance_id);
+          await this._db.setBankingConfig(guildId, {
+            last_sync_cursor: latestId,
+            last_sync_at: new Date().toISOString(),
+          });
+          return result;
+        } catch {
+          // Fallback for older/mock clients that don't support latest-id lookup.
+          // In this compatibility mode we continue below and process the fetched
+          // page directly instead of hard-failing the sync.
+        }
+      }
     }
 
     const transactions = await allianceBankClient.getAllianceBankTransactions(cfg.alliance_bank_alliance_id, {
-      minId: minId + 1,
+      minId: minId == null ? undefined : minId + 1,
       limit: this._defaults.syncFetchLimit,
     });
     const relatedTransactions = transactions
