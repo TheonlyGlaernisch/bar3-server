@@ -1006,7 +1006,13 @@ function allianceEmbed(info: AllianceInfo, baseUrl = PNW_BASE_URL): EmbedBuilder
 }
 
 /** Build an active-wars embed for /whois "Show Wars" button. */
-function buildActiveWarsEmbed(nation: Nation, wars: NationWar[], baseUrl = PNW_BASE_URL): EmbedBuilder {
+function buildActiveWarsEmbed(
+  nation: Nation,
+  wars: NationWar[],
+  baseUrl = PNW_BASE_URL,
+  title = `⚔️ Active Wars — ${nation.nationName}`,
+  footerText = `${wars.length} active war(s)`,
+): EmbedBuilder {
   const lines: string[] = [];
   for (let i = 0; i < wars.length; i++) {
     const w = wars[i]!;
@@ -1017,10 +1023,88 @@ function buildActiveWarsEmbed(nation: Nation, wars: NationWar[], baseUrl = PNW_B
     lines.push(`\`${String(i + 1).padStart(2)}\`. [${oppName}](${nationUrl(oppId, baseUrl)}) — ${side} · [War #${w.warId}](${warUrl(w.warId, baseUrl)})`);
   }
   return new EmbedBuilder()
-    .setTitle(`⚔️ Active Wars — ${nation.nationName}`)
+    .setTitle(title)
     .setDescription(lines.join('\n') || '*(no active wars)*')
     .setColor(0xE67E22)
-    .setFooter({ text: `${wars.length} active war(s)` });
+    .setFooter({ text: footerText });
+}
+
+function isActiveWithinLast48Hours(nation: Nation): boolean {
+  if (nation.lastActiveUnix > 0) {
+    return nation.lastActiveUnix >= Math.floor(Date.now() / 1000) - (48 * 60 * 60);
+  }
+  if (nation.minutesSinceActive >= 0) {
+    return nation.minutesSinceActive <= (48 * 60);
+  }
+  return false;
+}
+
+async function filterWarsByOpponentRecentActivity(
+  client: PnWClient,
+  nationId: number,
+  wars: NationWar[],
+): Promise<NationWar[]> {
+  const opponentIds = Array.from(new Set(
+    wars.map((war) => (war.attackerId === nationId ? war.defenderId : war.attackerId)).filter((id) => id > 0),
+  ));
+  const activeOpponentIds = new Set<number>();
+  await Promise.all(opponentIds.map(async (opponentId) => {
+    try {
+      const opponent = await client.getNation(opponentId);
+      if (opponent && isActiveWithinLast48Hours(opponent)) activeOpponentIds.add(opponentId);
+    } catch {
+      // Ignore lookup failures for individual opponents.
+    }
+  }));
+  return wars.filter((war) => {
+    const opponentId = war.attackerId === nationId ? war.defenderId : war.attackerId;
+    return activeOpponentIds.has(opponentId);
+  });
+}
+
+function buildWhoisWarsRow(nationId: number): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(`wars:${nationId}`).setLabel('Show Wars').setStyle(ButtonStyle.Secondary).setEmoji('⚔️'),
+    new ButtonBuilder().setCustomId(`wars_actives:${nationId}`).setLabel('actives').setStyle(ButtonStyle.Secondary).setEmoji('🟢'),
+  );
+}
+
+async function editWhoisReplyWithWarsButtons(
+  i: ChatInputCommandInteraction,
+  embed: EmbedBuilder,
+  nation: Nation,
+  client: PnWClient,
+  baseUrl: string,
+): Promise<void> {
+  const msg = await i.editReply({ embeds: [embed], components: [buildWhoisWarsRow(nation.nationId)] });
+  const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
+  collector.on('collect', async (btn) => {
+    if (btn.customId !== `wars:${nation.nationId}` && btn.customId !== `wars_actives:${nation.nationId}`) return;
+    await btn.deferReply({ flags: MessageFlags.Ephemeral });
+    try {
+      const wars = await client.getActiveWarsForNation(nation.nationId);
+      wars.sort((a, b) => b.warId - a.warId);
+      if (btn.customId === `wars_actives:${nation.nationId}`) {
+        const filteredWars = await filterWarsByOpponentRecentActivity(client, nation.nationId, wars);
+        await btn.editReply({
+          embeds: [
+            buildActiveWarsEmbed(
+              nation,
+              filteredWars,
+              baseUrl,
+              `⚔️ Active Wars (Opp. active ≤48h) — ${nation.nationName}`,
+              `${filteredWars.length} active war(s) vs nations active in last 48h`,
+            ),
+          ],
+        });
+        return;
+      }
+      await btn.editReply({ embeds: [buildActiveWarsEmbed(nation, wars, baseUrl)] });
+    } catch (err) {
+      const msg2 = err instanceof Error ? err.message : String(err);
+      await btn.editReply({ content: `❌ Could not fetch wars: ${msg2}` });
+    }
+  });
 }
 
 async function handleRegister(i: ChatInputCommandInteraction, db: Database, pnw: PnWClient): Promise<void> {
@@ -1194,22 +1278,7 @@ async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: Pn
       const nation = await resolveMentionedNationViaApi(i, client, targetId);
       if (nation) {
         const embed = nationEmbed(nation, `<@${targetId}>`, 'ℹ️ Found via PnW discord field (not locally registered).', baseUrl);
-        const warsRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder().setCustomId(`wars:${nation.nationId}`).setLabel('Show Wars').setStyle(ButtonStyle.Secondary).setEmoji('⚔️'),
-        );
-        const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
-        const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
-        collector.on('collect', async (btn) => {
-          await btn.deferReply({ flags: MessageFlags.Ephemeral });
-          try {
-            const wars = await client.getActiveWarsForNation(nation.nationId);
-            wars.sort((a, b) => b.warId - a.warId);
-            await btn.editReply({ embeds: [buildActiveWarsEmbed(nation, wars, baseUrl)] });
-          } catch (err) {
-            const msg2 = err instanceof Error ? err.message : String(err);
-            await btn.editReply({ content: `❌ Could not fetch wars: ${msg2}` });
-          }
-        });
+        await editWhoisReplyWithWarsButtons(i, embed, nation, client, baseUrl);
       } else {
         await i.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ <@${targetId}> has not registered yet and no matching PnW nation was found.`).setColor(0x3498DB)] });
       }
@@ -1219,22 +1288,7 @@ async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: Pn
     try { nation = await client.getNation(Number(row.nation_id)); } catch { nation = null; }
     if (nation) {
       const embed = nationEmbed(nation, `<@${targetId}>`, null, baseUrl);
-      const warsRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder().setCustomId(`wars:${nation.nationId}`).setLabel('Show Wars').setStyle(ButtonStyle.Secondary).setEmoji('⚔️'),
-      );
-      const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
-      const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
-      collector.on('collect', async (btn) => {
-        await btn.deferReply({ flags: MessageFlags.Ephemeral });
-        try {
-          const wars = await client.getActiveWarsForNation(nation!.nationId);
-          wars.sort((a, b) => b.warId - a.warId);
-          await btn.editReply({ embeds: [buildActiveWarsEmbed(nation!, wars, baseUrl)] });
-        } catch (err) {
-          const msg2 = err instanceof Error ? err.message : String(err);
-          await btn.editReply({ content: `❌ Could not fetch wars: ${msg2}` });
-        }
-      });
+      await editWhoisReplyWithWarsButtons(i, embed, nation, client, baseUrl);
     } else {
       await i.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ <@${targetId}> is registered with nation ID \`${row.nation_id}\` (nation details unavailable).`).setColor(0x3498DB)] });
     }
@@ -1261,22 +1315,7 @@ async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: Pn
     const row = await db.getByNationId(nationId);
     const discordUser = row ? `\`${row.discord_username || row.discord_id}\`` : null;
     const embed = nationEmbed(nation, discordUser, null, baseUrl);
-    const warsRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId(`wars:${nation.nationId}`).setLabel('Show Wars').setStyle(ButtonStyle.Secondary).setEmoji('⚔️'),
-    );
-    const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
-    const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
-    collector.on('collect', async (btn) => {
-      await btn.deferReply({ flags: MessageFlags.Ephemeral });
-      try {
-        const wars = await client.getActiveWarsForNation(nation!.nationId);
-        wars.sort((a, b) => b.warId - a.warId);
-        await btn.editReply({ embeds: [buildActiveWarsEmbed(nation!, wars, baseUrl)] });
-      } catch (err) {
-        const msg2 = err instanceof Error ? err.message : String(err);
-        await btn.editReply({ content: `❌ Could not fetch wars: ${msg2}` });
-      }
-    });
+    await editWhoisReplyWithWarsButtons(i, embed, nation, client, baseUrl);
     return;
   }
 
@@ -1287,22 +1326,7 @@ async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: Pn
     const row = await db.getByNationId(nation.nationId);
     const discordUser = row ? `\`${row.discord_username || row.discord_id}\`` : null;
     const embed = nationEmbed(nation, discordUser, null, baseUrl);
-    const warsRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId(`wars:${nation.nationId}`).setLabel('Show Wars').setStyle(ButtonStyle.Secondary).setEmoji('⚔️'),
-    );
-    const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
-    const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
-    collector.on('collect', async (btn) => {
-      await btn.deferReply({ flags: MessageFlags.Ephemeral });
-      try {
-        const wars = await client.getActiveWarsForNation(nation!.nationId);
-        wars.sort((a, b) => b.warId - a.warId);
-        await btn.editReply({ embeds: [buildActiveWarsEmbed(nation!, wars, baseUrl)] });
-      } catch (err) {
-        const msg2 = err instanceof Error ? err.message : String(err);
-        await btn.editReply({ content: `❌ Could not fetch wars: ${msg2}` });
-      }
-    });
+    await editWhoisReplyWithWarsButtons(i, embed, nation, client, baseUrl);
     return;
   }
 
@@ -1315,22 +1339,7 @@ async function handleWhois(i: ChatInputCommandInteraction, db: Database, pnw: Pn
   try { nation = await client.getNation(Number(row.nation_id)); } catch { nation = null; }
   if (nation) {
     const embed = nationEmbed(nation, `\`${storedName}\``, null, baseUrl);
-    const warsRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId(`wars:${nation.nationId}`).setLabel('Show Wars').setStyle(ButtonStyle.Secondary).setEmoji('⚔️'),
-    );
-    const msg = await i.editReply({ embeds: [embed], components: [warsRow] });
-    const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600_000 });
-    collector.on('collect', async (btn) => {
-      await btn.deferReply({ flags: MessageFlags.Ephemeral });
-      try {
-        const wars = await client.getActiveWarsForNation(nation!.nationId);
-        wars.sort((a, b) => b.warId - a.warId);
-        await btn.editReply({ embeds: [buildActiveWarsEmbed(nation!, wars, baseUrl)] });
-      } catch (err) {
-        const msg2 = err instanceof Error ? err.message : String(err);
-        await btn.editReply({ content: `❌ Could not fetch wars: ${msg2}` });
-      }
-    });
+    await editWhoisReplyWithWarsButtons(i, embed, nation, client, baseUrl);
   } else {
     await i.editReply({ embeds: [new EmbedBuilder().setDescription(`ℹ️ **${storedName}** is registered with nation ID \`${row.nation_id}\` (nation details unavailable).`).setColor(0x3498DB)] });
   }
