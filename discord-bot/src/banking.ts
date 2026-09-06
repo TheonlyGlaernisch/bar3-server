@@ -182,6 +182,20 @@ export class BankingService {
     return envFallback || direct;
   }
 
+  /**
+   * Resolve only an explicitly configured per-guild API key reference/value.
+   * Unlike _resolveApiKey, this intentionally does NOT fall back to the
+   * bot-wide default key.
+   */
+  private _resolveConfiguredApiKey(apiKeyRef: string | null): string {
+    const direct = (apiKeyRef ?? '').trim();
+    if (!direct) return '';
+    const envRef = direct.startsWith('env:') ? direct.slice(4).trim() : '';
+    if (envRef) return (process.env[envRef] || '').trim();
+    const envFallback = (process.env[direct] || '').trim();
+    return envFallback || direct;
+  }
+
   async ensureGuildConfig(guildId: string): Promise<void> {
     const cfg = await this._db.getBankingConfig(guildId);
     const patch: Record<string, unknown> = {};
@@ -315,6 +329,13 @@ export class BankingService {
     if (!offshoreAllianceId) {
       // Offshore isn't configured yet — mark seen so it's never replayed
       // later, but don't create a ledger entry or log it, matching the poll.
+      await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, null);
+      return null;
+    }
+    const offshoreApiKey = this._resolveConfiguredApiKey(cfg.offshore_api_key_ref);
+    if (!offshoreApiKey) {
+      // If the guild has no offshore API key configured, don't log/track member
+      // deposit transactions yet; mark seen to prevent replay spam later.
       await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, null);
       return null;
     }
@@ -508,6 +529,12 @@ export class BankingService {
           // Offshore isn't configured yet — mark the transaction as seen so it's
           // never replayed later, but don't create a ledger entry or log it.
           // Deposit tracking only starts once an offshore alliance is set.
+          await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, null);
+          result.skipped += 1;
+          continue;
+        }
+        const offshoreApiKey = this._resolveConfiguredApiKey(cfg.offshore_api_key_ref);
+        if (!offshoreApiKey) {
           await this._db.markImportedBankTransaction(guildId, idempotencyKey, tx.id, null);
           result.skipped += 1;
           continue;
@@ -829,8 +856,8 @@ export class BankingService {
     const offshoreAllianceId = await this._db.getGlobalOffshoreAllianceId(this._defaults.offshoreAllianceId);
     if (!offshoreAllianceId) return { ok: false, error: 'Offshore alliance ID is not configured.' };
     if (!cfg.bot_key) return { ok: false, error: 'Banking configuration is missing bot_key.' };
-    const allianceBankKey = this._resolveApiKey(cfg.alliance_bank_api_key_ref);
-    if (!allianceBankKey) return { ok: false, error: 'Alliance-bank API key is not configured.' };
+    const allianceBankKey = this._resolveConfiguredApiKey(cfg.alliance_bank_api_key_ref);
+    if (!allianceBankKey) return { ok: false, error: 'Guild alliance-bank API key is not configured.' };
 
     const resources = normalizeBalance(resourcesInput);
     if (!hasAnyAmount(resources)) return { ok: false, error: 'Provide at least one positive resource amount.' };
